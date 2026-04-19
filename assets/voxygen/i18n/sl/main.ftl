@@ -11,7 +11,7 @@ main-notice =
 
     - Ta igra je še v zgodnji fazi razvoja in se ves čas dopolnjuje, zato pričakuj hroščatost, nedokončane ali okorne igralne mehanike in manjkajoče funkcionalnosti.
 
-    - Če želiš podati konstruktivne pripombe ali prijaviti napake, nam lahko javiš na naš GitHub repozitorij, na Discord ali na Matrix.
+    - Če želiš podati konstruktivne pripombe ali prijaviti napake, uporabi naš GitHub repozitorij.
 
     - Caldrayne Online je odprtokoden. Igro lahko prostor igraš, spreminjaš in deliš naprej v skladu z različico 3 Splošne javne licence GNU.
 
@@ -85,7 +85,7 @@ loading-tips =
     .a12 = S pritiskom na '{ $gameinput-dance }' lahko zaplešeš. Žurka!
     .a13 = S pritiskom na '{ $gameinput-glide }' razpri svojega zmaja in poleti v nebo.
     .a14 = Caldrayne Online je še vedno v zgodnjem razvoju. Vsak dan ga izboljšujemo!
-    .a15 = Če se želiš pridružiti naši razvijalski ekipi ali pa bi rad_a le poklepetal_a z nami, pridi na naš Discord strežnik.
+    .a15 = Če želiš pomagati pri razvoju ali deliti povratne informacije, obišči naš GitHub repozitorij.
     .a16 = V nastavitvah lahko spremeniš način prikaza svoje življenjske energije.
     .a17 = Ob tabornem ognju lahko počakaš, da se ti rane zacelijo (k ognju se usedeš s pritiskom na '{ $gameinput-sit }').
     .a18 = Ali potrebuješ večjo torbo ali boljši oklep? S pritiskom na '{ $gameinput-crafting }' odpreš sestavljalni meni!

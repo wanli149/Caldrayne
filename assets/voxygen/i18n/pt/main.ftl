@@ -7,8 +7,7 @@ main-notice =
 
     - Isto é uma versão muito experimental. Prepare-se para defeitos, jogabilidade muito inacabada, mecanismos por polir e funcionalidades por
     adicionar.
-    - Se tiver comentários construtivos ou defeitos para reportar, pode contactar-nos através  do Reddit, GitHub ou o nosso servidor comunitário de
-    Discord.
+    - Se tiver comentários construtivos ou defeitos para reportar, pode contactar-nos através do nosso repositório no GitHub.
     - Caldrayne Online está licenciado sob a licensa código aberto GPL 3. Isto significa que pode jogar, modificar e redistribuir como quiser
      (Contanto que o trabalho derivado seja também GPL 3).
     - Caldrayne Online é um projeto comunitário sem lucro, e toda a gente que trabalha nele é um voluntário. Se gostar do que ve, considere juntar-se a equipa

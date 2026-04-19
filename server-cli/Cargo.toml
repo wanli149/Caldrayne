@@ -11,7 +11,7 @@ workspace = true
 build = true
 app = true
 longDescription = """
-Caldrayne Online is a multiplayer voxel RPG based on Veloren.
+Caldrayne Online is a multiplayer voxel RPG built on the Veloren open-source foundation.
 It is inspired by games such as Cube World, The Legend of Zelda: Breath of the Wild, Dwarf Fortress and Minecraft.
 
 This package includes the Caldrayne Online server CLI.

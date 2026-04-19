@@ -12,7 +12,7 @@ main-notice =
 
     - This is an early branded development build. Expect bugs, unfinished gameplay, unpolished mechanics, and missing features.
 
-    - Caldrayne Online is based on Veloren. We are preserving the upstream open-source foundation while building a distinct branded project.
+    - Caldrayne Online is built on the Veloren open-source foundation. We are preserving required upstream credit while building a distinct branded project.
 
     - Caldrayne Online remains open source. Please keep upstream license notices, credits, and required attribution intact when contributing.
 

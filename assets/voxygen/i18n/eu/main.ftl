@@ -12,7 +12,7 @@ main-notice =
 
     - Alpha bertsio hau oso goiztiarra da. Beraz, baliteke akatsak, findu gabeko mekanikak eta bukatu gabeko ezaugarriak aurkitzea.
 
-    - Zure iritzia adierazi edo akats baten berri eman nahi baduzu, Reddit, GitHub, Discord eta Matrixen aurkituko gaituzu.
+    - Zure iritzia adierazi edo akats baten berri eman nahi baduzu, erabili gure GitHub biltegia.
 
     - Caldrayne Online GPL-3 lizentzia librean banatzen da. Horrek esan nahi du libre zarela jokatu, aldatu eta nahi bezala banatzeko (betiere GPL-3 lizentziaren baldintzak betetzen badituzu)
 
@@ -81,7 +81,7 @@ loading-tips =
     .a12 = Sakatu 'J' dantza egiteko.
     .a13 = Sakatu 'Ezkerreko-Shift' planeatzailea ireki eta zerua konkistatzeko.
     .a14 = Caldrayne Online oraindik Pre-Alpha bertsioan dago. Ahalegin handia egiten dugu egunero hobetzeko!
-    .a15 = Garatzaile taldean parte hartu edo besterik gabe gurekin hitz egin nahi baduzu, sartu gure Discord zerbitzarian!
+    .a15 = Garapenean lagundu edo iritzia partekatu nahi baduzu, bisitatu gure GitHub biltegia.
     .a16 = Ezarpenetan osasun barratik kopuru zehatza erakutsi edo ezkutatu dezakezu.
     .a17 = Eseri sutondoan ('K' tekla sakatuta) pixkanaka osasuna berreskuratzeko.
     .a18 = Zorro gehiago edo armadura hobea behar dituzu? Sakatu 'C' artisautza menua irekitzeko!

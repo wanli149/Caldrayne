@@ -11,7 +11,7 @@ main-notice =
 
     - Bu alfa sürümü daha çok yeni. Hatalar, bitmemiş oynanış, elden geçirilmemiş mekanikler ve eksik özellikler bulunuyor.
 
-    - Yapıcı geri bildirim veya hata raporların varsa bize Reddit, GitHub veya Discord kullanarak ulaşabilirsin.
+    - Yapıcı geri bildirim veya hata raporların varsa GitHub depomuzu kullanabilirsin.
 
     - Caldrayne Online GPL 3 açık kaynak lisansı ile lisanslıdır. Bunun anlamı, oyunu istediğin gibi oynayabilir, değiştirebilir ve dağıtabilirsin
     (türetilmiş çalışmalarda GPL 3 ile lisanslanmış olduğu sürece)
@@ -65,7 +65,7 @@ loading-tips =
     .a12 = '{ $gameinput-dance }'ye basarak dans et. Parti!
     .a13 = '{ $gameinput-glide }'e basarak Planörünü aç ve gökyüzünü fethet.
     .a14 = Caldrayne Online hala Pre-Alpha'da. Onu geliştirmek için her gün elimizden geleni yapıyoruz!
-    .a15 = Geliştirme Takımına katılmak istiyorsan veya sadece sohbet etmek istiyorsan Discord sunucumuza katıl.
+    .a15 = Geliştirmeye yardımcı olmak veya geri bildirim paylaşmak istiyorsan GitHub depomuzu ziyaret et.
     .a16 = Can barında canı sayı olarak görmek istiyorsan, bunu ayarlardan aktifleştirebilirsin.
     .a17 = Niteliklerini görmek için envanterindeki 'Nitelikler' düğmesine tıklayabilirsin.
 main-singleplayer-new = Yeni

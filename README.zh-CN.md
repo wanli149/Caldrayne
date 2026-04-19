@@ -23,7 +23,7 @@ Caldrayne Online 不是从零重写的新项目，而是建立在 Veloren 现有
 
 ## 上游说明
 
-本项目基于 [Veloren](https://veloren.net) 开发。Veloren 是一个使用 Rust 编写的开源多人联机体素 RPG。
+本项目基于开源项目 Veloren 开发。Veloren 是一个使用 Rust 编写的开源多人联机体素 RPG。
 
 在进行 Caldrayne Online 的品牌化、功能扩展和内容制作时，请不要移除仍然具有法律或归属要求的上游许可证、第三方声明、原始致谢和必要署名。
 
@@ -33,10 +33,13 @@ Caldrayne Online 不是从零重写的新项目，而是建立在 Veloren 现有
 
 ## 参考资料
 
-在 Caldrayne 专属文档进一步完善之前，下列 Veloren 资料仍可作为上游技术参考：
+在 Caldrayne 专属文档进一步完善之前，优先参考仓库内已有资料：
 
-- Veloren Book：<https://book.veloren.net>
-- Veloren Wiki：<https://wiki.veloren.net>
+- 英文项目说明：[README.md](README.md)
+- 协作规范：[CONTRIBUTING.md](CONTRIBUTING.md)
+- Nix 与打包说明：[nix/README.md](nix/README.md)
+
+如果确实需要追溯上游引擎背景或实现来源，再单独查阅保留的 Veloren 参考资料，但不要把它们视为 Caldrayne 当前的官方社区入口。
 
 ## 仓库地址
 

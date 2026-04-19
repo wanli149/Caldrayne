@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum AudioOutput {
-    /// Veloren's audio system wont work on some systems,
+    /// The game's audio system won't work on some systems,
     /// so you can use this to disable it, and allow the
-    /// game to function
+    /// game to function.
     // If this option is disabled, functions in the rodio
     // library MUST NOT be called.
     Off,

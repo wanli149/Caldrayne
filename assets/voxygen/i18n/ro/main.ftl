@@ -12,7 +12,7 @@ main-notice =
 
     - Este o versiune alfa foarte instabilă. Așteaptă-te la erori, gameplay incomplet, mecanici care nu sunt gata de lansare, și lucruri care lipsesc.
 
-    - Dacă ai feedback constructiv sau vrei să raportezi erori, ne poți contacta prin repozitoriul nostru de GitHub și pe serverele noastre de Discord sau Matrix.
+    - Dacă ai feedback constructiv sau vrei să raportezi erori, folosește repozitoriul nostru de GitHub.
 
     - Codul Caldrayne Online este deschis și disponibil tuturor. Ești liber să te joci, sa modifici, și să re-distribui jocul conform versiunii 3 a licenței GNU General Public
 
@@ -81,7 +81,7 @@ loading-tips =
     .a12 = Apasă '{ $gameinput-dance }' pentru a dansa. Petrecere!
     .a13 = Apasă '{ $gameinput-glide }' ca să-ți deschizi Planorul și să cucerești cerurile.
     .a14 = Caldrayne Online e înca în Pre-Alpha. Ne străduim să-l îmbunătățim în ficare zi!
-    .a15 = Dacă vrei să te alături echipei de dezvoltare sau dacă doar vrei să vorbești cu noi, intră pe serverul nostru de Discord.
+    .a15 = Dacă vrei să ajuți la dezvoltare sau să trimiți feedback, vizitează repozitoriul nostru de GitHub.
     .a16 = Puți comuta afișarea nivelului de sănătate pe bara de sănătate din setări
     .a17 = Așeazăte lângă un foc de tabară (cu tasta '{ $gameinput-sit }') ca să-ți vindeci rănile încetișor.
     .a18 = Ai nevoie de mai multe rucsacuri sau de armură mai bună ca să-ți continui aventura? Apasă '{ $gameinput-crafting }' pentru a deschide meniul de meșteșuguri!

@@ -70,12 +70,12 @@ fn main() {
             Err(e) => {
                 println!("cargo::error={}", e);
                 println!(
-                    "cargo::error=It is highly recommended to build Veloren from the cloned git \
-                     repository with the git command available in order to give the game access \
-                     to proper versioning information."
+                    "cargo::error=It is highly recommended to build Caldrayne from a cloned git \
+                     repository with the git command available so the game can access proper \
+                     versioning information."
                 );
                 println!(
-                    "cargo::error=However, if you wish to proceed building Veloren anyway, you \
+                    "cargo::error=However, if you wish to proceed building Caldrayne anyway, you \
                      can set the environment variable \"VELOREN_GIT_VERSION\" to \"/0/0\" before \
                      re-running the given cargo command (the specific procedure for this will \
                      depend on your shell). Note that this will compile the game with git commit \

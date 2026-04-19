@@ -11,7 +11,7 @@ main-notice =
 
     - Dette er en veldig tidlig alfa. Forvent feil, ekstremt uferdig spilling, upolert mekanikk og manglende funksjoner.
 
-    - Hvis du har konstruktive tilbakemeldinger eller feilrapporter, kan du kontakte oss via Reddit, GitHub eller vår Discord-server.
+    - Hvis du har konstruktive tilbakemeldinger eller feilrapporter, bruk GitHub-repositoriet vårt.
 
     - Caldrayne Online er lisensiert under GPL 3 åpen kildekode-lisensen. Det betyr at du er fri til å spille, endre og distribuere spillet på nytt, akkurat
      som du ønsker (så lenge arbeidet også er under GPL 3).
@@ -60,6 +60,6 @@ loading-tips =
     .a13 = Trykk '{ $gameinput-dance }' for å danse. Fest!
     .a14 = Trykk '{ $gameinput-glide }' for å åpne Glider og erobre himmelen.
     .a15 = Caldrayne Online er fortsatt i Pre-Alfa. Vi gjør vårt beste for å forbedre det hver dag!
-    .a16 = Hvis du vil bli med i Dev-teamet eller bare ta en prat med oss, bli med i Discord-Serveren.
+    .a16 = Hvis du vil hjelpe til med utviklingen eller dele tilbakemeldinger, besøk GitHub-repositoriet vårt.
     .a17 = Du kan veksle for å vise mengden helse på helselinjen i innstillingene.
     .a18 = For å se statistikken din, klikk på 'Statistikk' -knappen i beholdningen.

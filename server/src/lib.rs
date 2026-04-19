@@ -698,7 +698,7 @@ impl Server {
             event_dispatcher: Self::create_event_dispatcher(pools),
         };
 
-        debug!(?settings, "created veloren server with");
+        debug!(?settings, "created Caldrayne server with");
 
         info!("Server version: {}", *common::util::DISPLAY_VERSION);
 
@@ -791,7 +791,7 @@ impl Server {
             .calendar_now();
         *self.state.ecs_mut().write_resource::<Calendar>() = new_calendar;
 
-        // This tick function is the centre of the Veloren universe. Most server-side
+        // This tick function is the centre of the server universe. Most server-side
         // things are managed from here, and as such it's important that it
         // stays organised. Please consult the core developers before making
         // significant changes to this code. Here is the approximate order of

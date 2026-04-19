@@ -12,7 +12,7 @@ main-notice =
 
     - Jest to bardzo wczesna alfa. Spodziewaj się błędów, bardzo niedokończonej rozgrywki, niedokończonych mechanik i brakujących funkcji.
 
-    - Jeśli chcesz podzielić się konstruktywną krytyką lub zgłosić błędy, możesz skontakować się z nami na Reddicie, GitHubie lub Discordzie.
+    - Jeśli chcesz podzielić się konstruktywną opinią lub zgłosić błąd, skorzystaj z naszego repozytorium GitHub.
 
     - Caldrayne Online jest objęte licencją typu open-source 'GNU GPLv3'.
     Oznacza to że gra jest darmowa, oraz że możesz ją modyfikować i udostępniać na zasadach określonych w licencji (zmodyfikowane wersje muszą również używać licencji GNU GPLv3).
@@ -82,7 +82,7 @@ loading-tips =
     .a12 = Użyj '{ $gameinput-dance }' by zatańczyć :)
     .a13 = Użyj '{ $gameinput-glide }' by wyciągnąć lotnię! Spokojnie, nie jest lepiona woskiem.
     .a14 = Caldrayne Online dalej jest w fazie Pre-Alpha. Staramy się ulepszać go dzień w dzień!
-    .a15 = Jeśli chcesz pomóc w rozwijaniu projektu, albo porozmawiać z nami - wpadnij na naszego Discorda [EN]
+    .a15 = Jeśli chcesz pomóc w rozwoju projektu albo przekazać opinię, odwiedź nasze repozytorium GitHub.
     .a16 = Możesz przełączać typ paska zdrowia w opcjach.
     .a17 = Usiądź obok ogniska (używając '{ $gameinput-sit }') by powoli wyleczyć się z obrażeń.
     .a18 = Potrzebujesz więcej slotów w ekwipunku, albo nowego uzbrojenia? Wciśnij '{ $gameinput-crafting }' aby otworzyć menu tworzenia!

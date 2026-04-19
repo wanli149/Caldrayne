@@ -8,7 +8,7 @@ main-notice =
 
     - Dit is een hele vroege alpha. Verwacht bugs, extreem onafgemaakte gameplay, ruwe spelmechanics en missende functies.
 
-    - Als je constructieve feedback hebt of bugs wil melden, kan je ons contacteren via Reddit, GitHub of onze community Discord.
+    - Als je constructieve feedback hebt of bugs wilt melden, gebruik dan onze GitHub-repository.
 
     - Caldrayne Online is onder de GPL 3 open-source licentie gelicensieerd. Dat betekent dat je vrij bent om het spel te spelen, bewerken en doorgeven op welke manier
     je ook wil (zo lang afgeleide werken ook onder GPL 3 gelicensieerd zijn)
@@ -57,7 +57,7 @@ loading-tips =
     .a13 = Druk op '{ $gameinput-dance }' om te dansen. Feestje!
     .a14 = Druk op '{ $gameinput-glide }' om je deltavlieger te openen en het luchtruim te veroveren.
     .a15 = Caldrayne Online is nog steeds in Pre-Alpha. We doen ons best om het elke dag te verbeteren!
-    .a16 = Als je het ontwikkelingsteam wil versterken of gewoon een babbeltje wil doen met ons, kom dan langs op onze Discord-Server.
+    .a16 = Als je wilt helpen met de ontwikkeling of feedback wilt delen, bezoek dan onze GitHub-repository.
     .a17 = Je kan numerieke waarden in de levensbalk aan of uit zetten in de instellingen.
     .a18 = Om je stats te zien kan je op 'Stats' klikken in je Inventory.
 main-singleplayer-random_seed = Willekeurig

@@ -12,7 +12,7 @@ main-notice =
 
     - Aquesta és una versió alfa molt recent. Espera errors, jugabilitat extremadament inacabada, mecàniques per polir i manca d'elements.
 
-    - Si tens algun feedback constructiu o vols reportar un error, pot posar-te en contacte amb nosaltres mitjançant Reddit, GitHub, o el nostre servidor de Discord.
+    - Si tens comentaris constructius o vols reportar un error, fes servir el nostre repositori de GitHub.
 
     - Caldrayne Online està llicenciat sota una llicència de codi obert GPL 3. Això significa que ets lliure de jugar, modificar, i redistribuir el joc de la manera
      que desitges (sempre que aquest producte derivat es trobi sota una llicència GPL 3).
@@ -82,7 +82,7 @@ loading-tips =
     .a12 = Prem '{ $gameinput-dance }' per ballar. Que comenci la festa!
     .a13 = Prem '{ $gameinput-glide }' per obrir el teu planador i conquerir els cels!
     .a14 = Caldrayne Online roman encara en estat pre-Alfa. Estem fent tot el possible per millorar-lo cada dia!
-    .a15 = Si vols unir-te a l'equip de desenvolupadors o sols xarrar amb nosaltres, uneix-te al nostre servidor de Discord.
+    .a15 = Si vols ajudar amb el desenvolupament o compartir comentaris, visita el nostre repositori de GitHub.
     .a16 = Pots tirar si mostrar la teva quantitat de salut a la barra de salut o no des de les opcions.
     .a17 = Seu prop d'una foguera (prement '{ $gameinput-sit }') i recuperaràs salut lentament.
     .a18 = Necessites més bosses o millor armadura per continuar el teu viatge? Prem '{ $gameinput-crafting }' per obrir el menú d'elaboració!

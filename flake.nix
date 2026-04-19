@@ -1,5 +1,5 @@
 {
-  description = "Flake providing Veloren, a multiplayer voxel RPG written in Rust.";
+  description = "Flake providing Caldrayne Online, a branded voxel RPG workspace built on the Veloren open-source foundation.";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";

@@ -5,7 +5,7 @@ main-connecting = Свързване
 main-creating_world = Създаване на свят
 main-tip = Съвет:
 main-notice =
-    r#Добре дошли в алфа версията на Велорен!
+    r#Добре дошли в алфа версията на Caldrayne Online!
 
     Преди да се впуснете в приключения, моля имайте няколно неща предвид:
 
@@ -13,7 +13,7 @@ main-notice =
 
     Благодаяря ви за отделеното време, надяваме се, че ще се насладите на играта!
 
-    Разработчиците на Велорен#
+    Разработчиците на Caldrayne Online#
 main-login-server_not_found = Сървърът не е намерен
 main-login-server_full = Сървърът е пълен
 main-login-server_shut_down = Спиране на съврвър

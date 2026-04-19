@@ -11,7 +11,7 @@ main-notice =
 
     - Ez egy nagyon korai alfa verzió, vagyis akadnak még benne hibák, a játékmenet és a különféle játékmechanikák még csiszolásra szorulnak, bizonyos elemek pedig még nem kerültek implementálásra.
 
-    - Ha van valamilyen építő jellegű visszajelzésed, vagy hibát szeretnél bejelenteni, nyugodtan keress fel minket Redditen, GitHub-en, vagy a közösségi Discord-szerverünkön.
+    - Ha építő jellegű visszajelzésed van vagy hibát szeretnél bejelenteni, használd a GitHub tárhelyünket.
 
     - A Caldrayne Online a GPL 3 nyílt forráskódú licenc alatt van kiadva. Ezt azt jelenti, hogy megkötések nélül játhatsz vele, továbbá saját igényeid szerint módosíthatod és terjesztheted (már amennyiben az új produktum is GPL 3-as licensszel rendelkezik).
 
@@ -64,7 +64,7 @@ loading-tips =
     .a12 = A táncoláshoz nyomd meg a '{ $gameinput-dance }' gombot. Bulira föl!
     .a13 = Nyomd meg a '{ $gameinput-glide }'-t és hódítsd meg sárkányrepülőddel az eget!
     .a14 = A Caldrayne Online még mindig előzetes alfában van. Igyekszünk mindent megtenni annak érdekében, hogy napról-napra jobb és jobb legyen!
-    .a15 = Szeretnél a feljesztői csapat tagja lenni, vagy netán csak csevegnél velünk? Csatlakozz a Discord szerverünkhöz!
+    .a15 = Ha segítenél a fejlesztésben vagy megosztanád a visszajelzésedet, látogasd meg a GitHub tárhelyünket.
     .a16 = A beállításokban azt is eldöntheted, hogy megjelenjen-e az életerőd mennyisége az életerő sávban, vagy sem.
     .a17 = Ha lehuppansz (a '{ $gameinput-sit }' gombbal) egy tábortűz mellé szép lassan be fognak gyógyulni a sebeid.
     .a18 = Több holmitartóra vagy jobb páncélzatra van szükséged? Nyomd meg a '{ $gameinput-crafting }' gombot, és nézz szét a tárgykészítési menüben!

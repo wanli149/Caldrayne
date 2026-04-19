@@ -12,7 +12,7 @@ main-notice =
     - Hra je v rané verzi alfa. Očekávejte chyby, extrémně nedokončený příběh, nedostatečně rozvinuté mechaniky a chybějící funkce.
 
     - Pokud se chcete podělit o svůj názor, máte návrhy nebo nápady nebo chcete nahlásit chybu,
-    můžete nás kontaktovat prostřednictvím GitHubu, Discordu, nebo na našem Matrix serveru.
+    můžete nám napsat prostřednictvím našeho repozitáře na GitHubu.
 
     - Caldrayne Online je s otevřeným zdrojem. Můžete hrát, modifikovat a sdílet hru v souladu s Obecnou veřejnou licencí GNU v.3.
 
@@ -64,7 +64,7 @@ loading-tips =
     .a12 = Klávesou '{ $gameinput-dance }' začneš Tancovat. Párty!
     .a13 = Klávesou '{ $gameinput-glide }' otevřeš Kluzák a můžeš dobýt nebesa.
     .a14 = Caldrayne Online je stále v Pre-Alpha. Snažíme se hru zlepšit co to jde!
-    .a15 = Jestli se chceš napojit k dev teamu nebo si popovídat, připoj se na náš Discord server.
+    .a15 = Jestli se chceš zapojit do vývoje nebo poslat zpětnou vazbu, navštiv náš repozitář na GitHubu.
     .a16 = Můžeš povolit zobrazení svého života v healthbaru v Nastavení.
     .a17 = Sedni si k Táboráku (Klávesa '{ $gameinput-sit }') pro pomalé léčení.
     .a18 = Potřebuješ více tašek, či lepší zbroj pro své dobrodružství? Klávesou '{ $gameinput-crafting }' otevřeš nabídku Tvorby!

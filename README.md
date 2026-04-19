@@ -5,7 +5,7 @@
 
 **Languages:** [English](README.md) | [简体中文](README.zh-CN.md)
 
-Caldrayne Online is a voxel action-adventure RPG project built on top of the open-source Veloren codebase. This repository is the Caldrayne-branded game workspace used for local development, customization, and future publishing.
+Caldrayne Online is a voxel action-adventure RPG project built on top of the open-source Veloren codebase. This repository is the Caldrayne-branded workspace for local development, customization, and future publishing.
 
 ## Project Positioning
 
@@ -23,7 +23,7 @@ Caldrayne Online is not a from-scratch rewrite. It is a branded derivative proje
 
 ## Upstream Credit
 
-This project is based on [Veloren](https://veloren.net), an open-source multiplayer voxel RPG written in Rust.
+This project is based on the open-source Veloren project, a multiplayer voxel RPG written in Rust.
 
 We retain the required upstream license and attribution material in this repository. When working on Caldrayne-specific features, please avoid removing or obscuring original license notices, third-party credits, or upstream acknowledgements that are still required.
 
@@ -33,10 +33,13 @@ This repository currently prioritizes local development and brand integration. S
 
 ## Reference Material
 
-Until Caldrayne-specific documentation is expanded, the following Veloren resources are still useful as upstream technical references:
+Until Caldrayne-specific documentation is expanded, use the repository materials first:
 
-- Veloren Book: <https://book.veloren.net>
-- Veloren Wiki: <https://wiki.veloren.net>
+- Project contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Nix and packaging notes: [nix/README.md](nix/README.md)
+- Chinese project overview: [README.zh-CN.md](README.zh-CN.md)
+
+When upstream engine history or implementation background is needed, consult preserved Veloren references separately without treating them as Caldrayne community entry points.
 
 ## Repository
 

@@ -11,7 +11,7 @@ main-notice =
 
     - Đây là một phiên bản alpha chưa hoàn thiện. Trò chơi còn nhiều lỗi, cơ chế và tính năng cũng còn nhiều thiết sót.
 
-    - Nếu bạn muốn phản hồi hoặc báo lỗi, hãy liên hệ với chúng tôi trên Reddit, GitHub, hoặc trên Discord của chúng tôi.
+    - Nếu bạn muốn phản hồi hoặc báo lỗi, hãy sử dụng kho GitHub của dự án.
 
     - Caldrayne Online được cấp phép theo giấy phép GPL 3 open-source. Có nghĩa là bạn được phép chơi miễn phí, sửa đổi, và phân phối lại trò chơi theo cách bạn muốn (miễn là nó cũng theo giấy phép GPL 3).
 
@@ -64,7 +64,7 @@ loading-tips =
     .a13 = Nhấn '{ $gameinput-dance }' để nhảy múa. Quẩy lên!
     .a14 = Nhấn '{ $gameinput-glide }' để bật dù lượn và chinh phục bầu trời.
     .a15 = Caldrayne Online vẫn đang trong giai đoạn Pre-Alpha. Chúng tôi đang cố gắng hết sức để cải thiện nó mỗi ngày!
-    .a16 = Nếu bạn muốn tham gia nhóm phát triển hoặc chỉ đơn giản là trò chuyện, hãy tham gia Discord-Server.
+    .a16 = Nếu bạn muốn tham gia phát triển hoặc chia sẻ phản hồi, hãy ghé thăm kho GitHub của dự án.
     .a17 = Bạn có thể thay đổi hiển thị lượng máu của mình trên thanh máu trong cài đặt.
     .a18 = Để xem chỉ số của bạn, hãy nhấn vào nút 'Stats' trong kho.
     .a19 = Ngồi gần lửa trại (nhấn nút '{ $gameinput-sit }') để nghỉ ngơi - hồi máu chậm theo thời gian.

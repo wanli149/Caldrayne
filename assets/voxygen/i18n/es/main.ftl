@@ -12,7 +12,7 @@ main-notice =
 
     - Esto es un alfa muy temprano. Espera errores, mecánicas de juego inacabadas, mecánicas sin pulir, y funcionalidades faltantes.
 
-    - Si tienes críticas constructivas o reportes de errores, puedes contactar con nosotros en nuestro repositorio de GitHub, o en nuestro servidor de Discord o de Matrix.
+    - Si tienes comentarios constructivos o reportes de errores, usa nuestro repositorio de GitHub.
 
     - Caldrayne Online es un juego de código abierto. Eres libre de jugar, modificar y redistribuir el juego en acuerdo con los términos y condiciones de la versión 3 de la licencia "GNU General Public License".
 
@@ -81,7 +81,7 @@ loading-tips =
     .a12 = Pulsa '{ $gameinput-dance }' para bailar. ¡Fiesta!
     .a13 = Pulsa '{ $gameinput-glide }' para utilizar tu paravela y conquistar los cielos.
     .a14 = Caldrayne Online está todavia en pre-alfa. ¡Hacemos lo posible para mejorarlo día a día!
-    .a15 = Si quieres unirte al equipo de desarrollo o conversar con nosotros, únete a nuestro servidor de Discord.
+    .a15 = Si quieres ayudar con el desarrollo o compartir comentarios, visita nuestro repositorio de GitHub.
     .a16 = Puedes mostrar u ocultar tu total de salud en la barra de salud en los ajustes.
     .a17 = Siéntate cerca de una hoguera (con la tecla '{ $gameinput-sit }') para recuperarte lentamente de tus heridas.
     .a18 = ¿Necesitas más bolsas de almacenamiento o mejores armaduras para continuar tu viaje? Pulsa '{ $gameinput-crafting }' para abrir el menú de fabricación.

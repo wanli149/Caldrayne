@@ -1,6 +1,6 @@
 # Contributing
 
-Caldrayne Online is based on Veloren. For upstream engine and workflow reference, take a look at the [Veloren book](https://book.veloren.net).
+Caldrayne Online is based on Veloren. For this repository, prefer the local project docs first and only consult preserved upstream references when you specifically need engine background or historical workflow context.
 
 ## Guidelines
 

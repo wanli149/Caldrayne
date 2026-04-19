@@ -64,7 +64,7 @@ command-unmute-success = Otystnade framgångsrikt { $player }
 command-unmute-no-muted-player-found = Kunde ej hitta en tystnad spelare kallad { $player }
 command-unmute-cannot-unmute-self = Du kan inte otystna dig själv
 command-unmute-no-player-specified = Du måste specificera en spelare att tystna
-command-wiki-desc = Öppna wikin eller sök på ett ämne
+command-wiki-desc = Öppna projektsidan eller sök i repot
 command-battlemode-desc =
     Sätt ditt stridsläge till:
     + pvp (player vs player)
