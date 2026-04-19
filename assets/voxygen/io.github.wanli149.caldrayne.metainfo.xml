@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright 2019 Artem Polishchuk <ego.cordatus@gmail.com> -->
 <component type="desktop-application">
-  <id>net.veloren.veloren</id>
+  <id>io.github.wanli149.caldrayne</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <project_group>Caldrayne</project_group>
-  <developer id="net.veloren">
+  <developer id="io.github.wanli149">
     <name>The Caldrayne Project</name>
   </developer>
 
@@ -14,7 +14,7 @@
     <binary>veloren-voxygen</binary>
     <binary>veloren-server-cli</binary>
   </provides>
-  <launchable type="desktop-id">net.veloren.veloren.desktop</launchable>
+  <launchable type="desktop-id">io.github.wanli149.caldrayne.desktop</launchable>
 
   <content_rating type="oars-1.0">
     <content_attribute id="social-chat">intense</content_attribute>

@@ -263,7 +263,7 @@ impl Window {
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         {
             use winit::platform::wayland::WindowAttributesExtWayland;
-            attributes = attributes.with_name("net.veloren.veloren", "veloren");
+            attributes = attributes.with_name("io.github.wanli149.caldrayne", "caldrayne");
         }
 
         // Avoid cpal / winit OleInitialize conflict

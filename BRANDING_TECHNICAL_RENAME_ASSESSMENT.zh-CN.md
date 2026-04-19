@@ -9,27 +9,36 @@
 
 ### 1.1 Desktop / App ID 链
 
+当前状态：
+
+- 已执行第一阶段迁移
+- 当前推荐并已采用的新 ID 为 `io.github.wanli149.caldrayne`
+
 当前关键位置：
 
 - `voxygen/src/window.rs`
 - `voxygen/Cargo.toml`
-- `assets/voxygen/net.veloren.veloren.desktop`
-- `assets/voxygen/net.veloren.veloren.metainfo.xml`
+- `assets/voxygen/io.github.wanli149.caldrayne.desktop`
+- `assets/voxygen/io.github.wanli149.caldrayne.metainfo.xml`
+- `assets/voxygen/io.github.wanli149.caldrayne.png`
 
 现状：
 
-- Wayland 窗口类名仍为 `net.veloren.veloren`
-- desktop 文件名、metainfo id、launchable、icon 名保持一致
+- Wayland 窗口类名已迁移到 `io.github.wanli149.caldrayne`
+- desktop 文件名、metainfo id、launchable、icon 名已统一迁移
+- `Exec` 和 metainfo 里的 binary 名仍保留 `veloren-*`
 
 风险判断：
 
 - 这是一整条 Linux 桌面集成链
 - 不能只改其中一个点，否则会出现启动器、图标、AppStream、Wayland 类名不一致
+- 新 ID 选择 GitHub 命名空间是为了避免假定拥有尚未确认的独立域名
 
 建议：
 
-- 可以改，但要作为单独批次处理
+- 这一批可以先改，并且应保持和二进制名迁移解耦
 - 修改时要同步改文件名、Cargo metadata、desktop id、icon id、launchable id
+- 在未迁移二进制名前，保留 `Exec=veloren-voxygen` 与 metainfo binary 现状
 
 ### 1.2 Mumble / IPC 标识
 
@@ -61,8 +70,8 @@
 - `server-cli/Cargo.toml`
 - `.cargo/config.toml`
 - `server-cli/Dockerfile`
-- `assets/voxygen/net.veloren.veloren.desktop`
-- `assets/voxygen/net.veloren.veloren.metainfo.xml`
+- `assets/voxygen/io.github.wanli149.caldrayne.desktop`
+- `assets/voxygen/io.github.wanli149.caldrayne.metainfo.xml`
 - `flake.nix`
 - `nix/README.md`
 
@@ -223,11 +232,18 @@
 
 包含：
 
-- `net.veloren.veloren` 链
+- `net.veloren.veloren` -> `io.github.wanli149.caldrayne`
 - desktop 文件名
 - metainfo id
 - Wayland 窗口类名
 - 相关 icon id
+
+当前执行结论：
+
+- 已完成
+- 本批次故意未修改 `Exec=veloren-voxygen`
+- 本批次故意未修改 metainfo 内的 binary 名
+- 本批次故意未触碰 crate 名、Cargo 包名、Nix 输出名
 
 ### 批次 B：二进制名与打包链专项
 
@@ -259,9 +275,28 @@
 
 ## 5. 当前建议结论
 
-- `Desktop ID`：可以改，但必须整组改，不建议夹带在普通品牌化提交中
+- `Desktop ID`：已完成第一阶段整组迁移，当前统一为 `io.github.wanli149.caldrayne`
 - 二进制名：现在先别改，等做完整的打包链迁移时再改
 - crate 名：现在先别改
 - `VELOREN_*` 环境变量：现在先别改
 - `plugin/wit/veloren.wit`：现在先别改
 - 内部 `Veloren*` 类型名：可以长期逐步清理，但优先级最低
+
+## 6. 已执行记录
+
+### 2026-04-19
+
+- 已将 Linux Desktop / App ID 从 `net.veloren.veloren` 迁移到
+  `io.github.wanli149.caldrayne`
+- 已同步迁移：
+  - `voxygen/src/window.rs`
+  - `voxygen/Cargo.toml`
+  - desktop 文件名
+  - metainfo 文件名
+  - desktop / metainfo 中的 id、launchable、icon 名
+  - 对应 PNG 图标文件名
+- 本次明确保留：
+  - `veloren-voxygen`
+  - `veloren-server-cli`
+  - metainfo `<binary>` 名称
+  - Cargo / Nix / Docker 构建链中的 `veloren-*` 技术标识

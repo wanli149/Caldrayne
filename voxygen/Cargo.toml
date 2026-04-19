@@ -14,7 +14,7 @@ workspace = true
 [package.metadata.nix]
 build = true
 app = true
-desktopFile = "./assets/voxygen/net.veloren.veloren.desktop"
+desktopFile = "./assets/voxygen/io.github.wanli149.caldrayne.desktop"
 longDescription = """
 Caldrayne Online is a multiplayer voxel RPG based on Veloren.
 It is inspired by games such as Cube World, The Legend of Zelda: Breath of the Wild, Dwarf Fortress and Minecraft.

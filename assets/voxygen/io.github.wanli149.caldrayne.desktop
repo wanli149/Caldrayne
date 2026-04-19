@@ -6,5 +6,5 @@ Comment[de]=Caldrayne Online basiert auf Veloren und ist ein in Rust geschrieben
 Exec=veloren-voxygen
 Categories=Game;Simulation;
 Keywords=caldrayne;veldr;veloren;sandbox;world;blocks;nodes;multiplayer;roleplaying;
-Icon=net.veloren.veloren
+Icon=io.github.wanli149.caldrayne
 Terminal=false
