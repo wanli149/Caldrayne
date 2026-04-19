@@ -140,7 +140,12 @@ mod v1 {
     pub struct ServerDescription(pub(super) String);
 
     impl Default for ServerDescription {
-        fn default() -> Self { Self("This is the best Caldrayne Online server".into()) }
+        fn default() -> Self {
+            Self(
+                "Welcome to Caldrayne Online. Configure this server message to match your deployment."
+                    .into(),
+            )
+        }
     }
 
     impl Deref for ServerDescription {
@@ -214,7 +219,7 @@ mod v2 {
     impl Default for ServerDescription {
         fn default() -> Self {
             Self {
-                motd: "This is the best Caldrayne Online server".into(),
+                motd: "Welcome to Caldrayne Online. Configure this server message to match your deployment.".into(),
                 rules: None,
             }
         }

@@ -5,6 +5,7 @@ services:
     # Build and tag a local Caldrayne server image before using this compose file.
     # Example: docker build -f server-cli/Dockerfile -t caldrayne/server-cli:local .
     image: caldrayne/server-cli:local
+    command: ["--no-auth"]
     stdin_open: true
     tty: true
     container_name: caldrayne-game-server-local

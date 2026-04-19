@@ -35,20 +35,23 @@ nixpkgs.
 
 If you just want to run the game without installing it, you can do so with:
 ```shell
-# Voxygen (the default):
+# Caldrayne desktop client (technical package id: veloren-voxygen):
 nix run github:wanli149/Caldrayne
-# Server CLI:
+# Caldrayne dedicated server CLI (technical package id: veloren-server-cli):
 nix run github:wanli149/Caldrayne#veloren-server-cli
 # or if you have a local repo
 nix run
 nix run .#veloren-server-cli
 ```
 
+For local or private deployments, the server examples in this repository
+currently assume `--no-auth` unless you configure your own auth provider.
+
 To install the game into your user profile:
 ```shell
-# Voxygen:
+# Caldrayne desktop client:
 nix profile install github:wanli149/Caldrayne
-# Server CLI:
+# Caldrayne dedicated server CLI:
 nix profile install github:wanli149/Caldrayne#veloren-server-cli
 # or if you have a local repo:
 nix profile install
@@ -105,9 +108,9 @@ You can do this to run the game without installing it (you will need a local clo
 ```shell
 # build the game
 nix-build nix/default.nix
-# run it
+# run the desktop client
 ./result/bin/veloren-voxygen
-# or for server cli
+# or run the dedicated server CLI
 ./result-2/bin/veloren-server-cli
 ```
 
@@ -149,14 +152,14 @@ nix develop
 You can use the `bundle` subcommand to bundle the game into a single distro-agnostic executable file:
 ```shell
 ## bundling the current remote flake
-# Voxygen:
+# Caldrayne desktop client:
 nix bundle github:wanli149/Caldrayne
-# Server CLI:
+# Caldrayne dedicated server CLI:
 nix bundle github:wanli149/Caldrayne#veloren-server-cli
 ## for local repo:
-# Voxygen:
+# Caldrayne desktop client:
 nix bundle .#veloren-voxygen
-# Server CLI:
+# Caldrayne dedicated server CLI:
 nix bundle .#veloren-server-cli
 ```
 

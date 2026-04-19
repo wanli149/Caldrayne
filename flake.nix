@@ -81,9 +81,8 @@
               Git Large File Storage (git-lfs) has not been set up correctly.
               Most common reasons:
                 - git-lfs was not installed before cloning this repository.
-                - This repository was not cloned from the primary GitLab mirror.
-                - The GitHub mirror does not support LFS.
-              See the book at https://book.veloren.net/ for details.
+                - This repository was obtained without Git LFS objects.
+                - A mirror, archive, or ZIP download was used without running Git LFS afterwards.
               Run 'nix-shell -p git git-lfs --run \"git lfs install --local && git lfs fetch && git lfs checkout\"'
               or 'nix shell nixpkgs#git-lfs nixpkgs#git -c sh -c \"git lfs install --local && git lfs fetch && git lfs checkout\"'.
             "
