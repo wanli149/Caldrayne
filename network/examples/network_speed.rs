@@ -24,13 +24,14 @@ enum Msg {
     Pong { id: u64, data: Vec<u8> },
 }
 
-/// This utility tests the speed of veloren network by creating a client that
+/// This utility tests the speed of the project's network layer by creating a
+/// client that
 /// opens a stream and pipes as many messages through it as possible.
 fn main() {
-    let matches = Command::new("Veloren Speed Test Utility")
+    let matches = Command::new("Caldrayne Network Speed Test Utility")
         .version("0.1.0")
         .author("Marcel Märtens <marcel.cochem@googlemail.com>")
-        .about("Runs speedtests regarding different parameter to benchmark veloren-network")
+        .about("Runs speed tests with different parameters to benchmark veloren-network")
         .arg(
             Arg::new("mode")
                 .short('m')

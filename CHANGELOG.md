@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> Note: This changelog is retained as a historical record inherited from
+> Veloren. Pre-Caldrayne releases may still reference upstream names,
+> infrastructure, and links.
+
 ## [Unreleased]
 
 ### Added
@@ -1626,6 +1630,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2018-XX-XX
 
 > Note: 0.1.0 was part of the legacy engine.
+
+> Historical link note: The version comparison links below intentionally point
+> to the original upstream Veloren history for pre-Caldrayne releases.
 
 [unreleased]: https://gitlab.com/veloren/veloren/compare?from=v0.18.0&to=master
 [0.18.0]: https://gitlab.com/veloren/veloren/compare?from=v0.17.0&to=v0.18.0

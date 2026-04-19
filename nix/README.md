@@ -8,7 +8,9 @@ We include instructions for Nix without flakes enabled, but using flakes is the 
 
 See the [NixOS wiki](https://wiki.nixos.org/wiki/Flakes) for information on how to enable and use flakes.
 
-It is recommended to first set up the [Cachix](https://cachix.org) cache to save time with builds:
+If you are working from this Caldrayne repository, the local flake commands
+below are the primary path. The upstream [Cachix](https://cachix.org) cache may
+still save time with shared dependencies:
 ```shell
 nix shell nixpkgs#cachix -c cachix use veloren-nix
 # or if you don't have flakes:
@@ -23,7 +25,7 @@ git lfs install --local && git lfs fetch && git lfs checkout
 This should be automatically done if you use the development shell.
 
 If you get an issue such as `WARN gfx_backend_vulkan: Unable to create Vulkan instance: VkError(ERROR_INCOMPATIBLE_DRIVER)`,
-it might be that your system nixpkgs version and veloren repo nixpkgs version might be too far apart. In that case, you can try
+it might be that your system nixpkgs version and this repository's nixpkgs version might be too far apart. In that case, you can try
 changing your system nixpkgs to the unstable channel, or change the `nixpkgs` input in the `flake.nix` to match your system
 nixpkgs.
 
@@ -34,9 +36,9 @@ nixpkgs.
 If you just want to run the game without installing it, you can do so with:
 ```shell
 # Voxygen (the default):
-nix run gitlab:veloren/veloren
+nix run github:wanli149/Caldrayne
 # Server CLI:
-nix run gitlab:veloren/veloren#veloren-server-cli
+nix run github:wanli149/Caldrayne#veloren-server-cli
 # or if you have a local repo
 nix run
 nix run .#veloren-server-cli
@@ -45,21 +47,25 @@ nix run .#veloren-server-cli
 To install the game into your user profile:
 ```shell
 # Voxygen:
-nix profile install gitlab:veloren/veloren
+nix profile install github:wanli149/Caldrayne
 # Server CLI:
-nix profile install gitlab:veloren/veloren#veloren-server-cli
+nix profile install github:wanli149/Caldrayne#veloren-server-cli
 # or if you have a local repo:
 nix profile install
 nix profile install .#veloren-server-cli
 ```
 
-To install (for example) Voxygen on your system, the NixOS configuration (if you use a flake based setup) could look something like this:
+To install (for example) Voxygen on your system, the NixOS configuration (if
+you use a flake based setup) could look something like this:
+
+Technical package names such as `veloren-voxygen` and `veloren-server-cli`
+remain unchanged here for compatibility with the current build graph.
 ```nix
 { description = "NixOS configuration with flakes";
 
-  inputs.veloren.url = gitlab:veloren/veloren;
+  inputs.caldrayne.url = "github:wanli149/Caldrayne";
 
-  outputs = { self, nixpkgs, veloren }: {
+  outputs = { self, nixpkgs, caldrayne }: {
     nixosConfigurations.<your-hostname> = nixpkgs.lib.nixosSystem rec {
       system = <your-system-arch>;
       # ...
@@ -70,15 +76,14 @@ To install (for example) Voxygen on your system, the NixOS configuration (if you
           nixpkgs.overlays = [
             # ...
             (final: prev: {
-              inherit (veloren.packages."${system}") veloren-voxygen;
+              inherit (caldrayne.packages."${system}") veloren-voxygen;
             })
           ];
 
           # You can also add the flake to your registry
-          nix.registry.veloren.flake = veloren;
-          # with this, you can run latest master
-          # regardless of version installed like this:
-          # nix run veloren/master
+          nix.registry.caldrayne.flake = caldrayne;
+          # with this, you can run the current flake like this:
+          # nix run caldrayne
         })
 
         # some module
@@ -143,11 +148,11 @@ nix develop
 
 You can use the `bundle` subcommand to bundle the game into a single distro-agnostic executable file:
 ```shell
-## bundling latest commit to master
+## bundling the current remote flake
 # Voxygen:
-nix bundle gitlab:veloren/veloren
+nix bundle github:wanli149/Caldrayne
 # Server CLI:
-nix bundle gitlab:veloren/veloren#veloren-server-cli
+nix bundle github:wanli149/Caldrayne#veloren-server-cli
 ## for local repo:
 # Voxygen:
 nix bundle .#veloren-voxygen
