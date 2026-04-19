@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2019 Artem Polishchuk <ego.cordatus@gmail.com> -->
+<component type="desktop-application">
+  <id>net.veloren.veloren</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <project_group>Caldrayne</project_group>
+  <developer id="net.veloren">
+    <name>The Caldrayne Project</name>
+  </developer>
+
+  <name>Caldrayne Online</name>
+  <provides>
+    <binary>veloren-voxygen</binary>
+    <binary>veloren-server-cli</binary>
+  </provides>
+  <launchable type="desktop-id">net.veloren.veloren.desktop</launchable>
+
+  <content_rating type="oars-1.0">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+    <content_attribute id="violence-cartoon">mild</content_attribute>
+    <content_attribute id="violence-fantasy">mild</content_attribute>
+  </content_rating>
+
+  <summary>Caldrayne Online is a voxel action RPG based on Veloren</summary>
+  <summary xml:lang="cs">Caldrayne Online je voxelové akční RPG založené na Veloren</summary>
+  <summary xml:lang="de">Caldrayne Online ist ein voxelbasiertes Action-RPG auf Grundlage von Veloren</summary>
+  <summary xml:lang="pl">Caldrayne Online to voxelowa gra action RPG oparta na Veloren</summary>
+
+  <description>
+    <p>
+      Caldrayne Online is an action-adventure RPG game set in a vast fantasy world.
+      It is based on Veloren and inspired by games such as Cube World,
+      The Legend of Zelda: Breath of the Wild, Dwarf Fortress and Minecraft.
+    </p>
+    <p xml:lang="de">
+      Caldrayne Online ist ein Action-Adventure-Rollenspiel in einer riesigen Fantasiewelt.
+      Es basiert auf Veloren und ist von Spielen wie Cube World,
+      The Legend of Zelda: Breath of the Wild, Dwarf Fortress und Minecraft inspiriert.
+    </p>
+
+    <p>Development</p>
+    <p xml:lang="de">Entwicklung</p>
+
+    <p>
+      This repository tracks the Caldrayne-branded project while preserving required upstream Veloren credit and licensing.
+    </p>
+    <p xml:lang="de">
+      Dieses Repository verfolgt das gebrandete Caldrayne-Projekt und bewahrt dabei die notwendige Veloren-Namensnennung und Lizenzierung.
+    </p>
+  </description>
+
+  <releases>
+    <release date="@DATE@" version="@VERSION@"/>
+  </releases>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Airship flying over a valley</caption>
+      <image>https://s3.eu-central-2.wasabisys.com/veloren-blog/cdn/634860358623821835/884138091537907793/screenshot_1630865233900.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Players observing a structure</caption>
+      <image>https://s3.eu-central-2.wasabisys.com/veloren-blog/cdn/634860358623821835/885141629902684180/bg_12.jpg</image>
+    </screenshot>
+    <screenshot>
+      <caption>Battling the Mindflayer</caption>
+      <image>https://s3.eu-central-2.wasabisys.com/veloren-blog/cdn/634860358623821835/884297602462539876/screenshot_1630903166427.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Archers hunting deer</caption>
+      <image>https://s3.eu-central-2.wasabisys.com/veloren-blog/cdn/634860358623821835/885141632519905330/bg_10.jpg</image>
+    </screenshot>
+  </screenshots>
+
+  <recommends>
+    <internet>always</internet>
+    <memory>4096</memory>
+  </recommends>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>gamepad</control>
+    <internet>offline-only</internet>
+  </supports>
+
+  <categories>
+    <category>Game</category>
+  </categories>
+  <keywords>
+    <keyword>multiplayer</keyword>
+    <keyword>voxel</keyword>
+    <keyword>sandbox</keyword>
+    <keyword>role-playing game</keyword>
+    <keyword>RPG</keyword>
+  </keywords>
+
+  <url type="bugtracker">https://github.com/wanli149/Caldrayne/issues</url>
+  <url type="faq">https://github.com/wanli149/Caldrayne#readme</url>
+  <url type="help">https://github.com/wanli149/Caldrayne#readme</url>
+  <url type="homepage">https://github.com/wanli149/Caldrayne</url>
+  <url type="contact">https://github.com/wanli149/Caldrayne/issues</url>
+  <url type="vcs-browser">https://github.com/wanli149/Caldrayne</url>
+  <url type="contribute">https://github.com/wanli149/Caldrayne</url>
+</component>

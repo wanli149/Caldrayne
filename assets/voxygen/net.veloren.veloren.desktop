@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Caldrayne Online
+Comment=Caldrayne Online is a multiplayer voxel RPG based on Veloren
+Comment[de]=Caldrayne Online basiert auf Veloren und ist ein in Rust geschriebenes Mehrspieler-Voxel-RPG
+Exec=veloren-voxygen
+Categories=Game;Simulation;
+Keywords=caldrayne;veldr;veloren;sandbox;world;blocks;nodes;multiplayer;roleplaying;
+Icon=net.veloren.veloren
+Terminal=false

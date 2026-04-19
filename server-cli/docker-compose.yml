@@ -1,0 +1,19 @@
+version: "3.5"
+
+services:
+  game-server:
+    # Build and tag a local Caldrayne server image before using this compose file.
+    # Example: docker build -f server-cli/Dockerfile -t caldrayne/server-cli:local .
+    image: caldrayne/server-cli:local
+    stdin_open: true
+    tty: true
+    container_name: caldrayne-game-server-local
+    ports:
+      - "14004:14004"
+      - "14005:14005"
+      - "14006:14006/udp"
+    restart: on-failure:0
+    volumes:
+        - "./userdata:/opt/userdata"
+    environment:
+        - RUST_LOG=debug,common::net=info
