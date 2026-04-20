@@ -1,21 +1,21 @@
 sprite-carrot-carrot = 胡萝卜
     .desc = 一种橙色的根茎类蔬菜。据说能改善视力！
 sprite-cabbage-cabbage = 生菜
-    .desc = 一种生机勃勃的绿叶蔬菜。生菜做沙拉！
+    .desc = 鲜嫩翠绿的叶菜，最适合拿来拌沙拉。
 sprite-mushrooms-mushroom-10 = 蘑菇
     .desc = 希望这朵没有毒。
 sprite-food-salad_plain = 青菜沙拉
-    .desc = 简直就只是把生菜切成碎。这也能算沙拉吗？
+    .desc = 说白了就是切碎的生菜，但勉强也算一道沙拉。
 sprite-tomato-tomato = 番茄
     .desc = 一种红色的水果，实际上并不是蔬菜！
 sprite-food-salad_tomato = 番茄沙拉
     .desc = 叶菜沙拉中拌入切碎的多汁番茄。
 sprite-food-meat-beast_large_cooked = 熟肉排
-    .desc = 三分熟。
+    .desc = 外焦里嫩，火候刚好。
 sprite-food-meat-beast_large_raw = 生肉排
     .desc = 一块野兽的肉，烹饪后风味更佳。
 sprite-food-meat-beast_small_cooked = 熟肉片
-    .desc = 三分熟。
+    .desc = 香气四溢，刚刚烤熟。
 sprite-food-meat-beast_small_raw = 生肉片
     .desc = 一小片野兽的肉，烹饪后风味更佳。
 sprite-food-meat-bird_cooked = 熟禽肉
@@ -43,23 +43,23 @@ object-apple_stick = 苹果串
 object-blue_cheese = 蓝纹奶酪
     .desc = 气味浓烈，饱腹感强。
 object-cactus_drink = 仙人掌鸡尾酒
-    .desc = 给予你特别的刺痛感。
+    .desc = 会带来一种别具一格的刺激口感。
 object-cheese = 矮人奶酪
     .desc = 采用矮人最优质的山羊奶制成。芳香四溢，营养丰富！
 object-coconut_half = 椰子
     .desc = 水和脂肪的可靠来源。经常可以发现生长在棕榈树上。
 object-honeycorn = 蜜玉米
-    .desc = 甜蜜蜜。
+    .desc = 甜得让人停不下来。
 object-mushroom_stick = 蘑菇串
     .desc = 串在签子上的烤蘑菇，方便携带。
 object-pumpkin_spice_brew = 南瓜猪肉酿子
-    .desc = 用发霉的南瓜酿造。
+    .desc = 用发酵过头的南瓜酿成，味道相当大胆。
 object-sunflower_ice_tea = 向日葵冰茶
     .desc = 由新鲜去壳的葵花籽酿制而成。
 sprite-spore-corruption_spore = 腐败孢子
     .desc =
         你感觉到一股邪恶的力量在体内涌动
 
-        长久地坚持下去并不明智......
+        把它留在身上太久，恐怕不会有什么好事……
 sprite-lettuce-lettuce = 生菜
-    .desc = 一种鲜嫩翠绿的叶类蔬菜。来吧，让咱们“生”点菜！
+    .desc = 鲜嫩爽脆的绿叶蔬菜，正适合做一道清爽沙拉。

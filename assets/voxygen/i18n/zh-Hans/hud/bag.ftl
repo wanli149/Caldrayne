@@ -46,6 +46,10 @@ hud-bag-change_to_sort_by_quality = 按品质排序
 hud-bag-change_to_sort_by_category = 按物品类别排序
 hud-bag-change_to_sort_by_tag = 按预设标签排序
 hud-bag-change_to_sort_by_quantity = 按堆叠数量排序
+hud-bag-switch_view_grid = 切换为网格视图
+hud-bag-switch_view_list = 切换为列表视图
+hud-bag-show_loadout = 显示装备栏
+hud-bag-expand_bag = 展开背包
 hud-bag-use_slot_equip_drop_items =
     { $slot_deficit ->
         [1] 装备此物品会导致背包空间不足以存放现有物品，其中 1 件物品将掉落在地上。你想继续吗？

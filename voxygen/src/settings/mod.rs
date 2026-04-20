@@ -27,7 +27,7 @@ pub use graphics::{Fps, GraphicsSettings, get_fps};
 pub use hud_position::HudPositionSettings;
 pub use interface::InterfaceSettings;
 pub use inventory::InventorySettings;
-pub use language::LanguageSettings;
+pub use language::{DEFAULT_LANGUAGE, LanguageSettings};
 pub use networking::NetworkingSettings;
 
 /// `Settings` contains everything that can be configured in the settings.ron

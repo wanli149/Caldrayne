@@ -26,7 +26,7 @@ use veloren_voxygen::{
     profile::Profile,
     run,
     scene::terrain::SpriteRenderContext,
-    settings::{AudioOutput, Settings, get_fps},
+    settings::{AudioOutput, DEFAULT_LANGUAGE, Settings, get_fps},
     window::Window,
 };
 
@@ -177,9 +177,9 @@ fn main() {
             warn!(
                 ?error,
                 ?selected_language,
-                "Impossible to load language: change to the default language (English) instead.",
+                "无法加载所选语言，已回退到默认语言（简体中文）。",
             );
-            i18n::REFERENCE_LANG.clone_into(&mut settings.language.selected_language);
+            DEFAULT_LANGUAGE.clone_into(&mut settings.language.selected_language);
             LocalizationHandle::load_expect(&settings.language.selected_language)
         });
     i18n.set_english_fallback(settings.language.use_english_fallback);
@@ -191,23 +191,23 @@ fn main() {
         // Custom panic message when a graphics backend could not be found
         Err(Error::RenderError(RenderError::CouldNotFindAdapter)) => {
             #[cfg(target_os = "windows")]
-            const POTENTIAL_FIX: &str =
-                " Updating the graphics drivers on this system may resolve this issue.";
+            const POTENTIAL_FIX_KEY: &str = "main-login-render_backend_failed-fix-windows";
             #[cfg(target_os = "macos")]
-            const POTENTIAL_FIX: &str = "";
+            const POTENTIAL_FIX_KEY: &str = "main-login-render_backend_failed-fix-none";
             #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-            const POTENTIAL_FIX: &str =
-                " Installing or updating vulkan drivers may resolve this issue.";
+            const POTENTIAL_FIX_KEY: &str = "main-login-render_backend_failed-fix-vulkan";
 
-            panic!(
-                "Failed to select a rendering backend! No compatible backends were found. We \
-                 currently support vulkan, metal, dx12, and opengl.{} If the issue persists, \
-                 please include the operating system and GPU details in your bug report to help \
-                 us identify the cause.",
-                POTENTIAL_FIX
-            );
+            let potential_fix = i18n.read().get_msg(POTENTIAL_FIX_KEY).into_owned();
+            panic!("{}", i18n.read().get_msg_ctx("main-login-render_backend_failed", &i18n::fluent_args! {
+                "potential_fix" => potential_fix,
+            }));
         },
-        Err(error) => panic!("Failed to create window!: {:?}", error),
+        Err(error) => panic!(
+            "{}",
+            i18n.read().get_msg_ctx("main-login-window_create_failed", &i18n::fluent_args! {
+                "raw_error" => format!("{error:?}"),
+            })
+        ),
     };
 
     let clipboard = veloren_voxygen::ui::ice::Clipboard::connect(window.window());

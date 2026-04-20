@@ -672,12 +672,8 @@ impl Client {
         // useful for bots.
         let mut task = tokio::task::spawn_blocking(move || {
             let map_size_lg =
-                common::terrain::MapSizeLg::new(world_map.dimensions_lg).map_err(|_| {
-                    Error::Other(format!(
-                        "Server sent bad world map dimensions: {:?}",
-                        world_map.dimensions_lg,
-                    ))
-                })?;
+                common::terrain::MapSizeLg::new(world_map.dimensions_lg)
+                    .map_err(|_| Error::Other(error::OTHER_BAD_WORLD_MAP_DIMENSIONS.into()))?;
             let sea_level = world_map.default_chunk.get_min_z() as f32;
 
             // Initialize `State`
@@ -730,10 +726,10 @@ impl Client {
             let rgba = world_map.rgba;
             let alt = world_map.alt;
             if rgba.size() != map_size.map(|e| e as i32) {
-                return Err(Error::Other("Server sent a bad world map image".into()));
+                return Err(Error::Other(error::OTHER_BAD_WORLD_MAP_IMAGE.into()));
             }
             if alt.size() != map_size.map(|e| e as i32) {
-                return Err(Error::Other("Server sent a bad altitude map.".into()));
+                return Err(Error::Other(error::OTHER_BAD_ALTITUDE_MAP.into()));
             }
             let [west, east] = world_map.horizons;
             let scale_angle = |a: u8| (a as f32 / 255.0 * <f32 as FloatConst>::FRAC_PI_2()).tan();
@@ -956,7 +952,7 @@ impl Client {
                         // Should not fail if the dimensions are correct.
                         let map =
                             image::ImageBuffer::from_raw(u32::from(map_size.x), u32::from(map_size.y), raw);
-                        map.ok_or_else(|| Error::Other("Server sent a bad world map image".into()))?
+                        map.ok_or_else(|| Error::Other(error::OTHER_BAD_WORLD_MAP_IMAGE.into()))?
                     })
                     // Flip the image, since Voxygen uses an orientation where rotation from
                     // positive x axis to positive y axis is counterclockwise around the z axis.
@@ -2785,7 +2781,7 @@ impl Client {
                     // Clear pending trade
                     self.pending_trade = None;
                 } else {
-                    return Err(Error::Other("Failed to find entity from uid.".into()));
+                    return Err(Error::Other(error::OTHER_ENTITY_FROM_UID_NOT_FOUND.into()));
                 }
             },
             ServerGeneral::TimeOfDay(time_of_day, calendar, new_time, time_scale) => {
@@ -2869,20 +2865,21 @@ impl Client {
                                 .values()
                                 .any(|r| !matches!(r, group::Role::Pet))
                         {
-                            frontend_events
-                                // TODO: localise
-                                .push(Event::Chat(comp::ChatType::Meta.into_plain_msg(
-                                    "Type /g or /group to chat with your group members",
-                                )));
+                            frontend_events.push(Event::Chat(
+                                comp::ChatType::Meta
+                                    .into_msg(Content::localized("hud-chat-group_message_hint")),
+                            ));
                         }
                         if let Some(player_info) = self.player_list.get(&uid) {
                             frontend_events.push(Event::Chat(
                                 // TODO: localise, uses deprecated personalize_alias
                                 #[expect(deprecated, reason = "i18n alias")]
-                                comp::ChatType::GroupMeta("Group".into()).into_plain_msg(format!(
-                                    "[{}] joined group",
-                                    self.personalize_alias(uid, player_info.player_alias.clone())
-                                )),
+                                comp::ChatType::GroupMeta("Group".into()).into_msg(
+                                    Content::localized_with_args("hud-chat-group-joined", [(
+                                        "name",
+                                        self.personalize_alias(uid, player_info.player_alias.clone()),
+                                    )]),
+                                ),
                             ));
                         }
                         if self.group_members.insert(uid, role) == Some(role) {
@@ -2898,10 +2895,12 @@ impl Client {
                             frontend_events.push(Event::Chat(
                                 // TODO: localise, uses deprecated personalize_alias
                                 #[expect(deprecated, reason = "i18n alias")]
-                                comp::ChatType::GroupMeta("Group".into()).into_plain_msg(format!(
-                                    "[{}] left group",
-                                    self.personalize_alias(uid, player_info.player_alias.clone())
-                                )),
+                                comp::ChatType::GroupMeta("Group".into()).into_msg(
+                                    Content::localized_with_args("hud-chat-group-left", [(
+                                        "name",
+                                        self.personalize_alias(uid, player_info.player_alias.clone()),
+                                    )]),
+                                ),
                             ));
                             frontend_events.push(Event::MapMarker(
                                 comp::MapMarkerUpdate::GroupMember(uid, MapMarkerChange::Remove),

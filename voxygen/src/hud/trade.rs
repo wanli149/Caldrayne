@@ -462,14 +462,14 @@ impl<'a> Trade<'a> {
             let buttons_top = 53.0;
             let (txt, btn, hover, press) = if self.show.trade_details {
                 (
-                    "Grid mode",
+                    self.localized_strings.get_msg("hud-bag-switch_view_grid"),
                     self.imgs.grid_btn,
                     self.imgs.grid_btn_hover,
                     self.imgs.grid_btn_press,
                 )
             } else {
                 (
-                    "List mode",
+                    self.localized_strings.get_msg("hud-bag-switch_view_list"),
                     self.imgs.list_btn,
                     self.imgs.list_btn_hover,
                     self.imgs.list_btn_press,
@@ -481,7 +481,7 @@ impl<'a> Trade<'a> {
                 .press_image(press);
             if details_btn
                 .mid_top_with_margin_on(state.bg_ids.bg_frame, buttons_top)
-                .with_tooltip(self.tooltip_manager, txt, "", &bag_tooltip, TEXT_COLOR)
+                .with_tooltip(self.tooltip_manager, &txt, "", &bag_tooltip, TEXT_COLOR)
                 .set(state.ids.trade_details_btn, ui)
                 .was_clicked()
             {
@@ -632,7 +632,7 @@ impl<'a> Trade<'a> {
             total_text_height += label_height;
         }
         if total_quantity == 0 {
-            Text::new("Nothing!")
+            Text::new(&self.localized_strings.get_msg("hud-trade-empty"))
                 .top_left_with_margins_on(state.ids.inv_alignment[who], 10.0, 0.0)
                 .font_id(self.fonts.cyri.conrod_id)
                 .font_size(self.fonts.cyri.scale(20))

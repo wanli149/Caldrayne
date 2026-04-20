@@ -315,11 +315,11 @@ impl<'a> System<'a> for Sys {
                                             "All entries in the new player list were explicitly \
                                              joining on client",
                                         );
-                                    let _ = old_client.send(ServerGeneral::Disconnect(
-                                        DisconnectReason::Kicked(String::from(
-                                            "You have logged in from another location.",
-                                        )),
-                                    ));
+                                        let _ = old_client.send(ServerGeneral::Disconnect(
+                                            DisconnectReason::Kicked(String::from(
+                                                "你的账号已在其他位置登录。",
+                                            )),
+                                        ));
                                 } else {
                                     drop(new_players_guard);
                                     // A player without a client is strange, so we don't really want

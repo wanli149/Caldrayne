@@ -986,14 +986,14 @@ impl Widget for Bag<'_> {
             let buttons_top = if self.show.bag_inv { 53.0 } else { 460.0 };
             let (txt, btn, hover, press) = if self.show.bag_details {
                 (
-                    "Grid mode",
+                    self.localized_strings.get_msg("hud-bag-switch_view_grid"),
                     self.imgs.grid_btn,
                     self.imgs.grid_btn_hover,
                     self.imgs.grid_btn_press,
                 )
             } else {
                 (
-                    "List mode",
+                    self.localized_strings.get_msg("hud-bag-switch_view_list"),
                     self.imgs.list_btn,
                     self.imgs.list_btn_hover,
                     self.imgs.list_btn_press,
@@ -1005,7 +1005,7 @@ impl Widget for Bag<'_> {
                 .press_image(press);
             if details_btn
                 .mid_top_with_margin_on(state.bg_ids.bg_frame, buttons_top)
-                .with_tooltip(self.tooltip_manager, txt, "", &bag_tooltip, TEXT_COLOR)
+                .with_tooltip(self.tooltip_manager, &txt, "", &bag_tooltip, TEXT_COLOR)
                 .set(state.ids.bag_details_btn, ui)
                 .was_clicked()
             {
@@ -1014,14 +1014,14 @@ impl Widget for Bag<'_> {
             // Button to expand bag
             let (txt, btn, hover, press) = if self.show.bag_inv {
                 (
-                    "Show Loadout",
+                    self.localized_strings.get_msg("hud-bag-show_loadout"),
                     self.imgs.collapse_btn,
                     self.imgs.collapse_btn_hover,
                     self.imgs.collapse_btn_press,
                 )
             } else {
                 (
-                    "Expand Bag",
+                    self.localized_strings.get_msg("hud-bag-expand_bag"),
                     self.imgs.expand_btn,
                     self.imgs.expand_btn_hover,
                     self.imgs.expand_btn_press,
@@ -1036,7 +1036,7 @@ impl Widget for Bag<'_> {
             if (inventory.slots().count() > 45 || self.show.bag_inv)
                 && expand_btn
                     .top_right_with_margins_on(state.bg_ids.bg_frame, buttons_top, 37.0)
-                    .with_tooltip(self.tooltip_manager, txt, "", &bag_tooltip, TEXT_COLOR)
+                    .with_tooltip(self.tooltip_manager, &txt, "", &bag_tooltip, TEXT_COLOR)
                     .set(state.ids.bag_expand_btn, ui)
                     .was_clicked()
             {

@@ -70,7 +70,7 @@ pub(crate) async fn try_connect<F>(
 where
     F: Fn(SocketAddr) -> network::ConnectAddr,
 {
-    use crate::error::Error;
+    use crate::error::{Error, OTHER_NO_IP_ADDR};
     let mut participant = None;
     for mut addr in resolve(address, prefer_ipv6)
         .await
@@ -89,7 +89,7 @@ where
             Err(e) => participant = Some(Err(Error::NetworkErr(e))),
         }
     }
-    participant.unwrap_or_else(|| Err(Error::Other("No Ip Addr provided".to_string())))
+    participant.unwrap_or_else(|| Err(Error::Other(OTHER_NO_IP_ADDR.to_string())))
 }
 
 fn sort_ipv6(s: impl Iterator<Item = SocketAddr>, prefer_ipv6: bool) -> Vec<SocketAddr> {

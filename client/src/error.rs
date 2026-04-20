@@ -5,6 +5,12 @@ use network::{ParticipantError, StreamError};
 use rustls::Error as RustlsError;
 use specs::error::Error as SpecsError;
 
+pub const OTHER_NO_IP_ADDR: &str = "client.no_ip_addr";
+pub const OTHER_BAD_WORLD_MAP_DIMENSIONS: &str = "client.bad_world_map_dimensions";
+pub const OTHER_BAD_WORLD_MAP_IMAGE: &str = "client.bad_world_map_image";
+pub const OTHER_BAD_ALTITUDE_MAP: &str = "client.bad_altitude_map";
+pub const OTHER_ENTITY_FROM_UID_NOT_FOUND: &str = "client.entity_from_uid_not_found";
+
 #[derive(Debug)]
 pub enum Error {
     Kicked(String),

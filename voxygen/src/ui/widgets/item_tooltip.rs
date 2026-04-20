@@ -1335,7 +1335,7 @@ impl Widget for ItemTooltip<'_> {
         // Stats
         let stats_count = util::line_count(self.item, self.msm, self.localized_strings);
         let stat_h = if stats_count > 0 {
-            widget::Text::new("placeholder")
+            widget::Text::new("Hg")
                 .with_style(self.style.desc)
                 .get_h(ui)
                 .unwrap_or(0.0)

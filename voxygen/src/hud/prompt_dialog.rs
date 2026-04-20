@@ -80,7 +80,7 @@ impl Widget for PromptDialog<'_> {
     fn update(self, args: widget::UpdateArgs<Self>) -> Self::Event {
         common_base::prof_span!("PromptDialog::update");
         let widget::UpdateArgs { state, ui, .. } = args;
-        let _localized_strings = &self.localized_strings;
+        let localized_strings = self.localized_strings.read();
         let mut event: Option<DialogOutcomeEvent> = None;
 
         let accept_key = self
@@ -176,7 +176,7 @@ impl Widget for PromptDialog<'_> {
                     self.prompt_dialog_settings.negative_event.as_ref().cloned(),
                 ));
             }
-            Text::new("Decline")
+            Text::new(&localized_strings.get_msg("common-decline"))
                 .bottom_left_with_margins_on(state.ids.decline_key, 4.0, 28.0)
                 .font_id(self.fonts.cyri.conrod_id)
                 .font_size(self.fonts.cyri.scale(18))

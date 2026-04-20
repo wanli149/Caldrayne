@@ -221,7 +221,7 @@ quinn = { version = "0.11" }
 
 [patch.crates-io]
 # until next specs release
-specs = { git = "https://github.com/amethyst/specs.git", rev = "4e2da1df29ee840baa9b936593c45592b7c9ae27" }
+specs = { path = "vendor/specs" }
 
 # # Uncomment this to use a local fork of winit (for testing purposes)
 # winit = { path = "../winit" }

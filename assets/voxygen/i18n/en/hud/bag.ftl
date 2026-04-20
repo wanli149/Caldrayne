@@ -46,6 +46,10 @@ hud-bag-change_to_sort_by_quality = Change to sort by Quality
 hud-bag-change_to_sort_by_category = Change to sort by Category
 hud-bag-change_to_sort_by_tag = Change to sort by Tag
 hud-bag-change_to_sort_by_quantity = Change to sort by Quantity
+hud-bag-switch_view_grid = Switch to grid view
+hud-bag-switch_view_list = Switch to list view
+hud-bag-show_loadout = Show loadout
+hud-bag-expand_bag = Expand bag
 hud-bag-use_slot_equip_drop_items = { $slot_deficit ->
     [1] Equipping this item will result in insufficient inventory space to hold the items in your inventory and 1 item will drop on the floor. Do you wish to continue?
     *[other] Equipping this item will result in insufficient inventory space to hold the items in your inventory and { $slot_deficit } items will drop on the floor. Do you wish to continue?

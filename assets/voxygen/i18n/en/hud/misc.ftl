@@ -37,10 +37,10 @@ hud-temp_quest_text =
 hud-spell = Spells
 hud-diary = Diary
 hud-free_look_indicator =
-{ $toggle ->
-[0] Free look active. Press { $key } to disable.
-*[other] Free look active. Stop holding { $key } to disable.
-}
+    { $toggle ->
+        [0] Free look active. Press { $key } to disable.
+       *[other] Free look active. Stop holding { $key } to disable.
+    }
 hud-camera_clamp_indicator = Camera vertical clamp active. Press { $key } to disable.
 hud-auto_walk_indicator = Auto walk/swim active
 hud-zoom_lock_indicator-remind = Zoom locked

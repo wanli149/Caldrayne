@@ -15,7 +15,11 @@ use chrono::{DateTime, Local, Utc};
 use client::{
     Client, ClientInitStage, ServerInfo,
     addr::ConnectionArgs,
-    error::{InitProtocolError, NetworkConnectError, NetworkError},
+    error::{
+        InitProtocolError, NetworkConnectError, NetworkError, OTHER_BAD_ALTITUDE_MAP,
+        OTHER_BAD_WORLD_MAP_DIMENSIONS, OTHER_BAD_WORLD_MAP_IMAGE,
+        OTHER_ENTITY_FROM_UID_NOT_FOUND, OTHER_NO_IP_ADDR,
+    },
 };
 use client_init::{ClientInit, Error as InitError, Msg as InitMsg};
 use common::{comp, event::UpdateCharacterMetadata};
@@ -657,8 +661,19 @@ pub(crate) fn get_client_msg_error(
                 e
             )
         },
-        Error::Other(e) => {
-            format!("{}: {}", localization.get_msg("common-error"), e)
+        Error::Other(e) => match e.as_str() {
+            OTHER_NO_IP_ADDR => localization.get_msg("main-login-no_ip_addr").into(),
+            OTHER_BAD_WORLD_MAP_DIMENSIONS => {
+                localization.get_msg("main-login-bad_world_map_dimensions").into()
+            },
+            OTHER_BAD_WORLD_MAP_IMAGE => {
+                localization.get_msg("main-login-bad_world_map_image").into()
+            },
+            OTHER_BAD_ALTITUDE_MAP => localization.get_msg("main-login-bad_altitude_map").into(),
+            OTHER_ENTITY_FROM_UID_NOT_FOUND => {
+                localization.get_msg("main-login-entity_sync_failed").into()
+            },
+            _ => format!("{}: {}", localization.get_msg("common-error"), e),
         },
         Error::AuthClientError(e) => match e {
             // TODO: remove parentheses

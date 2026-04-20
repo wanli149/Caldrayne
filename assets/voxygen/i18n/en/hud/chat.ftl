@@ -4,6 +4,9 @@ hud-chat-online_msg = [{ $name }] is online now.
 hud-chat-offline_msg = [{ $name }] went offline.
 hud-chat-goodbye = Goodbye!
 hud-chat-connection_lost = Connection lost. Kicking in { $time } seconds.
+hud-chat-group_message_hint = Type /g or /group to chat with your group members.
+hud-chat-group-joined = [{ $name }] joined the group.
+hud-chat-group-left = [{ $name }] left the group.
 
 ## Player /tell messages, $user_gender should be available
 

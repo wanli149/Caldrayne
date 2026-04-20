@@ -545,3 +545,269 @@ armor-misc-foot-jackalope = 神兽毛拖鞋
     .desc = 如此温暖和舒适！
 armor-misc-foot-ski = 木制滑雪板
     .desc = 最好在雪地下坡使用。
+common-items-npc_armor-bird_medium-bloodmoon_bat = 血月蝙蝠护甲
+    .desc = 韧性抗性。
+
+common-items-npc_armor-golem-irongolem = 铁魔像护甲
+    .desc = 铁魔像所穿戴的护甲。
+
+common-items-npc_armor-golem-mogwai = 魔怪护甲
+    .desc = 魔怪所穿戴的护甲。
+
+common-items-npc_armor-biped_small-ashen-foot-warrior = 灰烬缠足
+    .desc = 测试文本
+
+common-items-npc_armor-biped_small-ashen-head-warrior = 灰烬头盔
+    .desc = 测试文本
+
+common-items-npc_armor-biped_small-ashen-pants-warrior = 灰烬战袍
+    .desc = 测试文本
+
+common-items-npc_armor-biped_small-ashen-chest-warrior = 灰烬胸甲
+    .desc = 测试文本
+
+common-items-npc_armor-biped_small-ashen-hand-warrior = 灰烬护手
+    .desc = 测试文本
+
+common-items-npc_armor-biped_small-cactid-head-cactid = 仙人掌精
+    .desc = 植物生物。
+
+common-items-npc_armor-biped_small-cactid-foot-cactid = 仙人掌精
+    .desc = 植物生物。
+
+common-items-npc_armor-biped_small-cactid-pants-cactid = 仙人掌精
+    .desc = 植物生物。
+
+common-items-npc_armor-biped_small-cactid-chest-cactid = 仙人掌精
+    .desc = 植物生物。
+
+common-items-npc_armor-biped_small-cactid-hand-cactid = 仙人掌精
+    .desc = 植物生物。
+
+common-items-npc_armor-biped_small-treasure_egg-chest-treasure_egg = 宝藏蛋胸甲
+    .desc = 宝藏蛋胸甲
+
+common-items-npc_armor-biped_small-treasure_egg-foot-treasure_egg = 宝藏蛋足甲
+    .desc = 宝藏蛋足甲
+
+common-items-npc_armor-biped_small-jiangshi-head-jiangshi = 僵尸
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-jiangshi-chest-jiangshi = 僵尸
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-jiangshi-pants-jiangshi = 僵尸
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-jiangshi-hand-jiangshi = 僵尸
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-jiangshi-foot-jiangshi = 僵尸
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-shamanic_spirit-head-shamanic_spirit = 萨满之灵
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-shamanic_spirit-chest-shamanic_spirit = 萨满之灵
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-shamanic_spirit-pants-shamanic_spirit = 萨满之灵
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-shamanic_spirit-hand-shamanic_spirit = 萨满之灵
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-bloodmoon_heiress-head-bloodmoon_heiress = 血月继承者
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-bloodmoon_heiress-chest-bloodmoon_heiress = 血月继承者
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-bloodmoon_heiress-pants-bloodmoon_heiress = 血月继承者
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-bloodmoon_heiress-hand-bloodmoon_heiress = 血月继承者
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-bloodmoon_heiress-foot-bloodmoon_heiress = 血月继承者
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-bloodservant-head-bloodservant = 血仆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-bloodservant-chest-bloodservant = 血仆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-bloodservant-pants-bloodservant = 血仆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-bloodservant-hand-bloodservant = 血仆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-bloodservant-foot-bloodservant = 血仆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-harlequin-head-harlequin = 小丑
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-harlequin-chest-harlequin = 小丑
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-harlequin-pants-harlequin = 小丑
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-harlequin-hand-harlequin = 小丑
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-harlequin-foot-harlequin = 小丑
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_thug-head-goblin_thug = 哥布林暴徒
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_thug-chest-goblin_thug = 哥布林暴徒
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_thug-pants-goblin_thug = 哥布林暴徒
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_thug-hand-goblin_thug = 哥布林暴徒
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_thug-foot-goblin_thug = 哥布林暴徒
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_chucker-head-goblin_chucker = 哥布林投掷者
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_chucker-chest-goblin_chucker = 哥布林投掷者
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_chucker-pants-goblin_chucker = 哥布林投掷者
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_chucker-hand-goblin_chucker = 哥布林投掷者
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_chucker-foot-goblin_chucker = 哥布林投掷者
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_ruffian-head-goblin_ruffian = 哥布林恶棍
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_ruffian-chest-goblin_ruffian = 哥布林恶棍
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_ruffian-pants-goblin_ruffian = 哥布林恶棍
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_ruffian-hand-goblin_ruffian = 哥布林恶棍
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-goblin_ruffian-foot-goblin_ruffian = 哥布林恶棍
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-green_legoom-head-green_legoom = 绿色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-green_legoom-chest-green_legoom = 绿色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-green_legoom-pants-green_legoom = 绿色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-green_legoom-hand-green_legoom = 绿色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-green_legoom-foot-green_legoom = 绿色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-ochre_legoom-head-ochre_legoom = 赭色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-ochre_legoom-chest-ochre_legoom = 赭色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-ochre_legoom-pants-ochre_legoom = 赭色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-ochre_legoom-hand-ochre_legoom = 赭色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-ochre_legoom-foot-ochre_legoom = 赭色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-purple_legoom-head-purple_legoom = 紫色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-purple_legoom-chest-purple_legoom = 紫色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-purple_legoom-pants-purple_legoom = 紫色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-purple_legoom-hand-purple_legoom = 紫色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-purple_legoom-foot-purple_legoom = 紫色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-red_legoom-head-red_legoom = 红色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-red_legoom-chest-red_legoom = 红色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-red_legoom-pants-red_legoom = 红色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-red_legoom-hand-red_legoom = 红色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-red_legoom-foot-red_legoom = 红色勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-umber_legoom-head-umber_legoom = 棕褐勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-umber_legoom-chest-umber_legoom = 棕褐勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-umber_legoom-pants-umber_legoom = 棕褐勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-umber_legoom-hand-umber_legoom = 棕褐勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-biped_small-umber_legoom-foot-umber_legoom = 棕褐勒古姆
+    .desc = 成员所使用的礼仪服饰。
+
+common-items-npc_armor-crustacean-karkatha = 卡尔卡萨护甲
+    .desc = 坚硬到足以承受深海的压力。
+
+common-items-npc_armor-quadruped_low-basilisk = 蛇怪护甲
+    .desc = 由厚重坚实的甲片构成。
+
+common-items-npc_armor-quadruped_low-drake = 龙兽护甲
+    .desc = 能够适应温度变化。
+
+common-items-npc_armor-quadruped_low-snapper = 咬龟甲壳
+    .desc = 说到底也不过是一层壳。
+
+common-items-npc_armor-quadruped_medium-tarasque = 塔拉斯克护甲
+    .desc = 测试文本
+
+common-items-npc_armor-generic = NPC 通用护甲
+    .desc = 测试文本
+
+common-items-npc_armor-generic_high = NPC 高级通用护甲
+    .desc = 测试文本
+
+common-items-npc_armor-biped_large-gigas_fire= 火焰巨神护甲
+    .desc = 最好的防守就是进攻。
+
+common-items-npc_armor-biped_large-forgemaster = 锻造大师护甲
+    .desc = 锻造大师所穿戴的护甲。
+
+common-items-npc_armor-biped_large-terracotta = 陶俑护甲
+    .desc = 只是有点落灰而已。

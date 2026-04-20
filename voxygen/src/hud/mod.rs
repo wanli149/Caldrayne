@@ -2759,10 +2759,10 @@ impl Hud {
             // Player's position
             let coordinates_text = match debug_info.coordinates {
                 Some(coordinates) => format!(
-                    "Coordinates: ({:.0}, {:.0}, {:.0})",
+                    "坐标：({:.0}, {:.0}, {:.0})",
                     coordinates.0.x, coordinates.0.y, coordinates.0.z,
                 ),
-                None => "Player has no Pos component".to_owned(),
+                None => "玩家实体缺少位置组件".to_owned(),
             };
             Text::new(&coordinates_text)
                 .color(TEXT_COLOR)
@@ -2778,7 +2778,7 @@ impl Hud {
                 Some(velocity) => {
                     let velocity = velocity.0;
                     let velocity_text = format!(
-                        "Velocity: ({:.1}, {:.1}, {:.1}) [{:.1} u/s]",
+                        "速度：({:.1}, {:.1}, {:.1}) [{:.1} 单位/秒]",
                         velocity.x,
                         velocity.y,
                         velocity.z,
@@ -2788,15 +2788,15 @@ impl Hud {
                     let dz = velocity.z;
                     // don't divide by zero
                     let glide_ratio_text = if dz.abs() > 0.0001 {
-                        format!("Glide Ratio: {:.1}", -(horizontal_velocity / dz))
+                        format!("滑翔比：{:.1}", -(horizontal_velocity / dz))
                     } else {
-                        "Glide Ratio: Altitude is constant".to_owned()
+                        "滑翔比：当前高度保持不变".to_owned()
                     };
 
                     (velocity_text, glide_ratio_text)
                 },
                 None => {
-                    let err = "Player has no Vel component";
+                    let err = "玩家实体缺少速度组件";
                     (err.to_owned(), err.to_owned())
                 },
             };
@@ -2849,11 +2849,11 @@ impl Hud {
                 Some(ori) => {
                     let orientation = ori.look_dir();
                     format!(
-                        "Orientation: ({:.2}, {:.2}, {:.2})",
+                        "朝向：({:.2}, {:.2}, {:.2})",
                         orientation.x, orientation.y, orientation.z,
                     )
                 },
-                None => "Player has no Ori component".to_owned(),
+                None => "玩家实体缺少朝向组件".to_owned(),
             };
             Text::new(&orientation_text)
                 .color(TEXT_COLOR)
@@ -2868,7 +2868,7 @@ impl Hud {
                 let look_vec = debug_info.look_dir.to_vec();
 
                 format!(
-                    "Look Direction: ({:.2}, {:.2}, {:.2})",
+                    "视线方向：({:.2}, {:.2}, {:.2})",
                     look_vec.x, look_vec.y, look_vec.z,
                 )
             };
@@ -2883,7 +2883,7 @@ impl Hud {
 
             // Loaded distance
             let debug_msg_loaded_distance = format!(
-                "View distance: {:.2} blocks ({:.2} chunks)",
+                "视距：{:.2} 格（{:.2} 区块）",
                 client.loaded_distance(),
                 client.loaded_distance() / TerrainChunk::RECT_SIZE.x as f32,
             );
@@ -2904,7 +2904,7 @@ impl Hud {
                 0,
             )
             .expect("time always valid");
-            let debug_msg_time = format!("Time: {}", current_time.format("%H:%M"));
+            let debug_msg_time = format!("时间：{}", current_time.format("%H:%M"));
             Text::new(&debug_msg_time)
                 .color(TEXT_COLOR)
                 .down_from(self.ids.loaded_distance, V_PAD)
@@ -2917,7 +2917,7 @@ impl Hud {
             // Weather
             let weather = client.weather_at_player();
             let debug_msg_weather = format!(
-                "Weather({kind}): {{cloud: {cloud:.2}, rain: {rain:.2}, wind: <{wind_x:.0}, \
+                "天气（{kind}）：{{云量：{cloud:.2}，降雨：{rain:.2}，风：<{wind_x:.0}, \
                  {wind_y:.0}>}}",
                 kind = weather.get_kind(),
                 cloud = weather.cloud,
@@ -2936,7 +2936,7 @@ impl Hud {
 
             // Number of entities
             let entity_count = client.state().ecs().entities().join().count();
-            let debug_msg_entity_count = format!("Entity count: {}", entity_count);
+            let debug_msg_entity_count = format!("实体数量：{}", entity_count);
             Text::new(&debug_msg_entity_count)
                 .color(TEXT_COLOR)
                 .down_from(self.ids.weather, V_PAD)
@@ -2948,7 +2948,7 @@ impl Hud {
 
             // Number of chunks
             let debug_msg_num_chunks = format!(
-                "Chunks: {} ({} visible) & {} (shadow)",
+                "区块：{}（可见 {}，阴影 {}）",
                 debug_info.num_chunks, debug_info.num_visible_chunks, debug_info.num_shadow_chunks,
             );
             Text::new(&debug_msg_num_chunks)
@@ -2961,7 +2961,7 @@ impl Hud {
             debug_msg_line_count += 1;
 
             // Type of biome
-            let debug_msg_biome_type = format!("Biome: {:?}", client.current_biome());
+            let debug_msg_biome_type = format!("生态群系：{:?}", client.current_biome());
             Text::new(&debug_msg_biome_type)
                 .color(TEXT_COLOR)
                 .down_from(self.ids.num_chunks, V_PAD)
@@ -2972,7 +2972,7 @@ impl Hud {
             debug_msg_line_count += 1;
 
             // Type of site
-            let debug_msg_site_type = format!("Site: {:?}", client.current_site());
+            let debug_msg_site_type = format!("地点：{:?}", client.current_site());
             Text::new(&debug_msg_site_type)
                 .color(TEXT_COLOR)
                 .down_from(self.ids.current_biome, V_PAD)
@@ -2984,7 +2984,7 @@ impl Hud {
 
             // Current song info
             let debug_msg_current_song = format!(
-                "Now playing: {} [{}]",
+                "当前播放：{} [{}]",
                 debug_info.current_track, debug_info.current_artist,
             );
             Text::new(&debug_msg_current_song)
@@ -2997,7 +2997,7 @@ impl Hud {
             debug_msg_line_count += 1;
 
             let debug_msg_active_channels = format!(
-                "Active channels: M{}, A{}, S{}, U{}, CPU: {:2.0}%",
+                "活跃声道：M{}，A{}，S{}，U{}，CPU：{:2.0}%",
                 debug_info.active_channels.music,
                 debug_info.active_channels.ambience,
                 debug_info.active_channels.sfx,
@@ -3014,7 +3014,7 @@ impl Hud {
             debug_msg_line_count += 1;
 
             // Number of lights
-            let debug_msg_num_lights = format!("Lights: {}", debug_info.num_lights,);
+            let debug_msg_num_lights = format!("光源数量：{}", debug_info.num_lights,);
             Text::new(&debug_msg_num_lights)
                 .color(TEXT_COLOR)
                 .down_from(self.ids.active_channels, V_PAD)
@@ -3026,7 +3026,7 @@ impl Hud {
 
             // Number of figures
             let debug_msg_num_figures = format!(
-                "Figures: {} ({} visible)",
+                "模型数量：{}（可见 {}）",
                 debug_info.num_figures, debug_info.num_figures_visible,
             );
             Text::new(&debug_msg_num_figures)
@@ -3040,7 +3040,7 @@ impl Hud {
 
             // Number of particles
             let debug_msg_num_particles = format!(
-                "Particles: {} ({} visible)",
+                "粒子数量：{}（可见 {}）",
                 debug_info.num_particles, debug_info.num_particles_visible,
             );
             Text::new(&debug_msg_num_particles)
@@ -3054,7 +3054,7 @@ impl Hud {
 
             // Graphics backend
             let debug_msg_graphics_backend = format!(
-                "Graphics backend: {}",
+                "图形后端：{}",
                 global_state.window.renderer().graphics_backend(),
             );
             Text::new(&debug_msg_graphics_backend)
@@ -5641,19 +5641,19 @@ pub fn angle_of_attack_text(
     let glider_ori = if let Some(CharacterState::Glide(data)) = character_state {
         data.ori
     } else {
-        return "Angle of Attack: Not gliding".to_owned();
+        return "迎角：当前未滑翔".to_owned();
     };
 
     let fluid = if let Some(fluid) = fluid {
         fluid
     } else {
-        return "Angle of Attack: Not in fluid".to_owned();
+        return "迎角：当前不在流体环境中".to_owned();
     };
 
     let velocity = if let Some(velocity) = velocity {
         velocity
     } else {
-        return "Angle of Attack: Player has no vel component".to_owned();
+        return "迎角：玩家实体缺少速度组件".to_owned();
     };
     let rel_flow = fluid.relative_flow(&velocity).0;
     let v_sq = rel_flow.magnitude_squared();
@@ -5663,25 +5663,25 @@ pub fn angle_of_attack_text(
         let aoe = fluid_dynamics::angle_of_attack(&glider_ori, &rel_flow_dir);
         let (rel_x, rel_y, rel_z) = (rel_flow.x, rel_flow.y, rel_flow.z);
         format!(
-            "Angle of Attack: {:.1} ({:.1},{:.1},{:.1})",
+            "迎角：{:.1}（{:.1}, {:.1}, {:.1}）",
             aoe.to_degrees(),
             rel_x,
             rel_y,
             rel_z
         )
     } else {
-        "Angle of Attack: Not moving".to_owned()
+        "迎角：当前未移动".to_owned()
     }
 }
 
 fn air_velocity(fluid: Option<comp::Fluid>) -> String {
     if let Some(comp::Fluid::Air { vel: air_vel, .. }) = fluid {
         format!(
-            "Air Velocity: ({:.1}, {:.1}, {:.1})",
+            "空气流速：({:.1}, {:.1}, {:.1})",
             air_vel.0.x, air_vel.0.y, air_vel.0.z
         )
     } else {
-        "Air Velocity: Not in Air".to_owned()
+        "空气流速：当前不在空气环境中".to_owned()
     }
 }
 

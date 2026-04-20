@@ -236,3 +236,194 @@ common-items-npc_weapons-hammer-wendigo_hammer = 温迪戈锤
     .desc = 占位符
 common-items-npc_weapons-hammer-yeti_hammer = 雪人锤
     .desc = 占位符
+common-items-npc_weapons-biped_small-mandragora = 曼德拉草
+    .desc = 测试
+
+common-items-npc_weapons-biped_small-ashen-axe = 灰烬战斧
+    .desc = { "" }
+
+common-items-npc_weapons-biped_small-ashen-staff = 灰烬法杖
+    .desc = { "" }
+
+common-items-npc_weapons-biped_small-vampire-harlequin_dagger = 小丑匕首
+    .desc = { "" }
+
+common-items-npc_weapons-biped_small-vampire-bloodservant_axe = 血仆战斧
+    .desc = { "" }
+
+common-items-npc_weapons-biped_small-vampire-bloodmoon_heiress_sword = 血月继承者之剑
+    .desc = { "" }
+
+common-items-npc_weapons-unique-goblin_thug_club = 哥布林暴徒木棒
+    .desc = { "" }
+
+common-items-npc_weapons-unique-goblin_chucker = 哥布林投掷器
+    .desc = { "" }
+
+common-items-npc_weapons-unique-goblin_ruffian_knife = 哥布林恶棍小刀
+    .desc = { "" }
+
+common-items-npc_weapons-unique-green_legoom_rake = 绿色勒古姆耙
+    .desc = { "" }
+
+common-items-npc_weapons-unique-ochre_legoom_spade = 赭色勒古姆铁锹
+    .desc = { "" }
+
+common-items-npc_weapons-unique-purple_legoom_pitchfork = 紫色勒古姆草叉
+    .desc = { "" }
+
+common-items-npc_weapons-unique-red_legoom_hoe = 红色勒古姆锄头
+    .desc = { "" }
+
+common-items-npc_weapons-unique-umber_legoom_hook = 棕褐勒古姆钩
+    .desc = { "" }
+
+common-items-npc_weapons-bow-terracotta_besieger_bow = 陶俑攻城者之弓
+    .desc = 占位符
+
+common-items-npc_weapons-sword-gigas_fire_sword = 火焰巨神之剑
+    .desc = 占位符
+
+common-items-npc_weapons-axe-executioner_axe = 刽子手战斧
+    .desc = 占位符
+
+common-items-npc_weapons-sword-terracotta_pursuer_sword = 陶俑追击者之剑
+    .desc = 占位符
+
+common-items-npc_weapons-unique-cactid = 仙人掌精
+    .desc = 仙人掌精。
+
+common-items-npc_weapons-unique-karkatha_pincer = 卡尔卡萨巨钳
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-cursekeeper_sceptre = 诅咒守护者权杖
+    .desc = 诅咒守护者权杖
+
+common-items-npc_weapons-unique-cursekeeper_sceptre_fake = 诅咒守护者权杖
+    .desc = 诅咒守护者权杖
+
+common-items-npc_weapons-unique-jiangshi = 僵尸法术
+    .desc = 僵尸法术
+
+common-items-npc_weapons-unique-mogwai = 魔怪法术
+    .desc = 魔怪法术
+
+common-items-npc_weapons-unique-shamanic_spirit = 萨满之灵
+    .desc = 萨满之灵
+
+common-items-npc_weapons-unique-terracotta_demolisher_fist = 陶俑破坏者之拳
+    .desc = 陶俑破坏者之拳
+
+common-items-npc_weapons-unique-terracotta_statue = 陶俑雕像
+    .desc = 陶俑雕像
+
+common-items-npc_weapons-unique-iron_golem_fist = 铁魔像之拳
+    .desc = 测试文本
+
+common-items-npc_weapons-hammer-forgemaster_hammer = 锻造大师之锤
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-snaretongue = 陷舌兽
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadsmall_long_range = 小型四足远程
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-darkhound = 暗猎犬
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-rocksnapper = 岩石咬龟
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-tidal_spear = 潮汐长矛
+    .desc = 戳刺
+
+common-items-npc_weapons-unique-claysteed = 泥土骏马之蹄
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-gravewarden_fist = 坟墓守护者之拳
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-arthropods-moltencrawler = 熔岩爬行者
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_low-asp = 角蝰
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_low-basilisk = 蛇怪
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_low-deadwood = 枯木兽
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_low-hakulaq = 哈库拉克
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_low-icedrake = 冰霜龙
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_low-lavadrake = 熔岩龙
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_low-maneater = 食人兽
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_low-tortoise = 陆龟
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_low-hydra = 九头蛇
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_medium-elephant = 大象
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_medium-alpaca = 羊驼
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_medium-antelope = 羚羊
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_medium-donkey = 驴
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_medium-grolgar = 格罗尔加
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_medium-highland = 高地种牛
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_medium-horse = 马
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_medium-moose = 驼鹿
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_medium-mouflon = 摩弗伦羊
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_medium-wolf = 狼
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_small-boar = 野猪
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_small-hyena = 鬣狗
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-quadruped_small-rodent = 啮齿动物
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-theropod-yale = 耶鲁兽
+    .desc = 测试文本
+
+common-items-npc_weapons-hammer-terracotta_punisher_club = 陶俑惩罚者棍棒
+    .desc = 占位符
+
+common-items-npc_weapons-unique-bloodmoon_bat = 血月蝙蝠
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-vampire_bat = 吸血蝙蝠
+    .desc = 测试文本
+
+common-items-npc_weapons-unique-strigoi_claws = 斯特里戈伊之爪
+    .desc = 测试文本

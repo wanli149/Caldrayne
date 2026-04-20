@@ -1,17 +1,17 @@
 sprite-grass-grass_long_5 = 高草
     .desc = 比兽人的鼻子还绿。
 sprite-wood-item-bamboo = 竹子
-    .desc = 一个巨型木质草。这可以在制作木制武器时使用。
+    .desc = 一种高大坚韧的木质草，可用于制作木制武器。
 sprite-wood-item-eldwood = 古老圆木
-    .desc = 遗留魔法的旧日志。可用于制造木制武器。
+    .desc = 散发着古老魔力的木材，可用于制作木制武器。
 sprite-wood-item-frostwood = 冰霜圆木
-    .desc = 来自冷藏生物群落的粗木。冷到触摸。这可以用于制造木制武器。
+    .desc = 产自寒冷地区的木材，触手冰凉，可用于制作木制武器。
 sprite-wood-item-hardwood = 硬质圆木
-    .desc = 额外的厚重和坚固的日志。这可以用于制造木制武器。
+    .desc = 格外厚实坚硬的木材，可用于制作木制武器。
 sprite-wood-item-ironwood = 铁质圆木
-    .desc = 一个特别坚固的木头。这可以用于制造木制武器。
+    .desc = 异常坚固的木材，可用于制作木制武器。
 sprite-wood-item-wood = 圆木
-    .desc = 定期、坚固的木头记录。这可以用于制造木制武器。
+    .desc = 常见而结实的木材，可用于制作木制武器。
 sprite-crafting_ing-abyssal_heart = 深渊之心
     .desc = 大衮的力量之源。
 sprite-crafting_ing-bowl = 碗
@@ -25,7 +25,7 @@ sprite-crafting_ing-coral_branch = 珊瑚枝
 sprite-crafting_ing-cotton_boll = 棉桃
     .desc = 从普通的棉花植物中采摘。
 sprite-crafting_ing-living_embers = 发光体
-    .desc = 一种纤维的残骸。
+    .desc = 火焰生物残留下来的余烬，仍隐隐散发着热度。
 sprite-crafting_ing-oil = 油
     .desc = 一单位厚重、粘稠的油。
 sprite-crafting_ing-pearl = 珍珠
@@ -35,9 +35,9 @@ sprite-crafting_ing-resin = 树脂
 sprite-seashells-shell-0 = 贝壳
     .desc = 来自海洋生物的贝壳。
 sprite-crafting_ing-sentient_seed = 智慧之种
-    .desc = 一个感情植物的未开发生成。
+    .desc = 智性植物尚未成熟的种子。
 sprite-crafting_ing-sticky_thread = 粘线
-    .desc = 一种杂乱的蜘蛛提取物，但裁缝可能会拿它来做点什么。
+    .desc = 从蜘蛛身上提取的黏韧丝线，裁缝也许能派上用场。
 sprite-rocks-rock-0 = 石头
     .desc = 地上的鹅卵石，没什么特别的。
 sprite-twigs-twigs-0 = 树枝
@@ -60,27 +60,27 @@ sprite-crafting_ing-hide-tough_hide = 坚韧的兽皮
     .desc = 一块相对坚韧而粗糙的兽皮，可以制成皮革。
 sprite-crafting_ing-animal_misc-claw = 猎食爪
     .desc =
-        来自掠食性动物的极其锋利的爪子。
+        来自凶猛掠食者的利爪。
 
-        这可以在制作武器时使用。
+        可用于制作灵活迅捷的武器。
 sprite-crafting_ing-animal_misc-fur = 柔软的皮毛
     .desc = 柔软的动物皮毛。
 sprite-crafting_ing-animal_misc-grim_eyeball = 冷酷的眼球
     .desc = 投来石化的目光。
 sprite-crafting_ing-animal_misc-large_horn = 大号角
     .desc =
-        来自动物的巨大尖角。
+        来自凶猛野兽的巨大尖角。
 
-        这可用于制作武器。
+        用它打造的武器，往往拥有更强的技能效果。
 sprite-crafting_ing-animal_misc-lively_vine = 鲜活藤蔓
-    .desc = 我想它刚才动了一下...
+    .desc = 它刚才好像动了一下……
 sprite-crafting_ing-animal_misc-phoenix_feather = 凤凰羽毛
     .desc = 据说有魔法属性。
 sprite-crafting_ing-animal_misc-sharp_fang = 锋利的獠牙
     .desc =
-        来自掠食性动物的极其锋利的牙齿。
+        来自凶猛野兽的锐利獠牙。
 
-        这可用于制作武器。
+        用它打造的武器，往往具备更强的持续效果。
 sprite-crafting_ing-animal_misc-venom_sac = 毒液囊
     .desc = 来自有毒生物的毒囊。
 sprite-crafting_ing-animal_misc-viscous_ooze = 粘性软泥
@@ -105,18 +105,18 @@ sprite-crafting_ing-cloth-linen_red = 红色亚麻布
     .desc = 一种亚麻纤维纺织品，染色后脱颖而出。
 sprite-crafting_ing-cloth-moonweave = 月纹布
     .desc = 一种轻巧但非常坚固的纺织品。
-sprite-crafting_ing-cloth-silk = 丝绸：
+sprite-crafting_ing-cloth-silk = 丝绸
     .desc = 蜘蛛产生的一种细而强的纤维。
 sprite-crafting_ing-cloth-sunsilk = 金色丝线
     .desc = 一种超自然的强力纺织品。
-sprite-crafting_ing-cloth-wool = 软羊毛。
+sprite-crafting_ing-cloth-wool = 软羊毛
     .desc = 来自动物的柔软羊毛。
 sprite-flowers-moonbell = 月铃儿
     .desc = 它在月光下熠熠生辉。
 sprite-crafting_ing-plant_fiber = 植物纤维
     .desc = 一段未经加工的植物材料。
 sprite-flowers-pyrebloom = 火焰花
-    .desc = 点击后长时间热门触摸。
+    .desc = 即使采下许久，仍带着温热的余温。
 sprite-flowers-flower_red-4 = 红花
     .desc = 可用作染色成分。
 sprite-flowers-sunflower_1 = 向日葵
@@ -126,9 +126,9 @@ sprite-flowers-flax = 野生亚麻
 sprite-flowers-yellow = 黄色花朵
     .desc = 像太阳一样发光。
 object-v-coin = 硬币
-    .desc = 珍贵的硬币，可以用来交换货物或者服务。
+    .desc = 珍贵的货币，可用于交换商品与服务。
 object-collar = 项圈
-    .desc = 驯服5格内的中立野生动物。
+    .desc = 可驯服 5 格范围内的中立野生动物。
 object-training_dummy = 训练假人
     .desc = 他叫威廉, 随意开火。
 object-mortar_pestle = 研磨器
@@ -171,7 +171,7 @@ sprite-mineral-ore-bloodstone = 血矿石
 sprite-mineral-ore-coal = 煤炭
     .desc = 一种深色、易燃的能源。
 sprite-mineral-ore-cobalt = 钴矿石
-    .desc = 一块蓝色的，闪亮的矿石。
+    .desc = 一种泛着蓝光的闪亮矿石。
 sprite-mineral-ore-copper = 铜矿石
     .desc = 一种棕色金属。青铜的重要成分。
 sprite-mineral-ore-gold = 金矿石
@@ -182,10 +182,10 @@ sprite-mineral-ore-silver = 银矿石
     .desc = 一种珍贵的闪亮灰白色金属。
 sprite-mineral-ore-tin = 锡矿石
     .desc = 一种银色金属。青铜的成分之一。
-sprite-velorite-velorite_ore = 云母
-    .desc = 一种异乎寻常的、奇异闪耀的矿石，它的起源似乎笼罩着神秘的色彩。
-sprite-velorite-velorite = 云母碎片
-    .desc = 它的表面闪烁着细小的符文，但你不知道它是什么意思。
+sprite-velorite-velorite_ore = 维罗石矿
+    .desc = 一种闪耀着奇异光泽的矿石，其来历至今仍笼罩在谜团之中。
+sprite-velorite-velorite = 维罗石碎片
+    .desc = 表面隐约闪烁着微小符文，但你尚无法读懂其中的含义。
 sprite-mineral-ingot-bloodsteel = 血钢锭
     .desc =
         血石和铁的合金，呈暗红色。
