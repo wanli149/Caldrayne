@@ -133,7 +133,7 @@ fn conrod_convert_mouse_button(button: &event::MouseButton) -> input::Button {
 fn conrod_convert_event(
     event: &WindowEvent,
     window: &winit::window::Window,
-    modifiers: winit::keyboard::ModifiersState,
+    _modifiers: winit::keyboard::ModifiersState,
 ) -> Option<Input> {
     let hidpi = window.scale_factor();
     let winit::dpi::LogicalSize { width, height } = window.inner_size().to_logical::<f64>(hidpi);
@@ -147,19 +147,6 @@ fn conrod_convert_event(
         },
         WindowEvent::Focused(focused) => Input::Focus(*focused),
         WindowEvent::KeyboardInput { event, .. } => {
-            // `conrod` expects different events for text input and pressed keys.
-            // We work around that by sending the key as text but only if no modifier is
-            // pressed, so shortcuts still work.
-            if let Some(text) = &event.text
-                && let Some(c) = text.chars().next()
-                && !c.is_control()
-                && !modifiers.alt_key()
-                && !modifiers.control_key()
-                && !modifiers.super_key()
-            {
-                return event.state.is_pressed().then(|| Input::Text(c.to_string()));
-            }
-
             let key = input::Button::Keyboard(conrod_convert_key(&event.logical_key));
 
             match event.state {
@@ -258,4 +245,6 @@ impl Event {
     }
 
     pub fn new_resize(dims: Vec2<f64>) -> Self { Self(Input::Resize(dims.x, dims.y)) }
+
+    pub fn new_text(text: String) -> Self { Self(Input::Text(text)) }
 }

@@ -15,12 +15,13 @@ use crate::{
             Element,
             component::neat_button,
             style,
-            widget::{
+            widget::{self,
                 BackgroundContainer, Image, Overlay, Padding,
                 compound_graphic::{CompoundGraphic, Graphic},
             },
         },
     },
+    window::{TextInputPolicy, TextInputSource, TextInputTarget},
 };
 
 use super::{Imgs, Message};
@@ -46,7 +47,9 @@ pub struct Screen {
     selection_list: scrollable::State,
 
     world_name: text_input::State,
+    world_name_bounds: widget::BoundsState,
     map_seed: text_input::State,
+    map_seed_bounds: widget::BoundsState,
     day_length: slider::State,
     random_seed_button: button::State,
     world_size_x: slider::State,
@@ -64,6 +67,33 @@ pub struct Screen {
 }
 
 impl Screen {
+    pub(super) fn active_text_input_target(
+        &self,
+        worlds: &crate::singleplayer::SingleplayerWorlds,
+        ui: &crate::ui::ice::IcedUi,
+    ) -> Option<TextInputTarget> {
+        let world = worlds.current.and_then(|i| worlds.worlds.get(i))?;
+        let can_edit = !world.is_generated;
+
+        if self.world_name.is_focused() {
+            return Some(TextInputTarget {
+                source: TextInputSource::Iced,
+                policy: TextInputPolicy::OpenText,
+                cursor_rect: ui.tracked_bounds_cursor_rect(&self.world_name_bounds),
+            });
+        }
+
+        if can_edit && self.map_seed.is_focused() {
+            return Some(TextInputTarget {
+                source: TextInputSource::Iced,
+                policy: TextInputPolicy::NumericOnly,
+                cursor_rect: ui.tracked_bounds_cursor_rect(&self.map_seed_bounds),
+            });
+        }
+
+        None
+    }
+
     pub(super) fn view(
         &mut self,
         fonts: &IcedFonts,
@@ -206,7 +236,8 @@ impl Screen {
                     Image::new(imgs.input_bg)
                         .width(Length::Units(230))
                         .fix_aspect_ratio(),
-                    Element::from(
+                    Element::from(widget::TrackBounds::new(
+                        &self.world_name_bounds,
                         TextInput::new(
                             &mut self.world_name,
                             &i18n.get_msg("main-singleplayer-world_name"),
@@ -214,7 +245,7 @@ impl Screen {
                             move |s| message(WorldChange::Name(s)),
                         )
                         .size(input_text_size),
-                    ),
+                    )),
                 )
                 .padding(Padding::new().horizontal(7).top(5))
                 .into(),
@@ -236,7 +267,8 @@ impl Screen {
                         .width(Length::Units(190))
                         .fix_aspect_ratio(),
                     if can_edit {
-                        Element::from(
+                        Element::from(widget::TrackBounds::new(
+                            &self.map_seed_bounds,
                             TextInput::new(
                                 &mut self.map_seed,
                                 &seed_str,
@@ -254,7 +286,7 @@ impl Screen {
                                 },
                             )
                             .size(input_text_size),
-                        )
+                        ))
                     } else {
                         Text::new(world.seed.to_string())
                             .size(input_text_size)

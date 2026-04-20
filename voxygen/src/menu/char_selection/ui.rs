@@ -12,14 +12,14 @@ use crate::{
                 tooltip::{self, WithTooltip},
             },
             style,
-            widget::{
+            widget::{self,
                 AspectRatioContainer, BackgroundContainer, Image, MouseDetector, Overlay, Padding,
                 TooltipManager, mouse_detector,
             },
         },
         img_ids::ImageGraphic,
     },
-    window,
+    window::{self, TextInputPolicy, TextInputSource, TextInputTarget},
 };
 use client::{Client, ServerInfo};
 use common::{
@@ -192,6 +192,7 @@ enum Mode {
         left_scroll: scrollable::State,
         right_scroll: scrollable::State,
         name_input: text_input::State,
+        name_input_bounds: widget::BoundsState,
         back_button: button::State,
         create_button: button::State,
         rand_character_button: button::State,
@@ -250,6 +251,7 @@ impl Mode {
             left_scroll: Default::default(),
             right_scroll: Default::default(),
             name_input: Default::default(),
+            name_input_bounds: Default::default(),
             back_button: Default::default(),
             create_button: Default::default(),
             rand_character_button: Default::default(),
@@ -281,6 +283,7 @@ impl Mode {
             left_scroll: Default::default(),
             right_scroll: Default::default(),
             name_input: Default::default(),
+            name_input_bounds: Default::default(),
             back_button: Default::default(),
             create_button: Default::default(),
             rand_character_button: Default::default(),
@@ -969,6 +972,7 @@ impl Controls {
                 sliders,
                 hardcore_enabled,
                 name_input,
+                name_input_bounds,
                 back_button,
                 create_button,
                 rand_character_button,
@@ -1663,14 +1667,17 @@ impl Controls {
                     Image::new(imgs.name_input)
                         .height(Length::Units(40))
                         .fix_aspect_ratio(),
-                    TextInput::new(
-                        name_input,
-                        &i18n.get_msg("character_window-character_name"),
-                        name,
-                        Message::Name,
-                    )
-                    .size(25)
-                    .on_submit(confirm_msg.clone()),
+                    widget::TrackBounds::new(
+                        name_input_bounds,
+                        TextInput::new(
+                            name_input,
+                            &i18n.get_msg("character_window-character_name"),
+                            name,
+                            Message::Name,
+                        )
+                        .size(25)
+                        .on_submit(confirm_msg.clone()),
+                    ),
                 )
                 .padding(Padding::new().horizontal(7).top(5));
 
@@ -2046,6 +2053,23 @@ impl Controls {
             } => Some((comp::Body::Humanoid(*body), inventory)),
         }
     }
+
+    fn active_text_input_target(&self, ui: &Ui) -> Option<TextInputTarget> {
+        match &self.mode {
+            Mode::CreateOrEdit {
+                name_input,
+                name_input_bounds,
+                ..
+            } if name_input.is_focused() => Some(
+                TextInputTarget {
+                    source: TextInputSource::Iced,
+                    policy: TextInputPolicy::OpenText,
+                    cursor_rect: ui.tracked_bounds_cursor_rect(name_input_bounds),
+                },
+            ),
+            _ => None,
+        }
+    }
 }
 
 pub struct CharSelectionUi {
@@ -2171,6 +2195,10 @@ impl CharSelectionUi {
         let mut events = Vec::new();
         let i18n = global_state.i18n.read();
 
+        global_state
+            .window
+            .set_text_input_target(self.controls.active_text_input_target(&self.ui));
+
         let (mut messages, _) = self.ui.maintain(
             self.controls
                 .view(&global_state.settings, client, &self.error, &i18n),
@@ -2195,6 +2223,10 @@ impl CharSelectionUi {
             self.controls
                 .update(message, &mut events, &client.character_list().characters)
         });
+
+        global_state
+            .window
+            .set_text_input_target(self.controls.active_text_input_target(&self.ui));
 
         events
     }

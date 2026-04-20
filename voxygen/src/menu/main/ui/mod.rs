@@ -17,7 +17,7 @@ use crate::{
         ice::{Element, IcedUi as Ui, load_font, style, widget},
         img_ids::ImageGraphic,
     },
-    window,
+    window::{self, TextInputPolicy, TextInputSource, TextInputTarget},
 };
 use i18n::{LanguageMetadata, LocalizationHandle};
 use iced::{Column, Container, HorizontalAlignment, Length, Row, Space, text_input};
@@ -548,14 +548,18 @@ impl Controls {
                 });
             },
             Message::UnlockServerField => self.server_field_locked = false,
-            Message::Username(new_value) => self.login_info.username = new_value,
+            Message::Username(new_value) => {
+                self.login_info.username = sanitize_ascii_input(new_value);
+            },
             Message::LanguageChanged(new_value) => {
                 events.push(Event::ChangeLanguage(language_metadatas.remove(new_value)));
             },
             Message::OpenLanguageMenu => self.show.toggle(Showing::Languages),
-            Message::Password(new_value) => self.login_info.password = new_value,
+            Message::Password(new_value) => {
+                self.login_info.password = sanitize_ascii_input(new_value);
+            },
             Message::Server(new_value) => {
-                self.login_info.server = new_value;
+                self.login_info.server = sanitize_ascii_input(new_value);
             },
             Message::ServerChanged(new_value) => {
                 self.selected_server_index = Some(new_value);
@@ -680,6 +684,48 @@ impl Controls {
             }
         }
     }
+
+    fn active_text_input_target(
+        &self,
+        ui: &Ui,
+        #[cfg(feature = "singleplayer")] worlds: &crate::singleplayer::SingleplayerWorlds,
+    ) -> Option<TextInputTarget> {
+        match &self.screen {
+            Screen::Login { screen, .. } => {
+                if screen.banner.username.is_focused() {
+                    Some(TextInputTarget {
+                        source: TextInputSource::Iced,
+                        policy: TextInputPolicy::StructuredAscii,
+                        cursor_rect: ui.tracked_bounds_cursor_rect(&screen.banner.username_bounds),
+                    })
+                } else if screen.banner.password.is_focused() {
+                    Some(TextInputTarget {
+                        source: TextInputSource::Iced,
+                        policy: TextInputPolicy::SecureText,
+                        cursor_rect: ui.tracked_bounds_cursor_rect(&screen.banner.password_bounds),
+                    })
+                } else if !self.server_field_locked && screen.banner.server.is_focused() {
+                    Some(TextInputTarget {
+                        source: TextInputSource::Iced,
+                        policy: TextInputPolicy::StructuredAscii,
+                        cursor_rect: ui.tracked_bounds_cursor_rect(&screen.banner.server_bounds),
+                    })
+                } else {
+                    None
+                }
+            },
+            #[cfg(feature = "singleplayer")]
+            Screen::WorldSelector { screen } => screen.active_text_input_target(worlds, ui),
+            _ => None,
+        }
+    }
+}
+
+fn sanitize_ascii_input(value: String) -> String {
+    value
+        .chars()
+        .filter(|c| c.is_ascii() && !c.is_control())
+        .collect()
 }
 
 pub struct MainMenuUi {
@@ -801,6 +847,14 @@ impl MainMenuUi {
             .as_init()
             .unwrap_or(&worlds_default);
 
+        global_state
+            .window
+            .set_text_input_target(self.controls.active_text_input_target(
+                &self.ui,
+                #[cfg(feature = "singleplayer")]
+                worlds,
+            ));
+
         let (messages, _) = self.ui.maintain(
             self.controls.view(
                 &global_state.settings,
@@ -817,6 +871,14 @@ impl MainMenuUi {
             self.controls
                 .update(message, &mut events, &global_state.settings, &mut self.ui)
         });
+
+        global_state
+            .window
+            .set_text_input_target(self.controls.active_text_input_target(
+                &self.ui,
+                #[cfg(feature = "singleplayer")]
+                worlds,
+            ));
 
         events
     }

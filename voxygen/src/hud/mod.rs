@@ -91,7 +91,7 @@ use crate::{
         img_ids::Rotations,
         slot::{self, SlotKey},
     },
-    window::Event as WinEvent,
+    window::{Event as WinEvent, TextInputPolicy, TextInputSource, TextInputTarget},
 };
 use client::{Client, UserNotification};
 use common::{
@@ -4822,6 +4822,28 @@ impl Hud {
         }
     }
 
+    fn active_text_input_target(&self) -> Option<TextInputTarget> {
+        if !self.show.ui || !self.typing() {
+            return None;
+        }
+
+        let focused = self.ui.widget_capturing_keyboard()?;
+        let policy = if self.show.trade_amount_input_key.is_some() {
+            TextInputPolicy::NumericOnly
+        } else {
+            TextInputPolicy::OpenText
+        };
+
+        Some(TextInputTarget {
+            source: TextInputSource::Conrod,
+            policy,
+            cursor_rect: self
+                .ui
+                .text_edit_cursor_rect(focused)
+                .or_else(|| self.ui.widget_cursor_rect(focused)),
+        })
+    }
+
     pub fn handle_event(
         &mut self,
         event: WinEvent,
@@ -5242,6 +5264,10 @@ impl Hud {
                 });
 
         // Optimization: skip maintaining UI when it's off.
+        global_state
+            .window
+            .set_text_input_target(self.active_text_input_target());
+
         if !self.show.ui {
             return std::mem::take(&mut self.events);
         }
@@ -5275,6 +5301,10 @@ impl Hud {
             //Some(&pool),
             Some(proj_mat * view_mat * Mat4::translation_3d(-focus_off)),
         );
+
+        global_state
+            .window
+            .set_text_input_target(self.active_text_input_target());
 
         events
     }

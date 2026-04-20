@@ -6,6 +6,7 @@ pub mod image;
 pub mod mouse_detector;
 pub mod overlay;
 pub mod stack;
+pub mod tracked_bounds;
 pub mod tooltip;
 
 pub use self::{
@@ -15,5 +16,6 @@ pub use self::{
     image::Image,
     mouse_detector::MouseDetector,
     overlay::Overlay,
+    tracked_bounds::{BoundsState, TrackBounds},
     tooltip::{Tooltip, TooltipManager},
 };

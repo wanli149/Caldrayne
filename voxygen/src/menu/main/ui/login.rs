@@ -5,7 +5,7 @@ use crate::ui::{
         Element,
         component::neat_button,
         style,
-        widget::{
+        widget::{self,
             AspectRatioContainer, BackgroundContainer, Image, Padding,
             compound_graphic::{CompoundGraphic, Graphic},
         },
@@ -322,8 +322,11 @@ impl LanguageSelectBanner {
 #[derive(Default)]
 pub struct LoginBanner {
     pub username: text_input::State,
+    pub username_bounds: widget::BoundsState,
     pub password: text_input::State,
+    pub password_bounds: widget::BoundsState,
     pub server: text_input::State,
+    pub server_bounds: widget::BoundsState,
 
     multiplayer_button: button::State,
     #[cfg(feature = "singleplayer")]
@@ -376,14 +379,17 @@ impl LoginBanner {
             .height(Length::Fill)
             .into()
         } else {
-            TextInput::new(
-                &mut self.server,
-                &i18n.get_msg("main-server"),
-                &login_info.server,
-                Message::Server,
+            widget::TrackBounds::new(
+                &self.server_bounds,
+                TextInput::new(
+                    &mut self.server,
+                    &i18n.get_msg("main-server"),
+                    &login_info.server,
+                    Message::Server,
+                )
+                .size(input_text_size)
+                .on_submit(Message::Multiplayer),
             )
-            .size(input_text_size)
-            .on_submit(Message::Multiplayer)
             .into()
         };
 
@@ -393,14 +399,17 @@ impl LoginBanner {
                     Image::new(imgs.input_bg)
                         .width(Length::Units(INPUT_WIDTH))
                         .fix_aspect_ratio(),
-                    TextInput::new(
-                        &mut self.username,
-                        &i18n.get_msg("main-username"),
-                        &login_info.username,
-                        Message::Username,
-                    )
-                    .size(input_text_size)
-                    .on_submit(Message::FocusPassword),
+                    widget::TrackBounds::new(
+                        &self.username_bounds,
+                        TextInput::new(
+                            &mut self.username,
+                            &i18n.get_msg("main-username"),
+                            &login_info.username,
+                            Message::Username,
+                        )
+                        .size(input_text_size)
+                        .on_submit(Message::FocusPassword),
+                    ),
                 )
                 .padding(Padding::new().horizontal(7).top(5))
                 .into(),
@@ -408,15 +417,18 @@ impl LoginBanner {
                     Image::new(imgs.input_bg)
                         .width(Length::Units(INPUT_WIDTH))
                         .fix_aspect_ratio(),
-                    TextInput::new(
-                        &mut self.password,
-                        &i18n.get_msg("main-password"),
-                        &login_info.password,
-                        Message::Password,
-                    )
-                    .size(input_text_size)
-                    .password()
-                    .on_submit(Message::Multiplayer),
+                    widget::TrackBounds::new(
+                        &self.password_bounds,
+                        TextInput::new(
+                            &mut self.password,
+                            &i18n.get_msg("main-password"),
+                            &login_info.password,
+                            Message::Password,
+                        )
+                        .size(input_text_size)
+                        .password()
+                        .on_submit(Message::Multiplayer),
+                    ),
                 )
                 .padding(Padding::new().horizontal(7).top(5))
                 .into(),

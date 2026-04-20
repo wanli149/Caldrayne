@@ -33,6 +33,7 @@ use crate::{
         DynamicModel, Mesh, RenderError, Renderer, UiBoundLocals, UiDrawer, UiLocals, UiMode,
         UiVertex, create_ui_quad, create_ui_tri,
     },
+    window::TextCursorRect,
     window::Window,
 };
 #[rustfmt::skip]
@@ -43,7 +44,7 @@ use common_base::span;
 use conrod_core::{
     Rect, Scalar, UiBuilder, UiCell,
     event::Input,
-    graph::{self, Graph},
+    graph::{self, Graph, Walker},
     image::{Id as ImageId, Map},
     input::{Motion, Widget, touch::Touch},
     render::{Primitive, PrimitiveKind},
@@ -53,7 +54,7 @@ use conrod_core::{
 use core::{convert::TryInto, f64, ops::Range};
 use graphic::TexId;
 use hashbrown::hash_map::Entry;
-use std::time::Duration;
+use std::{any::TypeId, time::Duration};
 use tracing::{error, warn};
 use vek::*;
 
@@ -290,6 +291,61 @@ impl Ui {
 
     // Get the widget graph.
     pub fn widget_graph(&self) -> &Graph { self.ui.widget_graph() }
+
+    fn conrod_rect_to_text_cursor_rect(&self, rect: Rect) -> TextCursorRect {
+        let scaled_resolution = self.scale.scaled_resolution();
+        let scale = self.scale.scale_factor_logical();
+        let left = rect.left() + scaled_resolution.x / 2.0;
+        let top = scaled_resolution.y / 2.0 - rect.top();
+
+        TextCursorRect {
+            x: left * scale,
+            y: top * scale,
+            width: rect.w().max(1.0) * scale,
+            height: rect.h().max(1.0) * scale,
+        }
+    }
+
+    pub fn text_edit_cursor_rect(&self, id: widget::Id) -> Option<TextCursorRect> {
+        let graph = self.ui.widget_graph();
+        let widget = graph.widget(id)?;
+        if widget.type_id != TypeId::of::<<widget::TextEdit<'static> as conrod_core::Widget>::State>()
+        {
+            return None;
+        }
+
+        let cursor_line_type = TypeId::of::<<widget::Line as conrod_core::Widget>::State>();
+        let cursor_rect = graph
+            .graphic_children(id)
+            .iter(graph)
+            .nodes()
+            .filter_map(|child_id| graph.widget(child_id).map(|child| (child_id, child)))
+            .find_map(|(child_id, child)| {
+                (child.type_id == cursor_line_type)
+                    .then(|| self.ui.rect_of(child_id))
+                    .flatten()
+            })?;
+
+        Some(self.conrod_rect_to_text_cursor_rect(cursor_rect))
+    }
+
+    pub fn widget_cursor_rect(&self, id: widget::Id) -> Option<TextCursorRect> {
+        let rect = self.ui.rect_of(id)?;
+        let scaled_resolution = self.scale.scaled_resolution();
+        let scale = self.scale.scale_factor_logical();
+        let left = rect.left() + scaled_resolution.x / 2.0;
+        let top = scaled_resolution.y / 2.0 - rect.top();
+        let inset_x = (rect.w() * 0.08).clamp(8.0, 20.0);
+        let inset_x = inset_x.min((rect.w() - 1.0).max(0.0));
+        let anchor_y = (top + rect.h() - 1.0).max(top);
+
+        Some(TextCursorRect {
+            x: (left + inset_x) * scale,
+            y: anchor_y * scale,
+            width: 1.0,
+            height: 1.0,
+        })
+    }
 
     pub fn handle_event(&mut self, event: Event) {
         match event.0 {

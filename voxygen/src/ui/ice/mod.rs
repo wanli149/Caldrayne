@@ -18,6 +18,7 @@ use super::{
 use crate::{
     error::Error,
     render::{Renderer, UiDrawer},
+    window::TextCursorRect,
     window::Window,
 };
 use common::slowjob::SlowJobPool;
@@ -80,6 +81,24 @@ impl IcedUi {
     }
 
     pub fn scale(&self) -> Scale { self.scale }
+
+    pub fn tracked_bounds_cursor_rect(
+        &self,
+        state: &widget::BoundsState,
+    ) -> Option<TextCursorRect> {
+        let bounds = state.bounds()?;
+        let scale = self.scale.scale_factor_logical();
+        let inset_x = (bounds.width * 0.08).clamp(8.0, 20.0);
+        let inset_x = inset_x.min((bounds.width - 1.0).max(0.0));
+        let anchor_y = (bounds.y + bounds.height - 1.0).max(bounds.y);
+
+        Some(TextCursorRect {
+            x: f64::from(bounds.x + inset_x) * scale,
+            y: f64::from(anchor_y) * scale,
+            width: 1.0,
+            height: 1.0,
+        })
+    }
 
     pub fn set_scaling_mode(&mut self, mode: ScaleMode) {
         // Signal that change needs to be handled

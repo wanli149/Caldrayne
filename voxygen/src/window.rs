@@ -17,6 +17,10 @@ use tracing::{error, warn};
 use vek::*;
 use winit::monitor::VideoModeHandle;
 
+mod text_input;
+
+pub use text_input::{TextCursorRect, TextInputManager, TextInputPolicy, TextInputSource, TextInputTarget};
+
 /// Represents a key that the game menus recognise after input mapping
 #[derive(
     Clone,
@@ -240,6 +244,7 @@ pub struct Window {
     // saved to file, so initialized here
     pub gamelayer_mod1: bool,
     pub gamelayer_mod2: bool,
+    text_input: TextInputManager,
 }
 
 impl Window {
@@ -351,6 +356,7 @@ impl Window {
             toggle_fullscreen: false,
             gamelayer_mod1: true,
             gamelayer_mod2: false,
+            text_input: TextInputManager::default(),
         };
 
         this.set_fullscreen_mode(settings.graphics.fullscreen);
@@ -780,7 +786,7 @@ impl Window {
                 }
 
                 if let Some(game_inputs) = Window::map_input(
-                    KeyMouse::Key(event.logical_key),
+                    KeyMouse::Key(event.logical_key.clone()),
                     controls,
                     &mut self.remapping_mode,
                     &mut self.last_input,
@@ -822,10 +828,22 @@ impl Window {
                         }
                     }
                 }
+
+                for text_event in self.text_input.handle_keyboard_input(&event, self.modifiers) {
+                    self.dispatch_text_input(text_event);
+                }
+            },
+            WindowEvent::Ime(ime) => {
+                for text_event in self.text_input.handle_ime(ime) {
+                    self.dispatch_text_input(text_event);
+                }
             },
             WindowEvent::Focused(state) => {
                 self.focused = state;
                 self.events.push(Event::Focused(state));
+                if !state {
+                    self.text_input.update_target(&self.window, None);
+                }
             },
             WindowEvent::CursorMoved { position, .. } => {
                 if self.cursor_grabbed {
@@ -1152,6 +1170,40 @@ impl Window {
     }
 
     pub fn send_event(&mut self, event: Event) { self.events.push(event) }
+
+    pub fn set_text_input_target(&mut self, target: Option<TextInputTarget>) {
+        let target = target.map(|mut target| {
+            if target.cursor_rect.is_none() && target.policy.ime_allowed() {
+                let logical = self.cursor_position.to_logical::<f64>(self.scale_factor);
+                target.cursor_rect = Some(TextCursorRect {
+                    x: logical.x,
+                    y: logical.y,
+                    width: 1.0,
+                    height: 24.0,
+                });
+            }
+            target
+        });
+        self.text_input.update_target(&self.window, target);
+    }
+
+    pub fn text_input_target(&self) -> Option<TextInputTarget> { self.text_input.active_target() }
+
+    fn dispatch_text_input(&mut self, event: text_input::TextInputEvent) {
+        match self.text_input.active_target().map(|target| target.source) {
+            Some(TextInputSource::Conrod) => {
+                for event in TextInputManager::dispatch_conrod(event) {
+                    self.events.push(Event::Ui(event));
+                }
+            },
+            Some(TextInputSource::Iced) => {
+                for event in TextInputManager::dispatch_iced(event) {
+                    self.events.push(Event::IcedUi(event));
+                }
+            },
+            None => {},
+        }
+    }
 
     pub fn take_screenshot(&mut self, settings: &Settings) {
         let sender = self.message_sender.clone();
