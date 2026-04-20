@@ -1,9 +1,8 @@
-version: "3.5"
-
 services:
   game-server:
-    # Build and tag a local Caldrayne server image before using this compose file.
-    # Example: docker build -f server-cli/Dockerfile -t caldrayne/server-cli:local .
+    build:
+      context: ..
+      dockerfile: server-cli/Dockerfile
     image: caldrayne/server-cli:local
     command: ["--no-auth"]
     stdin_open: true
@@ -11,10 +10,11 @@ services:
     container_name: caldrayne-game-server-local
     ports:
       - "14004:14004"
-      - "14005:14005"
       - "14006:14006/udp"
+    # Keep the server-cli web UI internal by default; it binds to container
+    # localhost unless you provide a custom server-cli/settings.ron.
     restart: on-failure:0
     volumes:
-        - "./userdata:/opt/userdata"
+      - "./userdata:/opt/userdata"
     environment:
-        - RUST_LOG=debug,common::net=info
+      - RUST_LOG=debug,common::net=info

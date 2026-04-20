@@ -1,1 +1,6 @@
 **/target
+.git
+.github
+.gitlab
+server-cli/userdata
+userdata
