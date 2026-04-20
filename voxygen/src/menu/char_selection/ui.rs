@@ -2057,6 +2057,7 @@ impl Controls {
     fn active_text_input_target(&self, ui: &Ui) -> Option<TextInputTarget> {
         match &self.mode {
             Mode::CreateOrEdit {
+                name,
                 name_input,
                 name_input_bounds,
                 ..
@@ -2064,7 +2065,16 @@ impl Controls {
                 TextInputTarget {
                     source: TextInputSource::Iced,
                     policy: TextInputPolicy::OpenText,
-                    cursor_rect: ui.tracked_bounds_cursor_rect(name_input_bounds),
+                    cursor_rect: ui
+                        .text_input_cursor_rect(
+                            name_input_bounds,
+                            name_input,
+                            name,
+                            self.fonts.cyri.id,
+                            25,
+                            false,
+                        )
+                        .or_else(|| ui.tracked_bounds_cursor_rect(name_input_bounds)),
                 },
             ),
             _ => None,

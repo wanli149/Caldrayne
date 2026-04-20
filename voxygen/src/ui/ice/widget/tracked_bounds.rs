@@ -6,14 +6,23 @@ use std::{cell::Cell, hash::Hash};
 #[derive(Debug, Default)]
 pub struct BoundsState {
     bounds: Cell<Option<Rectangle>>,
+    text_bounds: Cell<Option<Rectangle>>,
 }
 
 impl BoundsState {
     pub fn bounds(&self) -> Option<Rectangle> { self.bounds.get() }
 
-    pub fn clear(&self) { self.bounds.set(None) }
+    pub fn text_bounds(&self) -> Option<Rectangle> { self.text_bounds.get() }
 
-    fn update(&self, bounds: Rectangle) { self.bounds.set(Some(bounds)) }
+    pub fn clear(&self) {
+        self.bounds.set(None);
+        self.text_bounds.set(None);
+    }
+
+    fn update(&self, bounds: Rectangle, text_bounds: Rectangle) {
+        self.bounds.set(Some(bounds));
+        self.text_bounds.set(Some(text_bounds));
+    }
 }
 
 pub struct TrackBounds<'a, M, R> {
@@ -54,7 +63,9 @@ where
         clipboard: &mut dyn Clipboard,
         messages: &mut Vec<M>,
     ) -> iced::event::Status {
-        self.state.update(layout.bounds());
+        let bounds = layout.bounds();
+        let text_bounds = layout.children().next().map(|child| child.bounds()).unwrap_or(bounds);
+        self.state.update(bounds, text_bounds);
         self.content.on_event(
             event,
             layout,
@@ -73,7 +84,9 @@ where
         cursor_position: Point,
         viewport: &Rectangle,
     ) -> R::Output {
-        self.state.update(layout.bounds());
+        let bounds = layout.bounds();
+        let text_bounds = layout.children().next().map(|child| child.bounds()).unwrap_or(bounds);
+        self.state.update(bounds, text_bounds);
         self.content
             .draw(renderer, defaults, layout, cursor_position, viewport)
     }
@@ -85,7 +98,9 @@ where
     }
 
     fn overlay(&mut self, layout: Layout<'_>) -> Option<iced::overlay::Element<'_, M, R>> {
-        self.state.update(layout.bounds());
+        let bounds = layout.bounds();
+        let text_bounds = layout.children().next().map(|child| child.bounds()).unwrap_or(bounds);
+        self.state.update(bounds, text_bounds);
         self.content.overlay(layout)
     }
 }

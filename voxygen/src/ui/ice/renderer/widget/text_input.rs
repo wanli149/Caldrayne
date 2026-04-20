@@ -264,6 +264,45 @@ impl text_input::Renderer for IcedRenderer {
     }
 }
 
+impl IcedRenderer {
+    pub fn text_input_cursor_bounds(
+        &self,
+        text_bounds: Rectangle,
+        font: FontId,
+        size: u16,
+        value: &str,
+        state: &text_input::State,
+        is_secure: bool,
+    ) -> Option<Rectangle> {
+        if !state.is_focused() {
+            return None;
+        }
+
+        let value = if is_secure {
+            text_input::Value::new(value).secure()
+        } else {
+            text_input::Value::new(value)
+        };
+
+        let cursor_index = match state.cursor().state(&value) {
+            cursor::State::Index(position) => position,
+            cursor::State::Selection { end, .. } => end,
+        };
+        let (position, scroll_offset) =
+            measure_cursor_and_scroll_offset(self, text_bounds, &value, size, cursor_index, font);
+        let width = (CURSOR_WIDTH / self.p_scale).max(1.0 / self.p_scale);
+        let unclamped_x = text_bounds.x + position - width / 2.0 - scroll_offset;
+        let max_x = (text_bounds.x + text_bounds.width - width).max(text_bounds.x);
+
+        Some(Rectangle {
+            x: unclamped_x.clamp(text_bounds.x, max_x),
+            y: text_bounds.y,
+            width,
+            height: text_bounds.height.max(1.0),
+        })
+    }
+}
+
 fn measure_cursor_and_scroll_offset(
     renderer: &IcedRenderer,
     text_bounds: Rectangle,

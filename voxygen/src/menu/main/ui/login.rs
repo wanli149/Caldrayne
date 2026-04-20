@@ -2,7 +2,7 @@ use super::{FILL_FRAC_ONE, FILL_FRAC_TWO, Imgs, LoginInfo, Message, Showing};
 use crate::ui::{
     fonts::IcedFonts as Fonts,
     ice::{
-        Element,
+        Element, IcedUi,
         component::neat_button,
         style,
         widget::{self,
@@ -11,6 +11,7 @@ use crate::ui::{
         },
     },
 };
+use crate::window::{TextInputPolicy, TextInputSource, TextInputTarget};
 
 use i18n::{LanguageMetadata, Localization};
 use iced::{
@@ -336,6 +337,69 @@ pub struct LoginBanner {
 }
 
 impl LoginBanner {
+    pub(super) fn active_text_input_target(
+        &self,
+        ui: &IcedUi,
+        fonts: &Fonts,
+        login_info: &LoginInfo,
+        server_field_locked: bool,
+    ) -> Option<TextInputTarget> {
+        let input_text_size = fonts.cyri.scale(INPUT_TEXT_SIZE);
+
+        if self.username.is_focused() {
+            return Some(TextInputTarget {
+                source: TextInputSource::Iced,
+                policy: TextInputPolicy::StructuredAscii,
+                cursor_rect: ui
+                    .text_input_cursor_rect(
+                        &self.username_bounds,
+                        &self.username,
+                        &login_info.username,
+                        fonts.cyri.id,
+                        input_text_size,
+                        false,
+                    )
+                    .or_else(|| ui.tracked_bounds_cursor_rect(&self.username_bounds)),
+            });
+        }
+
+        if self.password.is_focused() {
+            return Some(TextInputTarget {
+                source: TextInputSource::Iced,
+                policy: TextInputPolicy::SecureText,
+                cursor_rect: ui
+                    .text_input_cursor_rect(
+                        &self.password_bounds,
+                        &self.password,
+                        &login_info.password,
+                        fonts.cyri.id,
+                        input_text_size,
+                        true,
+                    )
+                    .or_else(|| ui.tracked_bounds_cursor_rect(&self.password_bounds)),
+            });
+        }
+
+        if !server_field_locked && self.server.is_focused() {
+            return Some(TextInputTarget {
+                source: TextInputSource::Iced,
+                policy: TextInputPolicy::StructuredAscii,
+                cursor_rect: ui
+                    .text_input_cursor_rect(
+                        &self.server_bounds,
+                        &self.server,
+                        &login_info.server,
+                        fonts.cyri.id,
+                        input_text_size,
+                        false,
+                    )
+                    .or_else(|| ui.tracked_bounds_cursor_rect(&self.server_bounds)),
+            });
+        }
+
+        None
+    }
+
     fn view(
         &mut self,
         fonts: &Fonts,

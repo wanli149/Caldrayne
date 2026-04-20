@@ -71,15 +71,26 @@ impl Screen {
         &self,
         worlds: &crate::singleplayer::SingleplayerWorlds,
         ui: &crate::ui::ice::IcedUi,
+        fonts: &IcedFonts,
     ) -> Option<TextInputTarget> {
         let world = worlds.current.and_then(|i| worlds.worlds.get(i))?;
         let can_edit = !world.is_generated;
+        let input_text_size = fonts.cyri.scale(INPUT_TEXT_SIZE);
 
         if self.world_name.is_focused() {
             return Some(TextInputTarget {
                 source: TextInputSource::Iced,
                 policy: TextInputPolicy::OpenText,
-                cursor_rect: ui.tracked_bounds_cursor_rect(&self.world_name_bounds),
+                cursor_rect: ui
+                    .text_input_cursor_rect(
+                        &self.world_name_bounds,
+                        &self.world_name,
+                        &world.name,
+                        fonts.cyri.id,
+                        input_text_size,
+                        false,
+                    )
+                    .or_else(|| ui.tracked_bounds_cursor_rect(&self.world_name_bounds)),
             });
         }
 
@@ -87,7 +98,16 @@ impl Screen {
             return Some(TextInputTarget {
                 source: TextInputSource::Iced,
                 policy: TextInputPolicy::NumericOnly,
-                cursor_rect: ui.tracked_bounds_cursor_rect(&self.map_seed_bounds),
+                cursor_rect: ui
+                    .text_input_cursor_rect(
+                        &self.map_seed_bounds,
+                        &self.map_seed,
+                        &world.seed.to_string(),
+                        fonts.cyri.id,
+                        input_text_size,
+                        false,
+                    )
+                    .or_else(|| ui.tracked_bounds_cursor_rect(&self.map_seed_bounds)),
             });
         }
 

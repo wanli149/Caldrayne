@@ -100,6 +100,29 @@ impl IcedUi {
         })
     }
 
+    pub fn text_input_cursor_rect(
+        &self,
+        bounds: &widget::BoundsState,
+        state: &iced::text_input::State,
+        value: &str,
+        font: FontId,
+        size: u16,
+        is_secure: bool,
+    ) -> Option<TextCursorRect> {
+        let text_bounds = bounds.text_bounds().or_else(|| bounds.bounds())?;
+        let rect = self
+            .renderer
+            .text_input_cursor_bounds(text_bounds, font, size, value, state, is_secure)?;
+        let scale = self.scale.scale_factor_logical();
+
+        Some(TextCursorRect {
+            x: f64::from(rect.x) * scale,
+            y: f64::from(rect.y) * scale,
+            width: f64::from(rect.width) * scale,
+            height: f64::from(rect.height) * scale,
+        })
+    }
+
     pub fn set_scaling_mode(&mut self, mode: ScaleMode) {
         // Signal that change needs to be handled
         self.scale_changed |= self.scale.set_scaling_mode(mode);

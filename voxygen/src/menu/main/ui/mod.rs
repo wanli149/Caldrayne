@@ -17,7 +17,7 @@ use crate::{
         ice::{Element, IcedUi as Ui, load_font, style, widget},
         img_ids::ImageGraphic,
     },
-    window::{self, TextInputPolicy, TextInputSource, TextInputTarget},
+    window::{self, TextInputTarget},
 };
 use i18n::{LanguageMetadata, LocalizationHandle};
 use iced::{Column, Container, HorizontalAlignment, Length, Row, Space, text_input};
@@ -691,31 +691,16 @@ impl Controls {
         #[cfg(feature = "singleplayer")] worlds: &crate::singleplayer::SingleplayerWorlds,
     ) -> Option<TextInputTarget> {
         match &self.screen {
-            Screen::Login { screen, .. } => {
-                if screen.banner.username.is_focused() {
-                    Some(TextInputTarget {
-                        source: TextInputSource::Iced,
-                        policy: TextInputPolicy::StructuredAscii,
-                        cursor_rect: ui.tracked_bounds_cursor_rect(&screen.banner.username_bounds),
-                    })
-                } else if screen.banner.password.is_focused() {
-                    Some(TextInputTarget {
-                        source: TextInputSource::Iced,
-                        policy: TextInputPolicy::SecureText,
-                        cursor_rect: ui.tracked_bounds_cursor_rect(&screen.banner.password_bounds),
-                    })
-                } else if !self.server_field_locked && screen.banner.server.is_focused() {
-                    Some(TextInputTarget {
-                        source: TextInputSource::Iced,
-                        policy: TextInputPolicy::StructuredAscii,
-                        cursor_rect: ui.tracked_bounds_cursor_rect(&screen.banner.server_bounds),
-                    })
-                } else {
-                    None
-                }
-            },
+            Screen::Login { screen, .. } => screen.banner.active_text_input_target(
+                ui,
+                &self.fonts,
+                &self.login_info,
+                self.server_field_locked,
+            ),
             #[cfg(feature = "singleplayer")]
-            Screen::WorldSelector { screen } => screen.active_text_input_target(worlds, ui),
+            Screen::WorldSelector { screen } => {
+                screen.active_text_input_target(worlds, ui, &self.fonts)
+            },
             _ => None,
         }
     }
