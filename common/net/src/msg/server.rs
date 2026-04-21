@@ -232,6 +232,7 @@ pub enum ServerGeneral {
     /// is acquired
     UpdateRecipes,
     SetPlayerRole(Option<AdminRole>),
+    SetGmMode(bool),
     Gizmos(Vec<Gizmos>),
 }
 
@@ -397,6 +398,7 @@ impl ServerMsg {
                         | ServerGeneral::Disconnect(_)
                         | ServerGeneral::Notification(_)
                         | ServerGeneral::SetPlayerRole(_)
+                        | ServerGeneral::SetGmMode(_)
                         | ServerGeneral::LodZoneUpdate { .. } => true,
                         ServerGeneral::PluginData(_) => true,
                     }

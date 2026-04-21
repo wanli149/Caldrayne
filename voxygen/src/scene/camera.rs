@@ -722,6 +722,13 @@ impl Camera {
         }
     }
 
+    /// Set the mode of the camera without applying zoom side effects.
+    pub fn set_mode_silent(&mut self, mode: CameraMode) {
+        if self.mode != mode {
+            self.mode = mode;
+        }
+    }
+
     /// Get the mode of the camera
     pub fn get_mode(&self) -> CameraMode {
         // Perform a bit of a trick... don't report first-person until the camera has
@@ -732,6 +739,9 @@ impl Camera {
             mode => mode,
         }
     }
+
+    /// Get the current underlying camera mode without presentation smoothing.
+    pub fn actual_mode(&self) -> CameraMode { self.mode }
 
     /// Cycle the camera to its next valid mode. If is_admin is false then only
     /// modes which are accessible without admin access will be cycled to.

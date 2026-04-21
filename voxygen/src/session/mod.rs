@@ -1307,7 +1307,7 @@ impl PlayState for SessionState {
                                 let camera = self.scene.camera_mut();
                                 let client = self.client.borrow();
                                 camera.next_mode(
-                                    client.is_moderator(),
+                                    client.has_admin_camera_access(),
                                     (client.presence() != Some(PresenceKind::Spectator))
                                         || self.viewpoint_entity.is_some(),
                                 );
@@ -1430,7 +1430,43 @@ impl PlayState for SessionState {
             {
                 self.client.borrow_mut().stop_spectate_entity();
                 self.viewpoint_entity = None;
-                self.scene.camera_mut().set_mode(CameraMode::Freefly);
+                let allow_freefly = {
+                    let client = self.client.borrow();
+                    client.has_admin_camera_access()
+                        || client.presence() == Some(PresenceKind::Spectator)
+                };
+                if allow_freefly {
+                    self.scene.camera_mut().set_mode(CameraMode::Freefly);
+                } else {
+                    self.scene
+                        .camera_mut()
+                        .set_mode_silent(CameraMode::ThirdPerson);
+                }
+            }
+
+            let (allow_admin_camera, is_spectator) = {
+                let client = self.client.borrow();
+                (
+                    client.has_admin_camera_access(),
+                    client.presence() == Some(PresenceKind::Spectator),
+                )
+            };
+
+            if !allow_admin_camera && self.viewpoint_entity.is_some() {
+                self.client.borrow_mut().stop_spectate_entity();
+                self.viewpoint_entity = None;
+                self.scene
+                    .camera_mut()
+                    .set_mode_silent(CameraMode::ThirdPerson);
+            }
+
+            if !allow_admin_camera
+                && !is_spectator
+                && matches!(self.scene.camera().actual_mode(), CameraMode::Freefly)
+            {
+                self.scene
+                    .camera_mut()
+                    .set_mode_silent(CameraMode::ThirdPerson);
             }
 
             let (viewpoint_entity, mutable_viewpoint) = self.viewpoint_entity();

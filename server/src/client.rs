@@ -18,6 +18,7 @@ pub struct Client {
     pub last_ping: f64,
     pub login_msg_sent: AtomicBool,
     pub locale: Option<String>,
+    pub gm_mode_enabled: bool,
 
     //TODO: Consider splitting each of these out into their own components so all the message
     //processing systems can run in parallel with each other (though it may turn out not to
@@ -73,6 +74,7 @@ impl Client {
             connected_from_addr: connected_from,
             last_ping,
             locale,
+            gm_mode_enabled: false,
             login_msg_sent: AtomicBool::new(false),
             general_stream,
             ping_stream,
@@ -225,6 +227,7 @@ impl Client {
                     | ServerGeneral::Disconnect(_)
                     | ServerGeneral::Notification(_)
                     | ServerGeneral::SetPlayerRole(_)
+                    | ServerGeneral::SetGmMode(_)
                     | ServerGeneral::PluginData(_) => {
                         PreparedMsg::new(3, &g, &self.general_stream_params)
                     },

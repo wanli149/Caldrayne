@@ -171,6 +171,7 @@ fn do_command(
         ServerChatCommand::GiveItem => handle_give_item,
         ServerChatCommand::Gizmos => handle_gizmos,
         ServerChatCommand::GizmosRange => handle_gizmos_range,
+        ServerChatCommand::Gm => handle_gm,
         ServerChatCommand::Goto => handle_goto,
         ServerChatCommand::GotoRand => handle_goto_rand,
         ServerChatCommand::Group => handle_group,
@@ -4065,6 +4066,13 @@ fn handle_adminify(
 
         // Notify the client that its role has been updated
         server.notify_client(player, ServerGeneral::SetPlayerRole(desired_role));
+        if desired_role.is_none() {
+            if let Some(client_comp) = server.state.ecs().write_storage::<Client>().get_mut(player)
+            {
+                client_comp.gm_mode_enabled = false;
+            }
+            server.notify_client(player, ServerGeneral::SetGmMode(false));
+        }
 
         if server
             .state
@@ -4086,6 +4094,68 @@ fn handle_adminify(
     } else {
         Err(action.help_content())
     }
+}
+
+fn handle_gm(
+    server: &mut Server,
+    client: EcsEntity,
+    target: EcsEntity,
+    args: Vec<String>,
+    action: &ServerChatCommand,
+) -> CmdResult<()> {
+    no_sudo(client, target)?;
+
+    let current_state = {
+        let clients = server.state.ecs().read_storage::<Client>();
+        let Some(client_comp) = clients.get(target) else {
+            return Err(Content::localized_with_args(
+                "command-entity-has-no-client",
+                [("target", "target")],
+            ));
+        };
+        client_comp.gm_mode_enabled
+    };
+
+    let next_state = match parse_cmd_args!(args, String).as_deref() {
+        None => {
+            let key = if current_state {
+                "command-gm-status-on"
+            } else {
+                "command-gm-status-off"
+            };
+            server.notify_client(
+                client,
+                ServerGeneral::server_msg(ChatType::CommandInfo, Content::localized(key)),
+            );
+            return Ok(());
+        },
+        Some("on") => true,
+        Some("off") => false,
+        Some(_) => return Err(action.help_content()),
+    };
+
+    if let Some(client_comp) = server.state.ecs().write_storage::<Client>().get_mut(target) {
+        client_comp.gm_mode_enabled = next_state;
+    } else {
+        return Err(Content::localized_with_args(
+            "command-entity-has-no-client",
+            [("target", "target")],
+        ));
+    }
+
+    server.notify_client(target, ServerGeneral::SetGmMode(next_state));
+    server.notify_client(
+        client,
+        ServerGeneral::server_msg(
+            ChatType::CommandInfo,
+            Content::localized(if next_state {
+                "command-gm-enabled"
+            } else {
+                "command-gm-disabled"
+            }),
+        ),
+    );
+    Ok(())
 }
 
 fn handle_tell(

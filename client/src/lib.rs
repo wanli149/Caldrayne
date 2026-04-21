@@ -304,6 +304,7 @@ pub struct Client {
     force_update_counter: u64,
 
     role: Option<AdminRole>,
+    gm_mode_enabled: bool,
     max_group_size: u32,
     // Client has received an invite (inviter uid, time out instant)
     invite: Option<(Uid, Instant, Duration, InviteKind)>,
@@ -671,9 +672,8 @@ impl Client {
         // Spawn in a blocking thread (leaving the network thread free).  This is mostly
         // useful for bots.
         let mut task = tokio::task::spawn_blocking(move || {
-            let map_size_lg =
-                common::terrain::MapSizeLg::new(world_map.dimensions_lg)
-                    .map_err(|_| Error::Other(error::OTHER_BAD_WORLD_MAP_DIMENSIONS.into()))?;
+            let map_size_lg = common::terrain::MapSizeLg::new(world_map.dimensions_lg)
+                .map_err(|_| Error::Other(error::OTHER_BAD_WORLD_MAP_DIMENSIONS.into()))?;
             let sea_level = world_map.default_chunk.get_min_z() as f32;
 
             // Initialize `State`
@@ -1062,6 +1062,7 @@ impl Client {
             force_update_counter: 0,
 
             role,
+            gm_mode_enabled: false,
             max_group_size,
             invite: None,
             group_leader: None,
@@ -2838,6 +2839,13 @@ impl Client {
             ServerGeneral::SetPlayerRole(role) => {
                 debug!(?role, "Updating client role");
                 self.role = role;
+                if self.role.is_none() {
+                    self.gm_mode_enabled = false;
+                }
+            },
+            ServerGeneral::SetGmMode(enabled) => {
+                debug!(enabled, "Updating GM mode status");
+                self.gm_mode_enabled = enabled && self.role.is_some();
             },
             _ => unreachable!("Not a general msg"),
         }
@@ -2877,7 +2885,10 @@ impl Client {
                                 comp::ChatType::GroupMeta("Group".into()).into_msg(
                                     Content::localized_with_args("hud-chat-group-joined", [(
                                         "name",
-                                        self.personalize_alias(uid, player_info.player_alias.clone()),
+                                        self.personalize_alias(
+                                            uid,
+                                            player_info.player_alias.clone(),
+                                        ),
                                     )]),
                                 ),
                             ));
@@ -2898,7 +2909,10 @@ impl Client {
                                 comp::ChatType::GroupMeta("Group".into()).into_msg(
                                     Content::localized_with_args("hud-chat-group-left", [(
                                         "name",
-                                        self.personalize_alias(uid, player_info.player_alias.clone()),
+                                        self.personalize_alias(
+                                            uid,
+                                            player_info.player_alias.clone(),
+                                        ),
                                     )]),
                                 ),
                             ));
@@ -3314,6 +3328,14 @@ impl Client {
 
     /// Return true if this client is a moderator on the server
     pub fn is_moderator(&self) -> bool { self.role.is_some() }
+
+    pub fn has_gm_role(&self) -> bool { self.role.is_some() }
+
+    pub fn is_gm_mode_enabled(&self) -> bool { self.gm_mode_enabled }
+
+    pub fn has_admin_camera_access(&self) -> bool {
+        self.has_gm_role() && self.is_gm_mode_enabled()
+    }
 
     pub fn role(&self) -> &Option<AdminRole> { &self.role }
 

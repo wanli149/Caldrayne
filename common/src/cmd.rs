@@ -394,6 +394,7 @@ pub enum ServerChatCommand {
     GiveItem,
     Gizmos,
     GizmosRange,
+    Gm,
     Goto,
     GotoRand,
     Group,
@@ -699,6 +700,15 @@ impl ServerChatCommand {
                 vec![Float("range", 32.0, Required)],
                 Content::localized("command-gizmos_range-desc"),
                 Some(Admin),
+            ),
+            ServerChatCommand::Gm => cmd(
+                vec![Enum(
+                    "state",
+                    vec!["on".to_owned(), "off".to_owned()],
+                    Optional,
+                )],
+                Content::localized("command-gm-desc"),
+                Some(Moderator),
             ),
             ServerChatCommand::Goto => cmd(
                 vec![
@@ -1192,6 +1202,7 @@ impl ServerChatCommand {
             ServerChatCommand::GiveItem => "give_item",
             ServerChatCommand::Gizmos => "gizmos",
             ServerChatCommand::GizmosRange => "gizmos_range",
+            ServerChatCommand::Gm => "gm",
             ServerChatCommand::Goto => "goto",
             ServerChatCommand::GotoRand => "goto_rand",
             ServerChatCommand::Group => "group",
