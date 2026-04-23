@@ -28,7 +28,10 @@ pub use hud_position::HudPositionSettings;
 pub use interface::InterfaceSettings;
 pub use inventory::InventorySettings;
 pub use language::{DEFAULT_LANGUAGE, LanguageSettings};
-pub use networking::NetworkingSettings;
+pub use networking::{
+    DevMultiplayerTargetKind, LocalDedicatedConnectionKind, LocalDedicatedServer,
+    LocalDedicatedSourceKind, ManualLocalDedicatedServerSpec, NetworkingSettings,
+};
 
 /// `Settings` contains everything that can be configured in the settings.ron
 /// file.

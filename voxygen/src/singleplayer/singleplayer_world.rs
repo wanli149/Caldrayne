@@ -4,12 +4,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use common::{assets::ASSETS_PATH, consts::DAY_LENGTH_DEFAULT};
+use common::{assets::ASSETS_PATH, consts::DAY_LENGTH_DEFAULT, uuid::Uuid};
 use serde::{Deserialize, Serialize};
 use server::{DEFAULT_WORLD_MAP, DEFAULT_WORLD_SEED, FileOpts, GenOpts};
 use tracing::error;
 
 pub struct SingleplayerWorld {
+    pub world_id: Uuid,
+    pub realm_id: Uuid,
     pub name: String,
     pub gen_opts: Option<GenOpts>,
     pub day_length: f64,
@@ -27,6 +29,11 @@ impl SingleplayerWorld {
     }
 }
 
+fn new_singleplayer_identity() -> (Uuid, Uuid) {
+    let world_id = Uuid::new_v4();
+    (world_id, world_id)
+}
+
 fn load_map(path: &Path) -> Option<SingleplayerWorld> {
     let meta_path = path.join("meta.ron");
 
@@ -42,7 +49,11 @@ fn load_map(path: &Path) -> Option<SingleplayerWorld> {
         return None;
     };
 
-    version::try_load(std::io::Cursor::new(bytes), path)
+    let load_result = version::try_load(std::io::Cursor::new(bytes), path)?;
+    if load_result.needs_upgrade {
+        write_world_meta(&load_result.world);
+    }
+    Some(load_result.world)
 }
 
 fn write_world_meta(world: &SingleplayerWorld) {
@@ -107,7 +118,10 @@ fn migrate_old_singleplayer(from: &Path, to: &Path) {
             error!("Failed to copy map file to singleplayer world: {err}");
         }
 
+        let (world_id, realm_id) = new_singleplayer_identity();
         write_world_meta(&SingleplayerWorld {
+            world_id,
+            realm_id,
             name: "singleplayer world".to_string(),
             gen_opts,
             seed,
@@ -229,7 +243,10 @@ impl SingleplayerWorlds {
         let folder_name = self.world_folder_name();
         let path = self.worlds_folder.join(folder_name);
 
+        let (world_id, realm_id) = new_singleplayer_identity();
         let new_world = SingleplayerWorld {
+            world_id,
+            realm_id,
             name: "New World".to_string(),
             gen_opts: None,
             day_length: DAY_LENGTH_DEFAULT,
@@ -258,13 +275,17 @@ mod version {
 
     use super::*;
 
-    pub type Current = V2;
+    pub type Current = V3;
 
-    type LoadWorldFn<R> =
-        fn(R, &Path) -> Result<SingleplayerWorld, (&'static str, ron::de::SpannedError)>;
+    pub struct LoadResult {
+        pub world: SingleplayerWorld,
+        pub needs_upgrade: bool,
+    }
+
+    type LoadWorldFn<R> = fn(R, &Path) -> Result<LoadResult, (&'static str, ron::de::SpannedError)>;
     fn loaders<'a, R: std::io::Read + Clone>() -> &'a [LoadWorldFn<R>] {
         // Step [4]
-        &[load_raw::<V2, _>, load_raw::<V1, _>]
+        &[load_raw::<V3, _>, load_raw::<V2, _>, load_raw::<V1, _>]
     }
 
     #[derive(Deserialize, Serialize)]
@@ -277,18 +298,24 @@ mod version {
     }
 
     impl ToWorld for V1 {
-        fn to_world(self, path: PathBuf) -> SingleplayerWorld {
+        fn to_world(self, path: PathBuf) -> LoadResult {
             let map_path = path.join("map.bin");
             let is_generated = fs::metadata(&map_path).is_ok_and(|f| f.is_file());
+            let (world_id, realm_id) = new_singleplayer_identity();
 
-            SingleplayerWorld {
-                name: self.name,
-                gen_opts: self.gen_opts,
-                seed: self.seed,
-                day_length: DAY_LENGTH_DEFAULT,
-                is_generated,
-                path,
-                map_path,
+            LoadResult {
+                world: SingleplayerWorld {
+                    world_id,
+                    realm_id,
+                    name: self.name,
+                    gen_opts: self.gen_opts,
+                    seed: self.seed,
+                    day_length: DAY_LENGTH_DEFAULT,
+                    is_generated,
+                    path,
+                    map_path,
+                },
+                needs_upgrade: true,
             }
         }
     }
@@ -303,10 +330,47 @@ mod version {
         day_length: f64,
     }
 
-    impl V2 {
+    impl ToWorld for V2 {
+        fn to_world(self, path: PathBuf) -> LoadResult {
+            let map_path = path.join("map.bin");
+            let is_generated = fs::metadata(&map_path).is_ok_and(|f| f.is_file());
+            let (world_id, realm_id) = new_singleplayer_identity();
+
+            LoadResult {
+                world: SingleplayerWorld {
+                    world_id,
+                    realm_id,
+                    name: self.name,
+                    gen_opts: self.gen_opts,
+                    seed: self.seed,
+                    day_length: self.day_length,
+                    is_generated,
+                    path,
+                    map_path,
+                },
+                needs_upgrade: true,
+            }
+        }
+    }
+
+    #[derive(Deserialize, Serialize)]
+    pub struct V3 {
+        #[serde(deserialize_with = "version::<_, 3>")]
+        version: u64,
+        world_id: Uuid,
+        realm_id: Uuid,
+        name: String,
+        gen_opts: Option<GenOpts>,
+        seed: u32,
+        day_length: f64,
+    }
+
+    impl V3 {
         pub fn from_world(world: &SingleplayerWorld) -> Self {
-            V2 {
-                version: 2,
+            V3 {
+                version: 3,
+                world_id: world.world_id,
+                realm_id: world.realm_id,
                 name: world.name.clone(),
                 gen_opts: world.gen_opts.clone(),
                 seed: world.seed,
@@ -315,19 +379,24 @@ mod version {
         }
     }
 
-    impl ToWorld for V2 {
-        fn to_world(self, path: PathBuf) -> SingleplayerWorld {
+    impl ToWorld for V3 {
+        fn to_world(self, path: PathBuf) -> LoadResult {
             let map_path = path.join("map.bin");
             let is_generated = fs::metadata(&map_path).is_ok_and(|f| f.is_file());
 
-            SingleplayerWorld {
-                name: self.name,
-                gen_opts: self.gen_opts,
-                seed: self.seed,
-                day_length: self.day_length,
-                is_generated,
-                path,
-                map_path,
+            LoadResult {
+                world: SingleplayerWorld {
+                    world_id: self.world_id,
+                    realm_id: self.realm_id,
+                    name: self.name,
+                    gen_opts: self.gen_opts,
+                    seed: self.seed,
+                    day_length: self.day_length,
+                    is_generated,
+                    path,
+                    map_path,
+                },
+                needs_upgrade: false,
             }
         }
     }
@@ -347,19 +416,19 @@ mod version {
     }
 
     trait ToWorld {
-        fn to_world(self, path: PathBuf) -> SingleplayerWorld;
+        fn to_world(self, path: PathBuf) -> LoadResult;
     }
 
     fn load_raw<RawWorld: Any + ToWorld + DeserializeOwned, R: std::io::Read + Clone>(
         reader: R,
         path: &Path,
-    ) -> Result<SingleplayerWorld, (&'static str, ron::de::SpannedError)> {
+    ) -> Result<LoadResult, (&'static str, ron::de::SpannedError)> {
         ron::de::from_reader::<_, RawWorld>(reader)
             .map(|s| s.to_world(path.to_path_buf()))
             .map_err(|e| (type_name::<RawWorld>(), e))
     }
 
-    pub fn try_load<R: std::io::Read + Clone>(reader: R, path: &Path) -> Option<SingleplayerWorld> {
+    pub fn try_load<R: std::io::Read + Clone>(reader: R, path: &Path) -> Option<LoadResult> {
         loaders()
             .iter()
             .find_map(|load_raw| match load_raw(reader.clone(), path) {
@@ -372,5 +441,39 @@ mod version {
                     None
                 },
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loading_v2_world_upgrades_to_v3_and_persists_ids() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        fs::create_dir_all(&world_dir).unwrap();
+
+        let legacy_meta = format!(
+            "(\n    version: 2,\n    name: \"Legacy World\",\n    gen_opts: None,\n    seed: \
+             {},\n    day_length: {},\n)\n",
+            DEFAULT_WORLD_SEED, DAY_LENGTH_DEFAULT
+        );
+        fs::write(world_dir.join("meta.ron"), legacy_meta).unwrap();
+
+        let first = load_map(&world_dir).expect("legacy world should load");
+        let second = load_map(&world_dir).expect("upgraded world should load");
+
+        assert_eq!(first.world_id, second.world_id);
+        assert_eq!(first.realm_id, second.realm_id);
+        assert!(!first.world_id.is_nil());
+        assert!(!first.realm_id.is_nil());
+
+        let meta = fs::read_to_string(world_dir.join("meta.ron")).unwrap();
+        assert!(meta.contains("version: 3"));
+        assert!(meta.contains("world_id"));
+        assert!(meta.contains("realm_id"));
+
+        let _ = fs::remove_dir_all(world_dir);
     }
 }

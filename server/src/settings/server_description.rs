@@ -142,7 +142,8 @@ mod v1 {
     impl Default for ServerDescription {
         fn default() -> Self {
             Self(
-                "Welcome to Caldrayne Online. Configure this server message to match your deployment."
+                "Welcome to Caldrayne Online. Configure this server message to match your \
+                 deployment."
                     .into(),
             )
         }
@@ -212,21 +213,17 @@ mod v2 {
             Self {
                 default_locale: "zh-Hans".to_string(),
                 descriptions: HashMap::from([
-                    (
-                        "zh-Hans".to_string(),
-                        ServerDescription {
-                            motd: "欢迎来到卡德雷恩 Online。请按你的部署需求修改这条服务器消息。"
-                                .into(),
-                            rules: None,
-                        },
-                    ),
-                    (
-                        "en".to_string(),
-                        ServerDescription {
-                            motd: "Welcome to Caldrayne Online. Configure this server message to match your deployment.".into(),
-                            rules: None,
-                        },
-                    ),
+                    ("zh-Hans".to_string(), ServerDescription {
+                        motd: "欢迎来到卡德雷恩 Online。请按你的部署需求修改这条服务器消息。"
+                            .into(),
+                        rules: None,
+                    }),
+                    ("en".to_string(), ServerDescription {
+                        motd: "Welcome to Caldrayne Online. Configure this server message to \
+                               match your deployment."
+                            .into(),
+                        rules: None,
+                    }),
                 ]),
             }
         }
@@ -235,7 +232,9 @@ mod v2 {
     impl Default for ServerDescription {
         fn default() -> Self {
             Self {
-                motd: "Welcome to Caldrayne Online. Configure this server message to match your deployment.".into(),
+                motd: "Welcome to Caldrayne Online. Configure this server message to match your \
+                       deployment."
+                    .into(),
                 rules: None,
             }
         }

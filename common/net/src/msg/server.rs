@@ -51,6 +51,7 @@ pub enum ServerMsg {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
+    pub realm_id: Uuid,
     pub name: String,
     pub git_hash: u32,
     pub git_timestamp: i64,
@@ -430,4 +431,29 @@ impl From<ServerGeneral> for ServerMsg {
 
 impl From<PingMsg> for ServerMsg {
     fn from(o: PingMsg) -> ServerMsg { ServerMsg::Ping(o) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_info_bincode_roundtrip_preserves_realm_id() {
+        let info = ServerInfo {
+            realm_id: Uuid::new_v4(),
+            name: "Official Realm".to_string(),
+            git_hash: 123,
+            git_timestamp: 456,
+            auth_provider: Some("https://auth.example.test".to_string()),
+        };
+
+        let encoded = bincode::serde::encode_to_vec(&info, bincode::config::standard())
+            .expect("server info should serialize");
+        let (decoded, _): (ServerInfo, usize) =
+            bincode::serde::decode_from_slice(&encoded, bincode::config::standard())
+                .expect("server info should deserialize");
+
+        assert_eq!(decoded.realm_id, info.realm_id);
+        assert_eq!(decoded.name, info.name);
+    }
 }

@@ -1,7 +1,10 @@
 use super::{FILL_FRAC_ONE, Imgs, Message};
-use crate::ui::{
-    fonts::IcedFonts as Fonts,
-    ice::{Element, component::neat_button, style},
+use crate::{
+    entry::DevMultiplayerEntry,
+    ui::{
+        fonts::IcedFonts as Fonts,
+        ice::{Element, component::neat_button, style},
+    },
 };
 use i18n::Localization;
 use iced::{
@@ -10,6 +13,8 @@ use iced::{
 
 pub struct Screen {
     back_button: button::State,
+    edit_button: button::State,
+    add_button: button::State,
     delete_button: button::State,
     server_buttons: Vec<button::State>,
     servers_list: scrollable::State,
@@ -19,6 +24,8 @@ impl Screen {
     pub fn new() -> Self {
         Self {
             back_button: Default::default(),
+            edit_button: Default::default(),
+            add_button: Default::default(),
             delete_button: Default::default(),
             server_buttons: vec![],
             servers_list: Default::default(),
@@ -29,8 +36,11 @@ impl Screen {
         &mut self,
         fonts: &Fonts,
         imgs: &Imgs,
-        servers: &[impl AsRef<str>],
+        servers: &[DevMultiplayerEntry],
         selected_server_index: Option<usize>,
+        can_edit_selected: bool,
+        can_add_selected: bool,
+        can_delete_selected: bool,
         i18n: &Localization,
         button_style: style::button::Style,
     ) -> Element<'_, Message> {
@@ -38,6 +48,13 @@ impl Screen {
             .size(fonts.cyri.scale(35))
             .width(Length::Fill)
             .horizontal_alignment(iced::HorizontalAlignment::Center);
+        let helper = Text::new(
+            "Developer host inventory: direct-connect history can be promoted into Local \
+             Dedicated, and Local Dedicated entries can be edited here.",
+        )
+        .size(fonts.cyri.scale(16))
+        .width(Length::Fill)
+        .horizontal_alignment(iced::HorizontalAlignment::Center);
 
         let back_button = Container::new(
             Container::new(neat_button(
@@ -58,7 +75,33 @@ impl Screen {
                 i18n.get_msg("common-delete_server"),
                 FILL_FRAC_ONE,
                 button_style,
-                Some(Message::DeleteServer),
+                can_delete_selected.then_some(Message::DeleteServer),
+            ))
+            .max_width(200),
+        )
+        .width(Length::Fill)
+        .align_x(Align::Center);
+
+        let edit_button = Container::new(
+            Container::new(neat_button(
+                &mut self.edit_button,
+                "Edit Local",
+                FILL_FRAC_ONE,
+                button_style,
+                can_edit_selected.then_some(Message::EditLocalDedicated),
+            ))
+            .max_width(200),
+        )
+        .width(Length::Fill)
+        .align_x(Align::Center);
+
+        let add_button = Container::new(
+            Container::new(neat_button(
+                &mut self.add_button,
+                "Register Local",
+                FILL_FRAC_ONE,
+                button_style,
+                can_add_selected.then_some(Message::AddLocalDedicated),
             ))
             .max_width(200),
         )
@@ -91,11 +134,24 @@ impl Screen {
                         state,
                         Row::with_children(vec![
                             Space::new(Length::FillPortion(5), Length::Units(0)).into(),
-                            Text::new(server.as_ref())
-                                .size(fonts.cyri.scale(30))
-                                .width(Length::FillPortion(95))
-                                .vertical_alignment(iced::VerticalAlignment::Center)
-                                .into(),
+                            Column::with_children(vec![
+                                Text::new(&server.label)
+                                    .size(fonts.cyri.scale(28))
+                                    .width(Length::Fill)
+                                    .vertical_alignment(iced::VerticalAlignment::Center)
+                                    .into(),
+                                Text::new(&server.kind_label)
+                                    .size(fonts.cyri.scale(18))
+                                    .width(Length::Fill)
+                                    .into(),
+                                Text::new(&server.detail)
+                                    .size(fonts.cyri.scale(15))
+                                    .width(Length::Fill)
+                                    .into(),
+                            ])
+                            .spacing(4)
+                            .width(Length::FillPortion(95))
+                            .into(),
                         ]),
                     )
                     .style(
@@ -104,7 +160,7 @@ impl Screen {
                             .press_image(imgs.selection_press)
                             .image_color(vek::Rgba::new(color.0, color.1, color.2, 255)),
                     )
-                    .min_height(100)
+                    .min_height(120)
                     .on_press(Message::ServerChanged(i));
                     Row::with_children(vec![
                         Space::new(Length::FillPortion(3), Length::Units(0)).into(),
@@ -121,10 +177,16 @@ impl Screen {
             Container::new(
                 Column::with_children(vec![
                     title.into(),
+                    helper.into(),
                     list.into(),
-                    Row::with_children(vec![delete_button.into(), back_button.into()])
-                        .width(Length::Fill)
-                        .into(),
+                    Row::with_children(vec![
+                        edit_button.into(),
+                        add_button.into(),
+                        delete_button.into(),
+                        back_button.into(),
+                    ])
+                    .width(Length::Fill)
+                    .into(),
                 ])
                 .width(Length::Fill)
                 .height(Length::Fill)

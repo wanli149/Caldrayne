@@ -1,17 +1,19 @@
 use super::{FILL_FRAC_ONE, FILL_FRAC_TWO, Imgs, LoginInfo, Message, Showing};
-use crate::ui::{
-    fonts::IcedFonts as Fonts,
-    ice::{
-        Element, IcedUi,
-        component::neat_button,
-        style,
-        widget::{self,
-            AspectRatioContainer, BackgroundContainer, Image, Padding,
-            compound_graphic::{CompoundGraphic, Graphic},
+use crate::{
+    ui::{
+        fonts::IcedFonts as Fonts,
+        ice::{
+            Element, IcedUi,
+            component::neat_button,
+            style,
+            widget::{
+                self, AspectRatioContainer, BackgroundContainer, Image, Padding,
+                compound_graphic::{CompoundGraphic, Graphic},
+            },
         },
     },
+    window::{TextInputPolicy, TextInputSource, TextInputTarget},
 };
-use crate::window::{TextInputPolicy, TextInputSource, TextInputTarget};
 
 use i18n::{LanguageMetadata, Localization};
 use iced::{
@@ -43,6 +45,10 @@ impl Screen {
         &mut self,
         fonts: &Fonts,
         imgs: &Imgs,
+        allow_server_list: bool,
+        allow_server_unlock: bool,
+        allow_singleplayer: bool,
+        allow_multiplayer: bool,
         server_field_locked: bool,
         login_info: &LoginInfo,
         error: Option<&str>,
@@ -55,7 +61,7 @@ impl Screen {
         let mut buttons = Vec::new();
         // If the server field is locked, we don't want to show the server selection
         // list!
-        if !server_field_locked {
+        if allow_server_list && !server_field_locked {
             buttons.push(neat_button(
                 &mut self.servers_button,
                 i18n.get_msg("common-servers"),
@@ -163,6 +169,9 @@ impl Screen {
                 Showing::Login => self.banner.view(
                     fonts,
                     imgs,
+                    allow_server_unlock,
+                    allow_singleplayer,
+                    allow_multiplayer,
                     server_field_locked,
                     login_info,
                     i18n,
@@ -404,6 +413,9 @@ impl LoginBanner {
         &mut self,
         fonts: &Fonts,
         imgs: &Imgs,
+        allow_server_unlock: bool,
+        allow_singleplayer: bool,
+        allow_multiplayer: bool,
         server_field_locked: bool,
         login_info: &LoginInfo,
         i18n: &Localization,
@@ -412,36 +424,44 @@ impl LoginBanner {
         let input_text_size = fonts.cyri.scale(INPUT_TEXT_SIZE);
 
         let server_field: Element<Message> = if server_field_locked {
-            let unlock_style = style::button::Style::new(imgs.unlock)
-                .hover_image(imgs.unlock_hover)
-                .press_image(imgs.unlock_press);
+            if allow_server_unlock {
+                let unlock_style = style::button::Style::new(imgs.unlock)
+                    .hover_image(imgs.unlock_hover)
+                    .press_image(imgs.unlock_press);
 
-            let unlock_button = Button::new(
-                &mut self.unlock_server_field_button,
-                Space::new(Length::Fill, Length::Fill),
-            )
-            .style(unlock_style)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .on_press(Message::UnlockServerField);
+                let unlock_button = Button::new(
+                    &mut self.unlock_server_field_button,
+                    Space::new(Length::Fill, Length::Fill),
+                )
+                .style(unlock_style)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .on_press(Message::UnlockServerField);
 
-            let container = AspectRatioContainer::new(unlock_button);
-            let container = match unlock_style.active().0 {
-                Some((img, _)) => container.ratio_of_image(img),
-                None => container,
-            };
+                let container = AspectRatioContainer::new(unlock_button);
+                let container = match unlock_style.active().0 {
+                    Some((img, _)) => container.ratio_of_image(img),
+                    None => container,
+                };
 
-            Row::with_children(vec![
+                Row::with_children(vec![
+                    Text::new(&login_info.server)
+                        .size(input_text_size)
+                        .width(Length::Fill)
+                        .height(Length::Shrink)
+                        .into(),
+                    container.into(),
+                ])
+                .align_items(Align::Center)
+                .height(Length::Fill)
+                .into()
+            } else {
                 Text::new(&login_info.server)
                     .size(input_text_size)
                     .width(Length::Fill)
-                    .height(Length::Shrink)
-                    .into(),
-                container.into(),
-            ])
-            .align_items(Align::Center)
-            .height(Length::Fill)
-            .into()
+                    .height(Length::Fill)
+                    .into()
+            }
         } else {
             widget::TrackBounds::new(
                 &self.server_bounds,
@@ -514,16 +534,20 @@ impl LoginBanner {
                     i18n.get_msg("common-multiplayer"),
                     FILL_FRAC_TWO,
                     button_style,
-                    Some(Message::Multiplayer),
+                    allow_multiplayer.then_some(Message::Multiplayer),
                 ),
                 #[cfg(feature = "singleplayer")]
-                neat_button(
-                    &mut self.singleplayer_button,
-                    i18n.get_msg("common-singleplayer"),
-                    FILL_FRAC_TWO,
-                    button_style,
-                    Some(Message::Singleplayer),
-                ),
+                if allow_singleplayer {
+                    neat_button(
+                        &mut self.singleplayer_button,
+                        i18n.get_msg("common-singleplayer"),
+                        FILL_FRAC_TWO,
+                        button_style,
+                        Some(Message::Singleplayer),
+                    )
+                } else {
+                    Space::new(Length::Shrink, Length::Shrink).into()
+                },
             ])
             .max_width(170)
             .height(Length::Units(200))

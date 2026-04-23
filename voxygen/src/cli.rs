@@ -8,20 +8,31 @@
 //! Airshipper should only use arguments listed above! Since we will not try to
 //! be careful about their stability otherwise.
 //!
+//! Note that `server` is now a development-oriented override. Public mode no
+//! longer treats it as an official entry selector.
+//!
 //! Likewise Airshipper should only use the following subcommands:
 //! * `ListWgpuBackends`
 use std::str::FromStr;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use common_net::msg::ClientType;
 
 #[derive(Parser, Clone)]
 pub struct Args {
-    /// Value to auto-fill into the server field.
+    /// Development-only value to auto-fill into the server field.
     ///
-    /// This allows passing in server selection performed in airshipper.
+    /// This allows passing in server selection performed in airshipper or
+    /// local tooling while using developer mode. Public mode ignores this as
+    /// an official entry selector.
     #[clap(short, long)]
     pub server: Option<String>,
+
+    /// Controls whether the client runs in public-official mode or developer mode.
+    ///
+    /// When omitted, debug builds default to `dev` and release builds default to `public`.
+    #[clap(long, env = "CALDRAYNE_PRODUCT_MODE", value_enum)]
+    pub product_mode: Option<ProductModeArg>,
 
     /// The [`ClientType`] voxygen will use to initialize the client.
     ///
@@ -42,6 +53,12 @@ pub enum Commands {
     /// List available wgpu devices. This is called by Airshipper to show a
     /// dropbox of available devices.
     ListWgpuDevices,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum ProductModeArg {
+    Public,
+    Dev,
 }
 
 #[derive(Clone)]

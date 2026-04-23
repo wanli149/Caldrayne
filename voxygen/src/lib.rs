@@ -16,6 +16,7 @@ pub mod cli;
 pub mod cmd;
 mod credits;
 #[cfg(feature = "discord")] pub mod discord;
+pub mod entry;
 mod ecs;
 pub mod error;
 pub mod game_input;
@@ -42,6 +43,7 @@ use crate::singleplayer::SingleplayerState;
 use crate::ui::egui::EguiState;
 use crate::{
     audio::AudioFrontend,
+    entry::EntryPolicy,
     profile::Profile,
     render::{Drawer, GlobalsBindGroup},
     settings::Settings,
@@ -60,6 +62,7 @@ pub struct GlobalState {
     pub userdata_dir: PathBuf,
     pub config_dir: PathBuf,
     pub settings: Settings,
+    pub entry_policy: EntryPolicy,
     pub profile: Profile,
     pub window: Window,
     pub tokio_runtime: Arc<Runtime>,

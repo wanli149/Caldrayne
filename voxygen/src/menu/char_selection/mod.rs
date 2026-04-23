@@ -206,11 +206,10 @@ impl PlayState for CharSelectionState {
                     },
                     ui::Event::SelectCharacter(selected) => {
                         let client = self.client.borrow();
-                        let server_name = &client.server_info().name;
                         // Select newly created character
                         global_state
                             .profile
-                            .set_selected_character(server_name, selected);
+                            .set_selected_character(client.server_info().realm_id, selected);
                         global_state
                             .profile
                             .save_to_file_warn(&global_state.config_dir);

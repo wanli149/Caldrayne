@@ -123,6 +123,7 @@ fn main() -> io::Result<()> {
     }
 
     // Load server settings
+    let server_identity = server::ServerIdentity::load(&server_data_dir);
     let mut server_settings = server::Settings::load(&server_data_dir);
     let mut editable_settings = server::EditableSettings::load(&server_data_dir);
 
@@ -213,6 +214,7 @@ fn main() -> io::Result<()> {
     let mut server = Server::new(
         server_settings,
         editable_settings,
+        server_identity,
         database_settings,
         &server_data_dir,
         &|_| {},

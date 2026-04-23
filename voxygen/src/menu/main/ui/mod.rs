@@ -2,6 +2,7 @@ mod connecting;
 // Note: Keeping in case we re-add the disclaimer
 //mod disclaimer;
 mod credits;
+mod local_dedicated;
 mod login;
 mod servers;
 #[cfg(feature = "singleplayer")]
@@ -10,6 +11,7 @@ mod world_selector;
 use crate::{
     GlobalState,
     credits::Credits,
+    entry::{DevMultiplayerEntry, EntryPolicy, HostKind},
     render::UiDrawer,
     ui::{
         self, Graphic,
@@ -23,7 +25,10 @@ use i18n::{LanguageMetadata, LocalizationHandle};
 use iced::{Column, Container, HorizontalAlignment, Length, Row, Space, text_input};
 //ImageFrame, Tooltip,
 use crate::settings::Settings;
-use common::assets::{AssetExt, Image, Ron};
+use common::{
+    assets::{AssetExt, Image, Ron},
+    uuid::Uuid,
+};
 use rand::{rng, seq::IndexedRandom};
 use std::time::Duration;
 use tracing::warn;
@@ -161,6 +166,8 @@ pub enum Event {
         username: String,
         password: String,
         server_address: String,
+        local_dedicated_instance_id: Option<Uuid>,
+        host_kind: HostKind,
     },
     CancelLoginAttempt,
     ChangeLanguage(LanguageMetadata),
@@ -174,8 +181,21 @@ pub enum Event {
     // Note: Keeping in case we re-add the disclaimer
     //DisclaimerAccepted,
     AuthServerTrust(String, bool),
+    RegisterLocalDedicated {
+        server_address: String,
+    },
     DeleteServer {
         server_index: usize,
+    },
+    UpdateLocalDedicated {
+        instance_id: Uuid,
+        display_name: String,
+        server_address: String,
+        connection_kind: crate::settings::LocalDedicatedConnectionKind,
+        validate_tls: bool,
+    },
+    DeleteLocalDedicated {
+        instance_id: Uuid,
     },
 }
 
@@ -205,6 +225,9 @@ enum Screen {
     },
     Servers {
         screen: servers::Screen,
+    },
+    LocalDedicatedEditor {
+        screen: Box<local_dedicated::Screen>,
     },
     Connecting {
         screen: connecting::Screen,
@@ -242,10 +265,18 @@ pub struct Controls {
     version: String,
     credits: Credits,
 
-    // If a server address was provided via cli argument we hide the server list button and replace
-    // the server field with a plain label (with a button to exit this mode and freely edit the
-    // field).
+    // Public mode and CLI-pinned dev mode both lock the server field. Only the CLI-pinned dev
+    // mode may unlock it back into an editable field.
     server_field_locked: bool,
+    allow_server_unlock: bool,
+    allow_server_list: bool,
+    allow_singleplayer: bool,
+    allow_multiplayer: bool,
+    entry_policy: EntryPolicy,
+    cli_server: Option<String>,
+    dev_multiplayer_entries: Vec<DevMultiplayerEntry>,
+    multiplayer_host_kind: HostKind,
+    selected_local_dedicated_instance_id: Option<Uuid>,
     selected_server_index: Option<usize>,
     login_info: LoginInfo,
 
@@ -286,7 +317,14 @@ enum Message {
     TrustPromptAdd,
     TrustPromptCancel,
     CloseError,
+    EditLocalDedicated,
+    AddLocalDedicated,
     DeleteServer,
+    LocalDedicatedDisplayName(String),
+    LocalDedicatedServerAddress(String),
+    LocalDedicatedConnectionKind(crate::settings::LocalDedicatedConnectionKind),
+    ToggleLocalDedicatedTls,
+    SaveLocalDedicatedEditor,
     /* Note: Keeping in case we re-add the disclaimer
      *AcceptDisclaimer, */
 }
@@ -298,9 +336,13 @@ impl Controls {
         bg_img: widget::image::Handle,
         i18n: LocalizationHandle,
         settings: &Settings,
+        entry_policy: &EntryPolicy,
         server: Option<String>,
     ) -> Self {
-        let version = format!("Caldrayne Online (Veldr) {}", *common::util::DISPLAY_VERSION);
+        let version = format!(
+            "Caldrayne Online (Veldr) {}",
+            *common::util::DISPLAY_VERSION
+        );
 
         let credits = Ron::<Credits>::load_expect_cloned("credits").into_inner();
 
@@ -316,17 +358,38 @@ impl Controls {
             };
         //};
 
-        let server_field_locked = server.is_some();
+        let cli_server = server.as_deref();
+        let server_field_locked = entry_policy.should_lock_server_field(cli_server);
+        let allow_server_unlock = entry_policy.can_unlock_server_field(cli_server);
+        let allow_server_list = entry_policy.can_show_server_list();
+        let allow_singleplayer = entry_policy.can_use_singleplayer();
+        let allow_multiplayer = entry_policy.can_attempt_multiplayer();
+        let multiplayer_host_kind =
+            entry_policy.initial_multiplayer_host_kind(settings, cli_server);
+        let dev_multiplayer_entries = entry_policy.dev_multiplayer_entries(settings, cli_server);
         let login_info = LoginInfo {
             username: settings.networking.username.clone(),
             password: String::new(),
-            server: server.unwrap_or_else(|| settings.networking.default_server.clone()),
+            server: entry_policy.initial_server_field_value(settings, cli_server),
         };
-        let selected_server_index = settings
-            .networking
-            .servers
-            .iter()
-            .position(|f| f == &login_info.server);
+        let selected_local_dedicated_instance_id =
+            if matches!(multiplayer_host_kind, HostKind::DevLocalDedicated) {
+                settings.networking.default_local_dedicated_instance_id
+            } else {
+                None
+            };
+        let selected_server_index = if allow_server_list && !server_field_locked {
+            dev_multiplayer_entries.iter().position(|entry| {
+                Self::entry_matches_target(
+                    entry,
+                    multiplayer_host_kind,
+                    selected_local_dedicated_instance_id,
+                    &login_info.server,
+                )
+            })
+        } else {
+            None
+        };
 
         let language_metadatas = i18n::list_localizations();
         let selected_language_index = language_metadatas
@@ -342,6 +405,15 @@ impl Controls {
             credits,
 
             server_field_locked,
+            allow_server_unlock,
+            allow_server_list,
+            allow_singleplayer,
+            allow_multiplayer,
+            entry_policy: entry_policy.clone(),
+            cli_server: server,
+            dev_multiplayer_entries,
+            multiplayer_host_kind,
+            selected_local_dedicated_instance_id,
             selected_server_index,
             login_info,
 
@@ -361,6 +433,7 @@ impl Controls {
         #[cfg(feature = "singleplayer")] worlds: &crate::singleplayer::SingleplayerWorlds,
     ) -> Element<'_, Message> {
         self.time += dt as f64;
+        self.refresh_dev_multiplayer_entries(settings);
 
         // TODO: consider setting this as the default in the renderer
         let button_style = style::button::Style::new(self.imgs.button)
@@ -401,6 +474,10 @@ impl Controls {
             Screen::Login { screen, error } => screen.view(
                 &self.fonts,
                 &self.imgs,
+                self.allow_server_list,
+                self.allow_server_unlock,
+                self.allow_singleplayer,
+                self.allow_multiplayer,
                 self.server_field_locked,
                 &self.login_info,
                 error.as_deref(),
@@ -413,11 +490,23 @@ impl Controls {
             Screen::Servers { screen } => screen.view(
                 &self.fonts,
                 &self.imgs,
-                &settings.networking.servers,
+                &self.dev_multiplayer_entries,
                 self.selected_server_index,
+                self.selected_server_index
+                    .and_then(|index| self.dev_multiplayer_entries.get(index))
+                    .is_some_and(|entry| matches!(entry.host_kind, HostKind::DevLocalDedicated)),
+                self.selected_server_index
+                    .and_then(|index| self.dev_multiplayer_entries.get(index))
+                    .is_some_and(|entry| entry.can_register_local_dedicated),
+                self.selected_server_index
+                    .and_then(|index| self.dev_multiplayer_entries.get(index))
+                    .is_some_and(|entry| entry.can_delete),
                 &self.i18n.read(),
                 button_style,
             ),
+            Screen::LocalDedicatedEditor { screen } => {
+                screen.view(&self.fonts, &self.imgs, &self.i18n.read(), button_style)
+            },
             Screen::Connecting {
                 screen,
                 connection_state,
@@ -460,21 +549,34 @@ impl Controls {
         settings: &Settings,
         ui: &mut Ui,
     ) {
-        let servers = &settings.networking.servers;
+        self.refresh_dev_multiplayer_entries(settings);
         let mut language_metadatas = i18n::list_localizations();
 
         match message {
             Message::Quit => events.push(Event::Quit),
             Message::Back => {
-                self.screen = Screen::Login {
-                    screen: Box::default(),
-                    error: None,
+                self.screen = if matches!(&self.screen, Screen::LocalDedicatedEditor { .. }) {
+                    Screen::Servers {
+                        screen: servers::Screen::new(),
+                    }
+                } else {
+                    Screen::Login {
+                        screen: Box::default(),
+                        error: None,
+                    }
                 };
             },
             Message::ShowServers => {
-                if matches!(&self.screen, Screen::Login { .. }) {
+                if self.allow_server_list && matches!(&self.screen, Screen::Login { .. }) {
                     self.selected_server_index =
-                        servers.iter().position(|f| f == &self.login_info.server);
+                        self.dev_multiplayer_entries.iter().position(|entry| {
+                            Self::entry_matches_target(
+                                entry,
+                                self.multiplayer_host_kind,
+                                self.selected_local_dedicated_instance_id,
+                                &self.login_info.server,
+                            )
+                        });
                     self.screen = Screen::Servers {
                         screen: servers::Screen::new(),
                     };
@@ -487,19 +589,25 @@ impl Controls {
             },
             #[cfg(feature = "singleplayer")]
             Message::Singleplayer => {
-                self.screen = Screen::WorldSelector {
-                    screen: world_selector::Screen::default(),
-                };
-                events.push(Event::InitSingleplayer);
+                if self.allow_singleplayer {
+                    self.screen = Screen::WorldSelector {
+                        screen: world_selector::Screen::default(),
+                    };
+                    events.push(Event::InitSingleplayer);
+                }
             },
             #[cfg(feature = "singleplayer")]
             Message::SingleplayerPlay => {
-                self.screen = Screen::Connecting {
-                    screen: connecting::Screen::new(ui),
-                    connection_state: ConnectionState::InProgress,
-                    init_stage: DetailedInitializationStage::Singleplayer,
-                };
-                events.push(Event::StartSingleplayer);
+                if self.allow_singleplayer {
+                    self.screen = Screen::Connecting {
+                        screen: connecting::Screen::new(ui),
+                        connection_state: ConnectionState::InProgress,
+                        init_stage: DetailedInitializationStage::PreparingHost(
+                            HostKind::DevSingleplayer,
+                        ),
+                    };
+                    events.push(Event::StartSingleplayer);
+                }
             },
             #[cfg(feature = "singleplayer")]
             Message::WorldChanged(change) => {
@@ -535,19 +643,36 @@ impl Controls {
                 }
             },
             Message::Multiplayer => {
-                self.screen = Screen::Connecting {
-                    screen: connecting::Screen::new(ui),
-                    connection_state: ConnectionState::InProgress,
-                    init_stage: DetailedInitializationStage::StartingMultiplayer,
-                };
+                if self.allow_multiplayer {
+                    self.screen = Screen::Connecting {
+                        screen: connecting::Screen::new(ui),
+                        connection_state: ConnectionState::InProgress,
+                        init_stage: DetailedInitializationStage::PreparingHost(
+                            self.multiplayer_host_kind,
+                        ),
+                    };
 
-                events.push(Event::LoginAttempt {
-                    username: self.login_info.username.trim().to_string(),
-                    password: self.login_info.password.clone(),
-                    server_address: self.login_info.server.trim().to_string(),
-                });
+                    events.push(Event::LoginAttempt {
+                        username: self.login_info.username.trim().to_string(),
+                        password: self.login_info.password.clone(),
+                        server_address: self.login_info.server.trim().to_string(),
+                        local_dedicated_instance_id: matches!(
+                            self.multiplayer_host_kind,
+                            HostKind::DevLocalDedicated
+                        )
+                        .then_some(self.selected_local_dedicated_instance_id)
+                        .flatten(),
+                        host_kind: self.multiplayer_host_kind,
+                    });
+                }
             },
-            Message::UnlockServerField => self.server_field_locked = false,
+            Message::UnlockServerField => {
+                if self.allow_server_unlock {
+                    self.server_field_locked = false;
+                    self.multiplayer_host_kind = HostKind::DevDirectConnect;
+                    self.selected_local_dedicated_instance_id = None;
+                }
+            },
             Message::Username(new_value) => {
                 self.login_info.username = sanitize_ascii_input(new_value);
             },
@@ -560,10 +685,22 @@ impl Controls {
             },
             Message::Server(new_value) => {
                 self.login_info.server = sanitize_ascii_input(new_value);
+                if self.entry_policy.is_dev() {
+                    self.multiplayer_host_kind = HostKind::DevDirectConnect;
+                    self.selected_local_dedicated_instance_id = None;
+                    self.selected_server_index = None;
+                }
             },
             Message::ServerChanged(new_value) => {
-                self.selected_server_index = Some(new_value);
-                self.login_info.server.clone_from(&servers[new_value]);
+                if self.allow_server_list && new_value < self.dev_multiplayer_entries.len() {
+                    self.selected_server_index = Some(new_value);
+                    self.login_info
+                        .server
+                        .clone_from(&self.dev_multiplayer_entries[new_value].server_address);
+                    self.multiplayer_host_kind = self.dev_multiplayer_entries[new_value].host_kind;
+                    self.selected_local_dedicated_instance_id =
+                        self.dev_multiplayer_entries[new_value].local_dedicated_instance_id;
+                }
             },
             Message::FocusPassword => {
                 if let Screen::Login { screen, .. } = &mut self.screen {
@@ -594,10 +731,96 @@ impl Controls {
                 }
             },
             Message::DeleteServer => {
-                if let Some(server_index) = self.selected_server_index {
-                    events.push(Event::DeleteServer { server_index });
-                    self.selected_server_index = None;
+                if self.allow_server_list
+                    && let Some(selected_index) = self.selected_server_index
+                {
+                    if let Some(server_index) =
+                        self.direct_history_index_for_selection(selected_index)
+                    {
+                        events.push(Event::DeleteServer { server_index });
+                        self.selected_server_index = None;
+                    } else if let Some(instance_id) =
+                        self.local_dedicated_instance_id_for_selection(selected_index)
+                    {
+                        events.push(Event::DeleteLocalDedicated { instance_id });
+                        self.selected_server_index = None;
+                        self.selected_local_dedicated_instance_id = None;
+                    }
                 }
+            },
+            Message::AddLocalDedicated => {
+                if self.allow_server_list
+                    && let Some(server_address) =
+                        self.direct_connect_address_for_local_registration()
+                {
+                    events.push(Event::RegisterLocalDedicated { server_address });
+                }
+            },
+            Message::EditLocalDedicated => {
+                if self.allow_server_list
+                    && let Some(instance_id) = self.local_dedicated_instance_id_for_editing()
+                    && let Some(entry) = settings
+                        .networking
+                        .local_dedicated_server_by_instance_id(instance_id)
+                {
+                    self.screen = Screen::LocalDedicatedEditor {
+                        screen: Box::new(local_dedicated::Screen::from_entry(entry)),
+                    };
+                }
+            },
+            Message::LocalDedicatedDisplayName(new_value) => {
+                if let Screen::LocalDedicatedEditor { screen } = &mut self.screen {
+                    screen.display_name = sanitize_open_text_input(new_value);
+                }
+            },
+            Message::LocalDedicatedServerAddress(new_value) => {
+                if let Screen::LocalDedicatedEditor { screen } = &mut self.screen {
+                    screen.server_address = sanitize_ascii_input(new_value);
+                }
+            },
+            Message::LocalDedicatedConnectionKind(new_kind) => {
+                if let Screen::LocalDedicatedEditor { screen } = &mut self.screen {
+                    screen.connection_kind = new_kind;
+                    if matches!(
+                        screen.connection_kind,
+                        crate::settings::LocalDedicatedConnectionKind::Tcp
+                    ) {
+                        screen.validate_tls = false;
+                    }
+                }
+            },
+            Message::ToggleLocalDedicatedTls => {
+                if let Screen::LocalDedicatedEditor { screen } = &mut self.screen
+                    && matches!(
+                        screen.connection_kind,
+                        crate::settings::LocalDedicatedConnectionKind::Quic
+                    )
+                {
+                    screen.validate_tls = !screen.validate_tls;
+                }
+            },
+            Message::SaveLocalDedicatedEditor => {
+                if let Screen::LocalDedicatedEditor { screen } = &mut self.screen {
+                    let server_address = screen.server_address.trim().to_string();
+                    if !server_address.is_empty() {
+                        self.login_info.server.clone_from(&server_address);
+                        self.multiplayer_host_kind = HostKind::DevLocalDedicated;
+                        self.selected_local_dedicated_instance_id = Some(screen.instance_id);
+                        events.push(Event::UpdateLocalDedicated {
+                            instance_id: screen.instance_id,
+                            display_name: screen.display_name.trim().to_string(),
+                            server_address,
+                            connection_kind: screen.connection_kind,
+                            validate_tls: matches!(
+                                screen.connection_kind,
+                                crate::settings::LocalDedicatedConnectionKind::Quic
+                            ) && screen.validate_tls,
+                        });
+                    }
+                }
+                self.screen = Screen::Servers {
+                    screen: servers::Screen::new(),
+                };
             },
             /* Note: Keeping in case we re-add the disclaimer */
             /*Message::AcceptDisclaimer => {
@@ -620,6 +843,95 @@ impl Controls {
                 error: None,
             }
         }
+    }
+
+    fn refresh_dev_multiplayer_entries(&mut self, settings: &Settings) {
+        self.dev_multiplayer_entries = self
+            .entry_policy
+            .dev_multiplayer_entries(settings, self.cli_server.as_deref());
+
+        if self
+            .selected_server_index
+            .is_some_and(|index| index >= self.dev_multiplayer_entries.len())
+        {
+            self.selected_server_index = None;
+            if matches!(self.multiplayer_host_kind, HostKind::DevLocalDedicated) {
+                self.selected_local_dedicated_instance_id = None;
+            }
+        }
+    }
+
+    fn entry_matches_target(
+        entry: &DevMultiplayerEntry,
+        host_kind: HostKind,
+        local_dedicated_instance_id: Option<Uuid>,
+        server_address: &str,
+    ) -> bool {
+        if entry.host_kind != host_kind {
+            return false;
+        }
+
+        match host_kind {
+            HostKind::DevLocalDedicated => {
+                if let Some(instance_id) = local_dedicated_instance_id {
+                    entry.local_dedicated_instance_id == Some(instance_id)
+                } else {
+                    entry.server_address == server_address
+                }
+            },
+            _ => entry.server_address == server_address,
+        }
+    }
+
+    fn direct_history_index_for_selection(&self, selected_index: usize) -> Option<usize> {
+        let selected = self.dev_multiplayer_entries.get(selected_index)?;
+        if !selected.can_delete || !matches!(selected.host_kind, HostKind::DevDirectConnect) {
+            return None;
+        }
+
+        self.dev_multiplayer_entries
+            .iter()
+            .take(selected_index + 1)
+            .filter(|entry| {
+                entry.can_delete
+                    && matches!(entry.host_kind, HostKind::DevDirectConnect)
+                    && entry.server_address == selected.server_address
+            })
+            .count()
+            .checked_sub(1)
+    }
+
+    fn direct_connect_address_for_local_registration(&self) -> Option<String> {
+        let selected = self
+            .selected_server_index
+            .and_then(|index| self.dev_multiplayer_entries.get(index))?;
+        if !selected.can_register_local_dedicated
+            || !matches!(selected.host_kind, HostKind::DevDirectConnect)
+        {
+            return None;
+        }
+
+        Some(selected.server_address.clone())
+    }
+
+    fn local_dedicated_instance_id_for_selection(&self, selected_index: usize) -> Option<Uuid> {
+        let selected = self.dev_multiplayer_entries.get(selected_index)?;
+        if !selected.can_delete || !matches!(selected.host_kind, HostKind::DevLocalDedicated) {
+            return None;
+        }
+
+        selected.local_dedicated_instance_id
+    }
+
+    fn local_dedicated_instance_id_for_editing(&self) -> Option<Uuid> {
+        let selected = self
+            .selected_server_index
+            .and_then(|index| self.dev_multiplayer_entries.get(index))?;
+        if !matches!(selected.host_kind, HostKind::DevLocalDedicated) {
+            return None;
+        }
+
+        selected.local_dedicated_instance_id
     }
 
     fn auth_trust_prompt(&mut self, auth_server: String) {
@@ -697,6 +1009,9 @@ impl Controls {
                 &self.login_info,
                 self.server_field_locked,
             ),
+            Screen::LocalDedicatedEditor { screen } => {
+                screen.active_text_input_target(ui, &self.fonts)
+            },
             #[cfg(feature = "singleplayer")]
             Screen::WorldSelector { screen } => {
                 screen.active_text_input_target(worlds, ui, &self.fonts)
@@ -713,6 +1028,10 @@ fn sanitize_ascii_input(value: String) -> String {
         .collect()
 }
 
+fn sanitize_open_text_input(value: String) -> String {
+    value.chars().filter(|c| !c.is_control()).collect()
+}
+
 pub struct MainMenuUi {
     ui: Ui,
     // TODO: re add this
@@ -723,6 +1042,16 @@ pub struct MainMenuUi {
 
 impl MainMenuUi {
     pub fn new(global_state: &mut GlobalState) -> Self {
+        if global_state
+            .settings
+            .networking
+            .sync_default_local_dedicated_source(&global_state.userdata_dir)
+        {
+            global_state
+                .settings
+                .save_to_file_warn(&global_state.config_dir);
+        }
+
         // Load language
         let i18n = &global_state.i18n.read();
         // TODO: don't add default font twice
@@ -746,6 +1075,7 @@ impl MainMenuUi {
             ui.add_graphic(Graphic::Image(bg_img, None)),
             global_state.i18n,
             &global_state.settings,
+            &global_state.entry_policy,
             global_state.args.server.clone(),
         );
 

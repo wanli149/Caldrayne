@@ -43,7 +43,7 @@ pub use crate::{
     error::Error,
     events::Event,
     input::Input,
-    settings::{CalendarMode, EditableSettings, Settings},
+    settings::{CalendarMode, EditableSettings, ServerIdentity, Settings},
 };
 
 #[cfg(feature = "persistent_world")]
@@ -241,6 +241,7 @@ pub struct Server {
     state: State,
     world: Arc<World>,
     index: IndexOwned,
+    identity: ServerIdentity,
 
     connection_handler: ConnectionHandler,
 
@@ -259,6 +260,7 @@ impl Server {
     pub fn new(
         settings: Settings,
         editable_settings: EditableSettings,
+        identity: ServerIdentity,
         database_settings: DatabaseSettings,
         data_dir: &std::path::Path,
         report_stage: &(dyn Fn(ServerInitStage) + Send + Sync),
@@ -687,6 +689,7 @@ impl Server {
             state,
             world,
             index,
+            identity,
             connection_handler,
             runtime,
 
@@ -709,6 +712,7 @@ impl Server {
         let settings = self.state.ecs().fetch::<Settings>();
 
         ServerInfo {
+            realm_id: self.identity.realm_id,
             name: settings.server_name.clone(),
             git_hash: *common::util::GIT_HASH,
             git_timestamp: *common::util::GIT_TIMESTAMP,
@@ -720,6 +724,8 @@ impl Server {
     pub fn settings(&self) -> impl Deref<Target = Settings> + '_ {
         self.state.ecs().fetch::<Settings>()
     }
+
+    pub fn identity(&self) -> &ServerIdentity { &self.identity }
 
     /// Get a mutable reference to the server's settings
     pub fn settings_mut(&self) -> impl DerefMut<Target = Settings> + '_ {

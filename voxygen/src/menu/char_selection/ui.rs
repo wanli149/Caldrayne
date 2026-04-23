@@ -12,9 +12,9 @@ use crate::{
                 tooltip::{self, WithTooltip},
             },
             style,
-            widget::{self,
-                AspectRatioContainer, BackgroundContainer, Image, MouseDetector, Overlay, Padding,
-                TooltipManager, mouse_detector,
+            widget::{
+                self, AspectRatioContainer, BackgroundContainer, Image, MouseDetector, Overlay,
+                Padding, TooltipManager, mouse_detector,
             },
         },
         img_ids::ImageGraphic,
@@ -375,7 +375,10 @@ impl Controls {
         world_sz: Vec2<u32>,
         has_rules: bool,
     ) -> Self {
-        let version = format!("Caldrayne Online (Veldr) {}", *common::util::DISPLAY_VERSION);
+        let version = format!(
+            "Caldrayne Online (Veldr) {}",
+            *common::util::DISPLAY_VERSION
+        );
         let server_mismatched_version = (*common::util::GIT_HASH != server_info.git_hash
             || *common::util::GIT_TIMESTAMP != server_info.git_timestamp)
             .then(|| {
@@ -2061,22 +2064,20 @@ impl Controls {
                 name_input,
                 name_input_bounds,
                 ..
-            } if name_input.is_focused() => Some(
-                TextInputTarget {
-                    source: TextInputSource::Iced,
-                    policy: TextInputPolicy::OpenText,
-                    cursor_rect: ui
-                        .text_input_cursor_rect(
-                            name_input_bounds,
-                            name_input,
-                            name,
-                            self.fonts.cyri.id,
-                            25,
-                            false,
-                        )
-                        .or_else(|| ui.tracked_bounds_cursor_rect(name_input_bounds)),
-                },
-            ),
+            } if name_input.is_focused() => Some(TextInputTarget {
+                source: TextInputSource::Iced,
+                policy: TextInputPolicy::OpenText,
+                cursor_rect: ui
+                    .text_input_cursor_rect(
+                        name_input_bounds,
+                        name_input,
+                        name,
+                        self.fonts.cyri.id,
+                        25,
+                        false,
+                    )
+                    .or_else(|| ui.tracked_bounds_cursor_rect(name_input_bounds)),
+            }),
             _ => None,
         }
     }
@@ -2092,9 +2093,16 @@ pub struct CharSelectionUi {
 
 impl CharSelectionUi {
     pub fn new(global_state: &mut GlobalState, client: &Client) -> Self {
-        // Load up the last selected character for this server
-        let server_name = &client.server_info().name;
-        let selected_character = global_state.profile.get_selected_character(server_name);
+        let server_info = client.server_info();
+        if global_state.profile.prepare_realm(server_info) {
+            global_state
+                .profile
+                .save_to_file_warn(&global_state.config_dir);
+        }
+        // Load up the last selected character for this realm
+        let selected_character = global_state
+            .profile
+            .get_selected_character(server_info.realm_id);
 
         // Load language
         let i18n = global_state.i18n.read();
@@ -2125,7 +2133,7 @@ impl CharSelectionUi {
             Imgs::load(&mut ui).expect("Failed to load images"),
             selected_character,
             default_name,
-            client.server_info(),
+            server_info,
             ui.add_graphic(Graphic::Image(
                 Arc::clone(client.world_data().topo_map_image()),
                 Some(default_water_color()),

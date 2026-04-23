@@ -1,11 +1,13 @@
 pub mod admin;
 pub mod banlist;
 mod editable;
+mod identity;
 pub mod server_description;
 pub mod server_physics;
 pub mod whitelist;
 
 pub use editable::{EditableSetting, Error as SettingError};
+pub use identity::ServerIdentity;
 
 pub use admin::{AdminRecord, Admins};
 pub use banlist::{

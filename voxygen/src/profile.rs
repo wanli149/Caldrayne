@@ -1,4 +1,5 @@
 use crate::hud;
+use client::ServerInfo;
 use common::{character::CharacterId, uuid::Uuid};
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
@@ -28,10 +29,10 @@ impl Default for CharacterProfile {
     }
 }
 
-/// Represents a server in the profile.
+/// Represents a realm in the profile.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
-pub struct ServerProfile {
+pub struct RealmProfile {
     /// A map of character's by id to their CharacterProfile.
     pub characters: HashMap<CharacterId, CharacterProfile>,
     /// Selected character in the chararacter selection screen
@@ -42,9 +43,9 @@ pub struct ServerProfile {
     pub accepted_rules: Option<u64>,
 }
 
-impl Default for ServerProfile {
+impl Default for RealmProfile {
     fn default() -> Self {
-        ServerProfile {
+        RealmProfile {
             characters: HashMap::new(),
             selected_character: None,
             spectate_position: None,
@@ -61,7 +62,10 @@ impl Default for ServerProfile {
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Profile {
-    pub servers: HashMap<String, ServerProfile>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub realms: HashMap<Uuid, RealmProfile>,
+    #[serde(rename = "servers", skip_serializing_if = "HashMap::is_empty")]
+    legacy_servers: HashMap<String, RealmProfile>,
     pub mutelist: HashMap<Uuid, String>,
     /// Temporary character profile, used when it should
     /// not be persisted to the disk.
@@ -81,6 +85,24 @@ impl Profile {
         profile
     }
 
+    /// Migrate a legacy name-keyed server bucket into the stable realm bucket
+    /// used by current builds.
+    ///
+    /// Returns `true` when a legacy bucket was consumed and the profile should
+    /// be saved.
+    pub fn prepare_realm(&mut self, server_info: &ServerInfo) -> bool {
+        if self.realms.contains_key(&server_info.realm_id) {
+            return false;
+        }
+
+        let Some(legacy_profile) = self.legacy_servers.remove(&server_info.name) else {
+            return false;
+        };
+
+        self.realms.insert(server_info.realm_id, legacy_profile);
+        true
+    }
+
     /// Save the current profile to disk, warn on failure.
     pub fn save_to_file_warn(&self, config_dir: &Path) {
         if let Err(e) = self.save_to_file(config_dir) {
@@ -88,25 +110,30 @@ impl Profile {
         }
     }
 
+    fn realm_profile(&self, realm_id: Uuid) -> Option<&RealmProfile> { self.realms.get(&realm_id) }
+
+    fn realm_profile_mut(&mut self, realm_id: Uuid) -> &mut RealmProfile {
+        self.realms.entry(realm_id).or_default()
+    }
+
     /// Get the hotbar_slots for the requested character_id.
     ///
-    /// If the server or character does not exist then the default hotbar_slots
+    /// If the realm or character does not exist then the default hotbar_slots
     /// (empty) is returned.
     ///
     /// # Arguments
     ///
-    /// * server - current server the character is on.
+    /// * realm_id - current realm the character is on.
     /// * character_id - id of the character, passing `None` indicates the
     ///   transient character profile should be used.
     pub fn get_hotbar_slots(
         &self,
-        server: &str,
+        realm_id: Uuid,
         character_id: Option<CharacterId>,
     ) -> [Option<hud::HotbarSlotContents>; 10] {
         match character_id {
             Some(character_id) => self
-                .servers
-                .get(server)
+                .realm_profile(realm_id)
                 .and_then(|s| s.characters.get(&character_id)),
             None => self.transient_character.as_ref(),
         }
@@ -116,25 +143,24 @@ impl Profile {
 
     /// Set the hotbar_slots for the requested character_id.
     ///
-    /// If the server or character does not exist then the appropriate fields
+    /// If the realm or character does not exist then the appropriate fields
     /// will be initialised and the slots added.
     ///
     /// # Arguments
     ///
-    /// * server - current server the character is on.
+    /// * realm_id - current realm the character is on.
     /// * character_id - id of the character, passing `None` indicates the
     ///   transient character profile should be used.
     /// * slots - array of hotbar_slots to save.
     pub fn set_hotbar_slots(
         &mut self,
-        server: &str,
+        realm_id: Uuid,
         character_id: Option<CharacterId>,
         slots: [Option<hud::HotbarSlotContents>; 10],
     ) {
         match character_id {
-            Some(character_id) => self.servers
-              .entry(server.to_string())
-              .or_default()
+            Some(character_id) => self
+              .realm_profile_mut(realm_id)
               // Get or update the CharacterProfile.
               .characters
               .entry(character_id)
@@ -144,74 +170,75 @@ impl Profile {
         .hotbar_slots = slots;
     }
 
-    /// Get the selected_character for the provided server.
+    /// Get the selected_character for the provided realm.
     ///
-    /// if the server does not exist then the default selected_character (None)
+    /// if the realm does not exist then the default selected_character (None)
     /// is returned.
     ///
     /// # Arguments
     ///
-    /// * server - current server the character is on.
-    pub fn get_selected_character(&self, server: &str) -> Option<CharacterId> {
-        self.servers
-            .get(server)
+    /// * realm_id - current realm the character is on.
+    pub fn get_selected_character(&self, realm_id: Uuid) -> Option<CharacterId> {
+        self.realm_profile(realm_id)
             .map(|s| s.selected_character)
             .unwrap_or_default()
     }
 
-    /// Set the selected_character for the provided server.
+    /// Set the selected_character for the provided realm.
     ///
-    /// If the server does not exist then the appropriate fields
+    /// If the realm does not exist then the appropriate fields
     /// will be initialised and the selected_character added.
     ///
     /// # Arguments
     ///
-    /// * server - current server the character is on.
+    /// * realm_id - current realm the character is on.
     /// * selected_character - option containing selected character ID
     pub fn set_selected_character(
         &mut self,
-        server: &str,
+        realm_id: Uuid,
         selected_character: Option<CharacterId>,
     ) {
-        self.servers
-            .entry(server.to_string())
-            .or_default()
-            .selected_character = selected_character;
+        self.realm_profile_mut(realm_id).selected_character = selected_character;
     }
 
-    /// Get the selected_character for the provided server.
+    /// Get the spectate_position for the provided realm.
     ///
-    /// if the server does not exist then the default spectate_position (None)
+    /// if the realm does not exist then the default spectate_position (None)
     /// is returned.
     ///
     /// # Arguments
     ///
-    /// * server - current server the player is on.
-    pub fn get_spectate_position(&self, server: &str) -> Option<vek::Vec3<f32>> {
-        self.servers
-            .get(server)
+    /// * realm_id - current realm the player is on.
+    pub fn get_spectate_position(&self, realm_id: Uuid) -> Option<vek::Vec3<f32>> {
+        self.realm_profile(realm_id)
             .map(|s| s.spectate_position)
             .unwrap_or_default()
     }
 
-    /// Set the spectate_position for the provided server.
+    /// Set the spectate_position for the provided realm.
     ///
-    /// If the server does not exist then the appropriate fields
+    /// If the realm does not exist then the appropriate fields
     /// will be initialised and the selected_character added.
     ///
     /// # Arguments
     ///
-    /// * server - current server the player is on.
+    /// * realm_id - current realm the player is on.
     /// * spectate_position - option containing the position we're spectating
     pub fn set_spectate_position(
         &mut self,
-        server: &str,
+        realm_id: Uuid,
         spectate_position: Option<vek::Vec3<f32>>,
     ) {
-        self.servers
-            .entry(server.to_string())
-            .or_default()
-            .spectate_position = spectate_position;
+        self.realm_profile_mut(realm_id).spectate_position = spectate_position;
+    }
+
+    pub fn get_accepted_rules(&self, realm_id: Uuid) -> Option<u64> {
+        self.realm_profile(realm_id)
+            .and_then(|realm| realm.accepted_rules)
+    }
+
+    pub fn set_accepted_rules(&mut self, realm_id: Uuid, accepted_rules: Option<u64>) {
+        self.realm_profile_mut(realm_id).accepted_rules = accepted_rules;
     }
 
     /// Save the current profile to disk.
@@ -235,7 +262,7 @@ mod tests {
     #[test]
     fn test_get_slots_with_empty_profile() {
         let profile = Profile::default();
-        let slots = profile.get_hotbar_slots("TestServer", Some(CharacterId(12345)));
+        let slots = profile.get_hotbar_slots(Uuid::new_v4(), Some(CharacterId(12345)));
         assert_eq!(slots, [(); 10].map(|()| None))
     }
 
@@ -243,6 +270,58 @@ mod tests {
     fn test_set_slots_with_empty_profile() {
         let mut profile = Profile::default();
         let slots = [(); 10].map(|()| None);
-        profile.set_hotbar_slots("TestServer", Some(CharacterId(12345)), slots);
+        profile.set_hotbar_slots(Uuid::new_v4(), Some(CharacterId(12345)), slots);
+    }
+
+    #[test]
+    fn prepare_realm_moves_legacy_bucket_once() {
+        let realm_id = Uuid::new_v4();
+        let mut profile = Profile::default();
+        profile
+            .legacy_servers
+            .insert("Official Realm".to_string(), RealmProfile {
+                selected_character: Some(CharacterId(42)),
+                ..Default::default()
+            });
+
+        assert!(profile.prepare_realm(&server_info("Official Realm", realm_id)));
+        assert_eq!(
+            profile.get_selected_character(realm_id),
+            Some(CharacterId(42))
+        );
+        assert!(!profile.prepare_realm(&server_info("Official Realm", realm_id)));
+        assert!(!profile.legacy_servers.contains_key("Official Realm"));
+    }
+
+    #[test]
+    fn prepare_realm_consumes_legacy_singleplayer_bucket_only_once() {
+        let first_realm = Uuid::new_v4();
+        let second_realm = Uuid::new_v4();
+        let mut profile = Profile::default();
+        profile
+            .legacy_servers
+            .insert("Singleplayer".to_string(), RealmProfile {
+                spectate_position: Some(vek::Vec3::new(1.0, 2.0, 3.0)),
+                ..Default::default()
+            });
+
+        assert!(profile.prepare_realm(&server_info("Singleplayer", first_realm)));
+        assert_eq!(
+            profile.get_spectate_position(first_realm),
+            Some(vek::Vec3::new(1.0, 2.0, 3.0))
+        );
+
+        assert!(!profile.prepare_realm(&server_info("Singleplayer", second_realm)));
+        assert_eq!(profile.get_spectate_position(second_realm), None);
+    }
+
+    fn server_info(name: &str, realm_id: Uuid) -> ServerInfo {
+        ServerInfo {
+            realm_id,
+            name: name.to_string(),
+            git_hash: 0,
+            git_timestamp: 0,
+            auth_provider: None,
+        }
     }
 }

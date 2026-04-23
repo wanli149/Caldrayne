@@ -38,14 +38,15 @@ discord = ["discord-sdk"]
 bin_cmd_doc_gen = []
 
 # We don't ship egui with published release builds so a separate feature is required that excludes it.
-default-publish = [
-    "singleplayer",
+default-common = [
     "native-dialog",
     "plugins",
     "discord",
     "simd",
 ]
-default = ["default-publish", "hot-reloading", "shaderc-from-source", "egui-ui"]
+default-publish = ["default-common"]
+default-dev = ["default-common", "singleplayer"]
+default = ["default-dev", "hot-reloading", "shaderc-from-source", "egui-ui"]
 
 [dependencies]
 client = { package = "veloren-client", path = "../client" }

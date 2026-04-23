@@ -5,7 +5,9 @@ use super::{char_selection::CharSelectionState, dummy_scene::Scene, server_info:
 #[cfg(feature = "singleplayer")]
 use crate::singleplayer::SingleplayerState;
 use crate::{
-    Direction, GlobalState, PlayState, PlayStateResult, hud,
+    Direction, GlobalState, PlayState, PlayStateResult,
+    entry::{HostKind, ResolvedConnectHost},
+    hud,
     render::{Drawer, GlobalsBindGroup},
     session::SessionState,
     settings::Settings,
@@ -17,8 +19,8 @@ use client::{
     addr::ConnectionArgs,
     error::{
         InitProtocolError, NetworkConnectError, NetworkError, OTHER_BAD_ALTITUDE_MAP,
-        OTHER_BAD_WORLD_MAP_DIMENSIONS, OTHER_BAD_WORLD_MAP_IMAGE,
-        OTHER_ENTITY_FROM_UID_NOT_FOUND, OTHER_NO_IP_ADDR,
+        OTHER_BAD_WORLD_MAP_DIMENSIONS, OTHER_BAD_WORLD_MAP_IMAGE, OTHER_ENTITY_FROM_UID_NOT_FOUND,
+        OTHER_NO_IP_ADDR,
     },
 };
 use client_init::{ClientInit, Error as InitError, Msg as InitMsg};
@@ -41,11 +43,9 @@ pub use ui::rand_bg_image_spec;
 
 #[derive(Debug)]
 pub enum DetailedInitializationStage {
-    #[cfg(feature = "singleplayer")]
-    Singleplayer,
+    PreparingHost(HostKind),
     #[cfg(feature = "singleplayer")]
     SingleplayerServer(ServerInitStage),
-    StartingMultiplayer,
     Client(ClientInitStage),
     CreatingRenderPipeline(usize, usize),
 }
@@ -53,17 +53,40 @@ pub enum DetailedInitializationStage {
 enum InitState {
     None,
     // Waiting on the client initialization
-    Client(ClientInit),
+    Client {
+        init: ClientInit,
+        host: ResolvedConnectHost,
+    },
     // Client initialized but still waiting on Renderer pipeline creation
     Pipeline(Box<Client>, hud::PersistedHudState),
 }
 
 impl InitState {
     fn client(&self) -> Option<&ClientInit> {
-        if let Self::Client(client_init) = &self {
-            Some(client_init)
-        } else {
-            None
+        match self {
+            Self::Client { init, .. } => Some(init),
+            _ => None,
+        }
+    }
+
+    fn host_kind(&self) -> Option<HostKind> {
+        match self {
+            Self::Client { host, .. } => Some(host.kind),
+            _ => None,
+        }
+    }
+
+    fn target_address(&self) -> Option<&str> {
+        match self {
+            Self::Client { host, .. } => host.target_address.as_deref(),
+            _ => None,
+        }
+    }
+
+    fn local_dedicated_instance_id(&self) -> Option<common::uuid::Uuid> {
+        match self {
+            Self::Client { host, .. } => host.local_dedicated_instance_id,
+            _ => None,
         }
     }
 }
@@ -90,6 +113,10 @@ impl PlayState for MainMenuState {
         // Kick off title music
         if global_state.settings.audio.output.is_enabled() && global_state.audio.music_enabled() {
             global_state.audio.play_title_music();
+        }
+
+        if let Some(message) = global_state.entry_policy.public_mode_blocker_message() {
+            global_state.info_message = Some(message);
         }
 
         // Reset singleplayer server if it was running already
@@ -132,7 +159,12 @@ impl PlayState for MainMenuState {
                             &mut global_state.info_message,
                             "singleplayer".to_owned(),
                             "".to_owned(),
-                            ConnectionArgs::Mpsc(14004),
+                            ResolvedConnectHost {
+                                kind: HostKind::DevSingleplayer,
+                                connection_args: ConnectionArgs::Mpsc(14004),
+                                target_address: None,
+                                local_dedicated_instance_id: None,
+                            },
                             &mut self.init,
                             &global_state.tokio_runtime,
                             global_state.settings.language.send_to_server.then_some(
@@ -227,6 +259,37 @@ impl PlayState for MainMenuState {
         // Poll client creation.
         match self.init.client().and_then(|init| init.poll()) {
             Some(InitMsg::Done(Ok(mut client))) => {
+                if self.init.host_kind() == Some(HostKind::DevLocalDedicated) {
+                    let server_info = client.server_info().clone();
+                    let changed = if let Some(instance_id) = self.init.local_dedicated_instance_id()
+                    {
+                        global_state
+                            .settings
+                            .networking
+                            .update_local_dedicated_observation_by_instance_id(
+                                instance_id,
+                                server_info.realm_id,
+                                &server_info.name,
+                            )
+                    } else if let Some(target_address) = self.init.target_address() {
+                        global_state
+                            .settings
+                            .networking
+                            .update_local_dedicated_observation(
+                                target_address,
+                                server_info.realm_id,
+                                &server_info.name,
+                            )
+                    } else {
+                        false
+                    };
+                    if changed {
+                        global_state
+                            .settings
+                            .save_to_file_warn(&global_state.config_dir);
+                    }
+                }
+
                 // load local plugins needed by the server
                 #[cfg(feature = "plugins")]
                 for path in client.take_local_plugins().drain(..) {
@@ -260,17 +323,22 @@ impl PlayState for MainMenuState {
                 );
             },
             Some(InitMsg::IsAuthTrusted(auth_server)) => {
-                if global_state
-                    .settings
-                    .networking
-                    .trusted_auth_servers
-                    .contains(&auth_server)
-                {
+                if global_state.entry_policy.is_auth_server_trusted(
+                    self.init.host_kind().unwrap_or(HostKind::PublicOfficial),
+                    &auth_server,
+                    &global_state.settings.networking.trusted_auth_servers,
+                ) {
                     // Can't fail since we just polled it, it must be Some
                     self.init.client().unwrap().auth_trust(auth_server, true);
-                } else {
+                } else if self.init.host_kind().is_some_and(|host_kind| {
+                    global_state
+                        .entry_policy
+                        .should_prompt_for_auth_trust(host_kind)
+                }) {
                     // Show warning that auth server is not trusted and prompt for approval
                     self.main_menu_ui.auth_trust_prompt(auth_server);
+                } else {
+                    self.init.client().unwrap().auth_trust(auth_server, false);
                 }
             },
             None => {},
@@ -410,45 +478,52 @@ impl PlayState for MainMenuState {
                     username,
                     password,
                     server_address,
+                    local_dedicated_instance_id,
+                    host_kind,
                 } => {
-                    let net_settings = &mut global_state.settings.networking;
-                    let use_srv = net_settings.use_srv;
-                    let use_quic = net_settings.use_quic;
-                    let validate_tls = net_settings.validate_tls;
-                    net_settings.username.clone_from(&username);
-                    net_settings.default_server.clone_from(&server_address);
-                    if !server_address.is_empty() && !net_settings.servers.contains(&server_address)
+                    let entry_policy = global_state.entry_policy.clone();
                     {
-                        net_settings.servers.push(server_address.clone());
+                        let net_settings = &mut global_state.settings.networking;
+                        entry_policy.apply_login_settings(
+                            net_settings,
+                            host_kind,
+                            &username,
+                            &server_address,
+                            local_dedicated_instance_id,
+                        );
                     }
                     global_state
                         .settings
                         .save_to_file_warn(&global_state.config_dir);
 
-                    let connection_args = if use_srv {
-                        ConnectionArgs::Srv {
-                            hostname: server_address,
-                            prefer_ipv6: false,
-                            validate_tls,
-                            use_quic,
-                        }
-                    } else if use_quic {
-                        ConnectionArgs::Quic {
-                            hostname: server_address,
-                            prefer_ipv6: false,
-                            validate_tls,
-                        }
-                    } else {
-                        ConnectionArgs::Tcp {
-                            hostname: server_address,
-                            prefer_ipv6: false,
-                        }
+                    let host = match entry_policy.resolve_multiplayer_host(
+                        host_kind,
+                        &server_address,
+                        local_dedicated_instance_id,
+                        &global_state.settings.networking,
+                    ) {
+                        Ok(host) => {
+                            if host.kind != host_kind {
+                                tracing::warn!(
+                                    ui_host_kind = ?host_kind,
+                                    resolved_host_kind = ?host.kind,
+                                    "Main menu UI host kind drifted from resolved host kind"
+                                );
+                            }
+                            host
+                        },
+                        Err(error) => {
+                            global_state.info_message = Some(error);
+                            self.init = InitState::None;
+                            self.main_menu_ui.cancel_connection();
+                            continue;
+                        },
                     };
                     attempt_login(
                         &mut global_state.info_message,
                         username,
                         password,
-                        connection_args,
+                        host,
                         &mut self.init,
                         &global_state.tokio_runtime,
                         global_state
@@ -486,30 +561,36 @@ impl PlayState for MainMenuState {
                 },
                 #[cfg(feature = "singleplayer")]
                 MainMenuEvent::StartSingleplayer => {
-                    global_state.singleplayer.run(
-                        &global_state.tokio_runtime,
-                        &global_state.settings.language.selected_language,
-                        &global_state.i18n,
-                    );
+                    if global_state.entry_policy.can_use_singleplayer() {
+                        global_state.singleplayer.run(
+                            &global_state.tokio_runtime,
+                            &global_state.settings.language.selected_language,
+                            &global_state.i18n,
+                        );
+                    }
                 },
                 #[cfg(feature = "singleplayer")]
                 MainMenuEvent::InitSingleplayer => {
-                    global_state.singleplayer = SingleplayerState::init();
+                    if global_state.entry_policy.can_use_singleplayer() {
+                        global_state.singleplayer = SingleplayerState::init();
+                    }
                 },
                 #[cfg(feature = "singleplayer")]
                 MainMenuEvent::SinglePlayerChange(change) => {
-                    if let SingleplayerState::Init(ref mut init) = global_state.singleplayer {
-                        match change {
-                            ui::WorldsChange::SetActive(world) => init.current = world,
-                            ui::WorldsChange::Delete(world) => init.remove(world),
-                            ui::WorldsChange::Regenerate(world) => init.delete_map_file(world),
-                            ui::WorldsChange::AddNew => init.new_world(),
-                            ui::WorldsChange::CurrentWorldChange(change) => {
-                                if let Some(world) = init.current.map(|i| &mut init.worlds[i]) {
-                                    change.apply(world);
-                                    init.save_current_meta();
-                                }
-                            },
+                    if global_state.entry_policy.can_use_singleplayer() {
+                        if let SingleplayerState::Init(ref mut init) = global_state.singleplayer {
+                            match change {
+                                ui::WorldsChange::SetActive(world) => init.current = world,
+                                ui::WorldsChange::Delete(world) => init.remove(world),
+                                ui::WorldsChange::Regenerate(world) => init.delete_map_file(world),
+                                ui::WorldsChange::AddNew => init.new_world(),
+                                ui::WorldsChange::CurrentWorldChange(change) => {
+                                    if let Some(world) = init.current.map(|i| &mut init.worlds[i]) {
+                                        change.apply(world);
+                                        init.save_current_meta();
+                                    }
+                                },
+                            }
                         }
                     }
                 },
@@ -519,7 +600,13 @@ impl PlayState for MainMenuState {
                     global_state.settings.show_disclaimer = false
                 },*/
                 MainMenuEvent::AuthServerTrust(auth_server, trust) => {
-                    if trust {
+                    if trust
+                        && self.init.host_kind().is_some_and(|host_kind| {
+                            global_state
+                                .entry_policy
+                                .should_persist_auth_trust(host_kind)
+                        })
+                    {
                         global_state
                             .settings
                             .networking
@@ -534,8 +621,64 @@ impl PlayState for MainMenuState {
                         .map(|init| init.auth_trust(auth_server, trust));
                 },
                 MainMenuEvent::DeleteServer { server_index } => {
-                    let net_settings = &mut global_state.settings.networking;
-                    net_settings.servers.remove(server_index);
+                    if global_state.entry_policy.can_manage_server_history() {
+                        let net_settings = &mut global_state.settings.networking;
+                        if server_index < net_settings.servers.len() {
+                            net_settings.servers.remove(server_index);
+                        }
+                    }
+
+                    global_state
+                        .settings
+                        .save_to_file_warn(&global_state.config_dir);
+                },
+                MainMenuEvent::RegisterLocalDedicated { server_address } => {
+                    if global_state.entry_policy.can_manage_server_history() {
+                        global_state
+                            .settings
+                            .networking
+                            .register_manual_local_dedicated_from_direct_connect(&server_address);
+                    }
+
+                    global_state
+                        .settings
+                        .save_to_file_warn(&global_state.config_dir);
+                },
+                MainMenuEvent::UpdateLocalDedicated {
+                    instance_id,
+                    display_name,
+                    server_address,
+                    connection_kind,
+                    validate_tls,
+                } => {
+                    if global_state.entry_policy.can_manage_server_history() {
+                        global_state
+                            .settings
+                            .networking
+                            .update_manual_local_dedicated_registration(
+                                instance_id,
+                                crate::settings::ManualLocalDedicatedServerSpec {
+                                    instance_id: Some(instance_id),
+                                    data_dir: None,
+                                    display_name,
+                                    server_address,
+                                    connection_kind,
+                                    validate_tls,
+                                },
+                            );
+                    }
+
+                    global_state
+                        .settings
+                        .save_to_file_warn(&global_state.config_dir);
+                },
+                MainMenuEvent::DeleteLocalDedicated { instance_id } => {
+                    if global_state.entry_policy.can_manage_server_history() {
+                        global_state
+                            .settings
+                            .networking
+                            .remove_local_dedicated_manual_registration(instance_id);
+                    }
 
                     global_state
                         .settings
@@ -663,12 +806,12 @@ pub(crate) fn get_client_msg_error(
         },
         Error::Other(e) => match e.as_str() {
             OTHER_NO_IP_ADDR => localization.get_msg("main-login-no_ip_addr").into(),
-            OTHER_BAD_WORLD_MAP_DIMENSIONS => {
-                localization.get_msg("main-login-bad_world_map_dimensions").into()
-            },
-            OTHER_BAD_WORLD_MAP_IMAGE => {
-                localization.get_msg("main-login-bad_world_map_image").into()
-            },
+            OTHER_BAD_WORLD_MAP_DIMENSIONS => localization
+                .get_msg("main-login-bad_world_map_dimensions")
+                .into(),
+            OTHER_BAD_WORLD_MAP_IMAGE => localization
+                .get_msg("main-login-bad_world_map_image")
+                .into(),
             OTHER_BAD_ALTITUDE_MAP => localization.get_msg("main-login-bad_altitude_map").into(),
             OTHER_ENTITY_FROM_UID_NOT_FOUND => {
                 localization.get_msg("main-login-entity_sync_failed").into()
@@ -732,7 +875,7 @@ fn attempt_login(
     info_message: &mut Option<String>,
     username: String,
     password: String,
-    connection_args: ConnectionArgs,
+    host: ResolvedConnectHost,
     init: &mut InitState,
     runtime: &Arc<runtime::Runtime>,
     locale: Option<String>,
@@ -765,14 +908,17 @@ fn attempt_login(
 
     // Don't try to connect if there is already a connection in progress.
     if let InitState::None = init {
-        *init = InitState::Client(ClientInit::new(
-            connection_args,
-            username,
-            password,
-            Arc::clone(runtime),
-            locale,
-            config_dir,
-            client_type,
-        ));
+        *init = InitState::Client {
+            init: ClientInit::new(
+                host.connection_args.clone(),
+                username,
+                password,
+                Arc::clone(runtime),
+                locale,
+                config_dir,
+                client_type,
+            ),
+            host,
+        };
     }
 }

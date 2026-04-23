@@ -1361,8 +1361,7 @@ impl Hud {
         // Load fonts.
         let fonts = Fonts::load(global_state.i18n.read().fonts(), &mut ui)
             .expect("Impossible to load fonts!");
-        // Get the server name.
-        let server = &client.server_info().name;
+        let realm_id = client.server_info().realm_id;
         // Get the id, unwrap is safe because this CANNOT be None at this
         // point.
 
@@ -1374,8 +1373,11 @@ impl Hud {
         };
 
         // Create a new HotbarState from the persisted slots.
-        let hotbar_state =
-            HotbarState::new(global_state.profile.get_hotbar_slots(server, character_id));
+        let hotbar_state = HotbarState::new(
+            global_state
+                .profile
+                .get_hotbar_slots(realm_id, character_id),
+        );
 
         let slot_manager = slots::SlotManager::new(
             ui.id_generator(),
@@ -1517,7 +1519,10 @@ impl Hud {
         self.pulse += dt.as_secs_f32();
         // FPS
         let fps = global_state.clock.stats().average_tps;
-        let version = format!("Caldrayne Online (Veldr) {}", *common::util::DISPLAY_VERSION);
+        let version = format!(
+            "Caldrayne Online (Veldr) {}",
+            *common::util::DISPLAY_VERSION
+        );
         let i18n = &global_state.i18n.read();
 
         if self.show.ingame {

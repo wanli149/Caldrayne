@@ -15,8 +15,8 @@ use crate::{
             Element,
             component::neat_button,
             style,
-            widget::{self,
-                BackgroundContainer, Image, Overlay, Padding,
+            widget::{
+                self, BackgroundContainer, Image, Overlay, Padding,
                 compound_graphic::{CompoundGraphic, Graphic},
             },
         },

@@ -135,6 +135,15 @@ impl SessionState {
         client: Rc<RefCell<Client>>,
         persisted_state: Rc<RefCell<PersistedHudState>>,
     ) -> Self {
+        {
+            let client = client.borrow();
+            if global_state.profile.prepare_realm(client.server_info()) {
+                global_state
+                    .profile
+                    .save_to_file_warn(&global_state.config_dir);
+            }
+        }
+
         // Create a scene for this session. The scene handles visible elements of the
         // game world.
         let mut scene = Scene::new(
@@ -427,10 +436,9 @@ impl SessionState {
                         .update(event);
                 },
                 client::Event::StartSpectate(spawn_point) => {
-                    let server_name = &client.server_info().name;
                     let spawn_point = global_state
                         .profile
-                        .get_spectate_position(server_name)
+                        .get_spectate_position(client.server_info().realm_id)
                         .unwrap_or(spawn_point);
 
                     client
@@ -735,9 +743,8 @@ impl PlayState for SessionState {
             if presence == PresenceKind::Spectator {
                 let mut client = self.client.borrow_mut();
                 if client.spectate_position(cam_pos) {
-                    let server_name = &client.server_info().name;
                     global_state.profile.set_spectate_position(
-                        server_name,
+                        client.server_info().realm_id,
                         Some(self.scene.camera().get_focus_pos()),
                     );
                 }
@@ -2084,7 +2091,6 @@ impl PlayState for SessionState {
                     HudEvent::ChangeHotbarState(state) => {
                         let client = self.client.borrow();
 
-                        let server_name = &client.server_info().name;
                         // If we are changing the hotbar state this CANNOT be None.
                         let character_id = match client.presence().unwrap() {
                             PresenceKind::Character(id) => Some(id),
@@ -2095,9 +2101,9 @@ impl PlayState for SessionState {
                             PresenceKind::Possessor => None,
                         };
 
-                        // Get or update the ServerProfile.
+                        // Get or update the realm profile.
                         global_state.profile.set_hotbar_slots(
-                            server_name,
+                            client.server_info().realm_id,
                             character_id,
                             state.slots,
                         );

@@ -83,13 +83,19 @@ impl ServerInfoState {
         server_description: ServerDescription,
         force_show: bool,
     ) -> Result<Self, CharSelectionState> {
-        let server = global_state.profile.servers.get(&server_info.name);
+        if global_state.profile.prepare_realm(&server_info) {
+            global_state
+                .profile
+                .save_to_file_warn(&global_state.config_dir);
+        }
+        let accepted_rules = global_state
+            .profile
+            .get_accepted_rules(server_info.realm_id);
 
         // If there are no rules, or we've already accepted these rules, we don't need
         // this state
         if (server_description.rules.is_none()
-            || server
-                .is_some_and(|s| s.accepted_rules == Some(rules_hash(&server_description.rules))))
+            || accepted_rules == Some(rules_hash(&server_description.rules)))
             && !force_show
         {
             return Err(char_select);
@@ -107,10 +113,8 @@ impl ServerInfoState {
         )
         .unwrap();
 
-        let changed = server.is_some_and(|s| {
-            s.accepted_rules
-                .is_some_and(|accepted| accepted != rules_hash(&server_description.rules))
-        });
+        let changed = accepted_rules
+            .is_some_and(|accepted| accepted != rules_hash(&server_description.rules));
 
         Ok(Self {
             scene: Scene::new(global_state.window.renderer_mut()),
@@ -204,14 +208,13 @@ impl PlayState for ServerInfoState {
             match message {
                 Message::Accept => {
                     // Update last-accepted rules hash so we don't see the message again
-                    if let Some(server) = global_state
+                    global_state.profile.set_accepted_rules(
+                        self.controls.server_info.realm_id,
+                        Some(rules_hash(&self.controls.server_description.rules)),
+                    );
+                    global_state
                         .profile
-                        .servers
-                        .get_mut(&self.controls.server_info.name)
-                    {
-                        server.accepted_rules =
-                            Some(rules_hash(&self.controls.server_description.rules));
-                    }
+                        .save_to_file_warn(&global_state.config_dir);
 
                     return PlayStateResult::Switch(Box::new(self.char_select.take().unwrap()));
                 },

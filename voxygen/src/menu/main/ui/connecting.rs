@@ -1,6 +1,7 @@
 use super::{ConnectionState, Imgs, Message};
 
 use crate::{
+    entry::HostKind,
     game_input::GameInput,
     menu::main::DetailedInitializationStage,
     settings::ControlSettings,
@@ -131,9 +132,16 @@ impl Screen {
 
                 let stage = {
                     let stage_message = match init_stage {
-                        #[cfg(feature = "singleplayer")]
-                        DetailedInitializationStage::Singleplayer => {
-                            i18n.get_msg("hud-init-stage-singleplayer")
+                        DetailedInitializationStage::PreparingHost(host_kind) => match host_kind {
+                            HostKind::PublicOfficial
+                            | HostKind::DevDirectConnect
+                            | HostKind::DevLocalDedicated => {
+                                i18n.get_msg("hud-init-stage-multiplayer")
+                            },
+                            #[cfg(feature = "singleplayer")]
+                            HostKind::DevSingleplayer => {
+                                i18n.get_msg("hud-init-stage-singleplayer")
+                            },
                         },
                         #[cfg(feature = "singleplayer")]
                         DetailedInitializationStage::SingleplayerServer(server_stage) => {
@@ -213,9 +221,6 @@ impl Screen {
                                     i18n.get_msg("hud-init-stage-server-starting")
                                 },
                             }
-                        },
-                        DetailedInitializationStage::StartingMultiplayer => {
-                            i18n.get_msg("hud-init-stage-multiplayer")
                         },
                         DetailedInitializationStage::Client(client_stage) => match client_stage {
                             ClientInitStage::ConnectionEstablish => {

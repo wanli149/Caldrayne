@@ -110,6 +110,7 @@ impl SingleplayerState {
             settings.map_file = Some(file_opts);
             settings.world_seed = world.seed;
             settings.day_length = world.day_length;
+            let realm_id = world.realm_id;
 
             let (stop_server_s, stop_server_r) = unbounded();
 
@@ -143,6 +144,7 @@ impl SingleplayerState {
                     let (server, init_result) = match Server::new(
                         settings,
                         editable_settings,
+                        server::ServerIdentity::from_realm_id(realm_id),
                         database_settings,
                         &server_data_dir,
                         &|init_stage| {

@@ -75,6 +75,14 @@ nix/result*
 ## Rust
 target
 
+## Local QA runtime outputs
+.qa/build/
+.qa/logs/
+.qa/dev/
+.qa/public-clean/
+.qa/public-old/
+.qa/test-host/
+
 
 # Shell extensions
 ## direnv

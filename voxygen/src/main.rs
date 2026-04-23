@@ -1,5 +1,9 @@
 #![deny(unsafe_code)]
 #![recursion_limit = "2048"]
+#![cfg_attr(
+    all(target_os = "windows", not(feature = "singleplayer")),
+    windows_subsystem = "windows"
+)]
 
 #[cfg(all(
     target_os = "windows",
@@ -23,6 +27,7 @@ use veloren_voxygen::{
     GlobalState,
     audio::AudioFrontend,
     cli, panic_handler,
+    entry::EntryPolicy,
     profile::Profile,
     run,
     scene::terrain::SpriteRenderContext,
@@ -110,6 +115,8 @@ fn main() {
     // Load the settings
     let mut settings = Settings::load(&config_dir);
     settings.display_warnings();
+
+    let entry_policy = EntryPolicy::load(&args);
 
     panic_handler::set_panic_hook(log_filename, logs_dir);
 
@@ -228,6 +235,7 @@ fn main() {
         userdata_dir,
         config_dir,
         audio,
+        entry_policy,
         profile,
         window,
         tokio_runtime,
