@@ -31,6 +31,9 @@ use crate::{
     block::BlockGen,
     civ::{Place, PointOfInterest},
     column::ColumnGen,
+    recipe::{
+        CompatAuditV1, CompatEntryKindV1, CompatFailureKindV1, RecipeManifestV1,
+    },
     site::Site,
     util::{
         CARDINALS, DHashSet, FastNoise, FastNoise2d, LOCALITY, NEIGHBORS, RandomField, Sampler,
@@ -201,9 +204,39 @@ impl Default for FileOpts {
     fn default() -> Self { Self::Generate(GenOpts::default()) }
 }
 
+struct FileLoadContent {
+    parsed_world_file: Option<ModernMap>,
+    map_size_lg: MapSizeLg,
+    gen_opts: GenOpts,
+    compat_audit: CompatAuditV1,
+}
+
 impl FileOpts {
-    fn load_content(&self) -> (Option<ModernMap>, MapSizeLg, GenOpts) {
-        let parsed_world_file = self.try_load_map();
+    fn compat_entry_kind(&self) -> CompatEntryKindV1 {
+        match self {
+            Self::Generate(_) => CompatEntryKindV1::Generate,
+            Self::Save(_, _) => CompatEntryKindV1::Save,
+            Self::LoadOrGenerate { .. } => CompatEntryKindV1::LoadOrGenerate,
+            Self::LoadLegacy(_) => CompatEntryKindV1::LoadLegacy,
+            Self::Load(_) => CompatEntryKindV1::Load,
+            Self::LoadAsset(_) => CompatEntryKindV1::LoadAsset,
+        }
+    }
+
+    fn compat_generate_requested(&self) -> CompatAuditV1 {
+        CompatAuditV1::generate_requested(self.compat_entry_kind())
+    }
+
+    fn compat_loaded_existing(&self) -> CompatAuditV1 {
+        CompatAuditV1::loaded_existing(self.compat_entry_kind())
+    }
+
+    fn compat_fallback_generate(&self, failure_kind: CompatFailureKindV1) -> CompatAuditV1 {
+        CompatAuditV1::fallback_generate(self.compat_entry_kind(), failure_kind)
+    }
+
+    fn load_content(&self) -> FileLoadContent {
+        let (parsed_world_file, compat_audit) = self.try_load_map();
 
         let mut gen_opts = self.gen_opts().unwrap_or_default();
 
@@ -226,7 +259,12 @@ impl FileOpts {
             gen_opts.scale = map.continent_scale_hack;
         };
 
-        (parsed_world_file, map_size_lg, gen_opts)
+        FileLoadContent {
+            parsed_world_file,
+            map_size_lg,
+            gen_opts,
+            compat_audit,
+        }
     }
 
     fn gen_opts(&self) -> Option<GenOpts> {
@@ -257,14 +295,17 @@ impl FileOpts {
 
     // TODO: This should probably return a Result, so that caller can choose
     // whether to log error
-    fn try_load_map(&self) -> Option<ModernMap> {
+    fn try_load_map(&self) -> (Option<ModernMap>, CompatAuditV1) {
         let map = match self {
             Self::LoadLegacy(path) => {
                 let file = match File::open(path) {
                     Ok(file) => file,
                     Err(e) => {
                         warn!(?e, ?path, "Couldn't read path for maps");
-                        return None;
+                        return (
+                            None,
+                            self.compat_fallback_generate(CompatFailureKindV1::MissingInput),
+                        );
                     },
                 };
 
@@ -276,7 +317,10 @@ impl FileOpts {
                             ?e,
                             "Couldn't parse legacy map.  Maybe you meant to try a regular load?"
                         );
-                        return None;
+                        return (
+                            None,
+                            self.compat_fallback_generate(CompatFailureKindV1::ParseError),
+                        );
                     },
                 };
 
@@ -287,7 +331,10 @@ impl FileOpts {
                     Ok(file) => file,
                     Err(e) => {
                         warn!(?e, ?path, "Couldn't read path for maps");
-                        return None;
+                        return (
+                            None,
+                            self.compat_fallback_generate(CompatFailureKindV1::MissingInput),
+                        );
                     },
                 };
 
@@ -299,7 +346,10 @@ impl FileOpts {
                             ?e,
                             "Couldn't parse modern map.  Maybe you meant to try a legacy load?"
                         );
-                        return None;
+                        return (
+                            None,
+                            self.compat_fallback_generate(CompatFailureKindV1::ParseError),
+                        );
                     },
                 };
 
@@ -319,7 +369,10 @@ impl FileOpts {
                             );
                         },
                     }
-                    return None;
+                    return (
+                        None,
+                        self.compat_fallback_generate(CompatFailureKindV1::ParseError),
+                    );
                 },
             },
             Self::LoadOrGenerate {
@@ -333,7 +386,10 @@ impl FileOpts {
                     Ok(file) => file,
                     Err(e) => {
                         warn!(?e, ?path, "Couldn't find needed map. Generating...");
-                        return None;
+                        return (
+                            None,
+                            self.compat_fallback_generate(CompatFailureKindV1::MissingInput),
+                        );
                     },
                 };
 
@@ -345,7 +401,10 @@ impl FileOpts {
                             ?e,
                             "Couldn't parse modern map.  Maybe you meant to try a legacy load?"
                         );
-                        return None;
+                        return (
+                            None,
+                            self.compat_fallback_generate(CompatFailureKindV1::ParseError),
+                        );
                     },
                 };
 
@@ -387,23 +446,31 @@ impl FileOpts {
                         );
                     }
 
-                    return None;
+                    return (
+                        None,
+                        self.compat_fallback_generate(CompatFailureKindV1::OptionMismatch),
+                    );
                 }
 
                 map.into_modern()
             },
-            Self::Generate { .. } | Self::Save { .. } => return None,
+            Self::Generate { .. } | Self::Save { .. } => {
+                return (None, self.compat_generate_requested());
+            },
         };
 
         match map {
-            Ok(map) => Some(map),
+            Ok(map) => (Some(map), self.compat_loaded_existing()),
             Err(e) => {
                 match e {
                     WorldFileError::WorldSizeInvalid => {
                         warn!("World size of map is invalid.");
                     },
                 }
-                None
+                (
+                    None,
+                    self.compat_fallback_generate(CompatFailureKindV1::InvalidWorld),
+                )
             },
         }
     }
@@ -691,6 +758,7 @@ pub struct WorldSim {
     pub rng: ChaChaRng,
 
     pub(crate) calendar: Option<Calendar>,
+    pub(crate) recipe_manifest: RecipeManifestV1,
 }
 
 impl WorldSim {
@@ -753,6 +821,7 @@ impl WorldSim {
             gen_ctx,
             rng: rand_chacha::ChaCha20Rng::from_seed([0; 32]),
             calendar: None,
+            recipe_manifest: RecipeManifestV1::default(),
         }
     }
 
@@ -763,14 +832,42 @@ impl WorldSim {
         stage_report: &dyn Fn(WorldSimStage),
     ) -> Self {
         prof_span!("WorldSim::generate");
+        let seed_elements = opts.seed_elements;
         let calendar = opts.calendar; // separate lifetime of elements
         let world_file = opts.world_file;
 
         // Parse out the contents of various map formats into the values we need.
-        let (parsed_world_file, map_size_lg, gen_opts) = world_file.load_content();
+        let FileLoadContent {
+            parsed_world_file,
+            map_size_lg,
+            gen_opts,
+            compat_audit,
+        } = world_file.load_content();
         // Currently only used with LoadOrGenerate to know if we need to
         // overwrite world file
         let fresh = parsed_world_file.is_none();
+        info!(
+            compat_entry = %compat_audit.entry.as_str(),
+            compat_decision = %compat_audit.decision.as_str(),
+            compat_failure = %compat_audit.failure_kind.as_str(),
+            fresh,
+            "recorded world file compatibility audit"
+        );
+        if compat_audit.is_strict_load_contract_gap() {
+            warn!(
+                compat_entry = %compat_audit.entry.as_str(),
+                compat_failure = %compat_audit.failure_kind.as_str(),
+                "strict load path fell back to generation; C1 keeps this behavior observable before enforce"
+            );
+        }
+        let recipe_manifest = RecipeManifestV1::record_only(seed, &gen_opts, seed_elements);
+        info!(
+            world_recipe_hash = %recipe_manifest.world_recipe_hash,
+            chunk_recipe_hash = %recipe_manifest.chunk_recipe_hash,
+            topology_id = %recipe_manifest.world_recipe.topology_id.as_str(),
+            preset_id = %recipe_manifest.world_recipe.preset_id.as_str(),
+            "recorded world recipe manifest"
+        );
 
         let mut rng = ChaChaRng::from_seed(seed_expan::rng_state(seed));
         let continent_scale = gen_opts.scale
@@ -1705,11 +1802,12 @@ impl WorldSim {
             gen_ctx,
             rng,
             calendar,
+            recipe_manifest,
         };
 
         this.generate_cliffs();
 
-        if opts.seed_elements {
+        if seed_elements {
             this.seed_elements();
         }
 
@@ -1718,6 +1816,8 @@ impl WorldSim {
 
     #[inline(always)]
     pub const fn map_size_lg(&self) -> MapSizeLg { self.map_size_lg }
+
+    pub fn recipe_manifest(&self) -> &RecipeManifestV1 { &self.recipe_manifest }
 
     pub fn get_size(&self) -> Vec2<u32> { self.map_size_lg().chunks().map(u32::from) }
 

@@ -19,6 +19,7 @@ pub mod index;
 pub mod land;
 pub mod layer;
 pub mod pathfinding;
+pub mod recipe;
 pub mod sim;
 pub mod sim2;
 pub mod site;
