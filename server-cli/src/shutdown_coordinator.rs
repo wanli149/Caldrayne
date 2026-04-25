@@ -1,9 +1,13 @@
-use crate::settings::Settings;
+use crate::{
+    audit::{self, AuditAction, AuditOutcome, AuditSource},
+    settings::Settings,
+};
 use common::comp::{Content, chat::ChatType};
 use common_net::msg::ServerGeneral;
 use server::Server;
 use std::{
     ops::Add,
+    path::Path,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -52,6 +56,8 @@ impl ShutdownCoordinator {
         server: &mut Server,
         grace_period: Duration,
         message: String,
+        audit_log_path: &Path,
+        source: AuditSource,
     ) {
         if self.shutdown_initiated_at.is_none() {
             self.shutdown_grace_period = grace_period;
@@ -60,19 +66,68 @@ impl ShutdownCoordinator {
 
             // Send an initial shutdown warning message to all connected clients
             self.send_shutdown_msg(server);
+            let detail = format!(
+                "grace_period_secs={} message={}",
+                grace_period.as_secs(),
+                self.shutdown_message
+            );
+            if let Err(error) = audit::append_event(
+                audit_log_path,
+                source,
+                AuditAction::ShutdownGraceful,
+                AuditOutcome::Accepted,
+                &detail,
+            ) {
+                error!(?error, "Failed to append graceful shutdown audit event");
+            }
         } else {
-            error!("Shutdown already in progress")
+            error!("Shutdown already in progress");
+            if let Err(error) = audit::append_event(
+                audit_log_path,
+                source,
+                AuditAction::ShutdownGraceful,
+                AuditOutcome::Ignored,
+                "shutdown already in progress",
+            ) {
+                error!(?error, "Failed to append ignored shutdown audit event");
+            }
         }
     }
 
     /// Aborts an in-progress shutdown and sends a message to all connected
     /// clients.
-    pub fn abort_shutdown(&mut self, server: &mut Server) {
+    pub fn abort_shutdown(
+        &mut self,
+        server: &mut Server,
+        audit_log_path: &Path,
+        source: AuditSource,
+    ) {
         if self.shutdown_initiated_at.is_some() {
             self.shutdown_initiated_at = None;
             ShutdownCoordinator::send_msg(server, "The shutdown has been aborted".to_owned());
+            if let Err(error) = audit::append_event(
+                audit_log_path,
+                source,
+                AuditAction::ShutdownAbort,
+                AuditOutcome::Accepted,
+                "shutdown aborted before deadline",
+            ) {
+                error!(?error, "Failed to append shutdown abort audit event");
+            }
         } else {
             error!("There is no shutdown in progress");
+            if let Err(error) = audit::append_event(
+                audit_log_path,
+                source,
+                AuditAction::ShutdownAbort,
+                AuditOutcome::Ignored,
+                "no shutdown in progress",
+            ) {
+                error!(
+                    ?error,
+                    "Failed to append ignored shutdown abort audit event"
+                );
+            }
         }
     }
 
@@ -80,15 +135,29 @@ impl ShutdownCoordinator {
     /// shutdown. If the grace period for an initiated shutdown has expired,
     /// returns `true` which triggers the loop in `main.rs` to break and
     /// exit the server process.
-    pub fn check(&mut self, server: &mut Server, settings: &Settings) -> bool {
+    pub fn check(
+        &mut self,
+        server: &mut Server,
+        settings: &Settings,
+        audit_log_path: &Path,
+    ) -> bool {
         // Check whether shutdown has been set
-        self.check_shutdown_signal(server, settings);
+        self.check_shutdown_signal(server, settings, audit_log_path);
 
         // If a shutdown is in progress, check whether it's time to send another warning
         // message or shut down if the grace period has expired.
         if let Some(shutdown_initiated_at) = self.shutdown_initiated_at {
             if Instant::now() > shutdown_initiated_at.add(self.shutdown_grace_period) {
                 info!("Shutting down");
+                if let Err(error) = audit::append_event(
+                    audit_log_path,
+                    AuditSource::Runtime,
+                    AuditAction::ShutdownReachedDeadline,
+                    AuditOutcome::Accepted,
+                    "graceful shutdown deadline reached",
+                ) {
+                    error!(?error, "Failed to append shutdown deadline audit event");
+                }
                 return true;
             }
 
@@ -111,16 +180,27 @@ impl ShutdownCoordinator {
 
     /// Checks whether a shutdown (SIGUSR1 by default) signal has been set,
     /// which is used to trigger a graceful shutdown for an update. [Watchtower](https://containrrr.dev/watchtower/) is configured on the main
-    /// Veloren server to send SIGUSR1 instead of SIGTERM which allows us to
-    /// react specifically to shutdowns that are for an update.
+    /// Caldrayne deployment to send SIGUSR1 instead of SIGTERM which allows us
+    /// to react specifically to shutdowns that are for an update.
     /// NOTE: SIGUSR1 is not supported on Windows
-    fn check_shutdown_signal(&mut self, server: &mut Server, settings: &Settings) {
+    fn check_shutdown_signal(
+        &mut self,
+        server: &mut Server,
+        settings: &Settings,
+        audit_log_path: &Path,
+    ) {
         if self.shutdown_signal.load(Ordering::Relaxed) && self.shutdown_initiated_at.is_none() {
             info!("Received shutdown signal, initiating graceful shutdown");
             let grace_period =
                 Duration::from_secs(u64::from(settings.update_shutdown_grace_period_secs));
             let shutdown_message = settings.update_shutdown_message.to_owned();
-            self.initiate_shutdown(server, grace_period, shutdown_message);
+            self.initiate_shutdown(
+                server,
+                grace_period,
+                shutdown_message,
+                audit_log_path,
+                AuditSource::Signal,
+            );
 
             // Reset the SIGUSR1 signal indicator in case shutdown is aborted and we need to
             // trigger shutdown again

@@ -1,5 +1,5 @@
 use authc::AuthClientError;
-use common_net::msg::server::BanInfo;
+use common_net::msg::server::{BanInfo, ServerCompatibility};
 pub use network::{InitProtocolError, NetworkConnectError, NetworkError};
 use network::{ParticipantError, StreamError};
 use rustls::Error as RustlsError;
@@ -25,6 +25,10 @@ pub enum Error {
     AuthClientError(AuthClientError),
     AuthServerUrlInvalid(String),
     AuthServerNotTrusted,
+    IncompatibleServerGeneration {
+        client: ServerCompatibility,
+        server: ServerCompatibility,
+    },
     HostnameLookupFailed(std::io::Error),
     Banned(BanInfo),
     /// Persisted character data is invalid or missing

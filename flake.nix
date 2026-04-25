@@ -122,6 +122,9 @@
         voxygenOut = config.nci.outputs."veloren-voxygen";
         serverCliOut = config.nci.outputs."veloren-server-cli";
       in {
+        # These flake outputs remain one technical client family plus build-profile
+        # variants. Public / Dev are runtime product modes, not separate install
+        # products.
         packages.veloren-voxygen = wrapWithAssets voxygenOut.packages.release;
         packages.veloren-voxygen-dev = wrapWithAssets voxygenOut.packages.dev;
         packages.veloren-server-cli = wrapWithAssets serverCliOut.packages.release;

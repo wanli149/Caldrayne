@@ -1,17 +1,20 @@
-//! NOTE: Some of these arguments are used by airshipper, so those needs to be
-//! kept fairly stable (probably with some sort of migration period if we need
-//! to modify the name or semantics).
+//! NOTE: Some of these arguments may still be consumed by legacy external
+//! tooling such as Airshipper, so those should be kept fairly stable (probably
+//! with some sort of migration period if we need to modify the name or
+//! semantics).
 //!
-//! The arguments used by airshipper are:
+//! The arguments that external launch tooling should treat as compatibility
+//! surface are:
 //! * `server`
 //!
-//! Airshipper should only use arguments listed above! Since we will not try to
-//! be careful about their stability otherwise.
+//! External tooling should only use arguments listed above. We will not try to
+//! preserve stability for the rest.
 //!
 //! Note that `server` is now a development-oriented override. Public mode no
-//! longer treats it as an official entry selector.
+//! longer treats it as an official entry selector, and official targeting must
+//! continue to flow through `official_entry -> EntryPolicy -> Public / Dev`.
 //!
-//! Likewise Airshipper should only use the following subcommands:
+//! Likewise external launch tooling should only use the following subcommands:
 //! * `ListWgpuBackends`
 use std::str::FromStr;
 
@@ -22,15 +25,18 @@ use common_net::msg::ClientType;
 pub struct Args {
     /// Development-only value to auto-fill into the server field.
     ///
-    /// This allows passing in server selection performed in airshipper or
-    /// local tooling while using developer mode. Public mode ignores this as
-    /// an official entry selector.
+    /// This preserves legacy compatibility with Airshipper or local tooling
+    /// while using developer mode. Public mode ignores this as an official
+    /// entry selector and continues to resolve the target through the current
+    /// official entry source.
     #[clap(short, long)]
     pub server: Option<String>,
 
-    /// Controls whether the client runs in public-official mode or developer mode.
+    /// Controls whether the client runs in public-official mode or developer
+    /// mode.
     ///
-    /// When omitted, debug builds default to `dev` and release builds default to `public`.
+    /// When omitted, debug builds default to `dev` and release builds default
+    /// to `public`.
     #[clap(long, env = "CALDRAYNE_PRODUCT_MODE", value_enum)]
     pub product_mode: Option<ProductModeArg>,
 

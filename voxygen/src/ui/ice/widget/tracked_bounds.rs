@@ -1,6 +1,4 @@
-use iced::{
-    Clipboard, Element, Event, Hasher, Layout, Length, Point, Rectangle, Widget, layout,
-};
+use iced::{Clipboard, Element, Event, Hasher, Layout, Length, Point, Rectangle, Widget, layout};
 use std::{cell::Cell, hash::Hash};
 
 #[derive(Debug, Default)]
@@ -64,7 +62,11 @@ where
         messages: &mut Vec<M>,
     ) -> iced::event::Status {
         let bounds = layout.bounds();
-        let text_bounds = layout.children().next().map(|child| child.bounds()).unwrap_or(bounds);
+        let text_bounds = layout
+            .children()
+            .next()
+            .map(|child| child.bounds())
+            .unwrap_or(bounds);
         self.state.update(bounds, text_bounds);
         self.content.on_event(
             event,
@@ -85,7 +87,11 @@ where
         viewport: &Rectangle,
     ) -> R::Output {
         let bounds = layout.bounds();
-        let text_bounds = layout.children().next().map(|child| child.bounds()).unwrap_or(bounds);
+        let text_bounds = layout
+            .children()
+            .next()
+            .map(|child| child.bounds())
+            .unwrap_or(bounds);
         self.state.update(bounds, text_bounds);
         self.content
             .draw(renderer, defaults, layout, cursor_position, viewport)
@@ -99,7 +105,11 @@ where
 
     fn overlay(&mut self, layout: Layout<'_>) -> Option<iced::overlay::Element<'_, M, R>> {
         let bounds = layout.bounds();
-        let text_bounds = layout.children().next().map(|child| child.bounds()).unwrap_or(bounds);
+        let text_bounds = layout
+            .children()
+            .next()
+            .map(|child| child.bounds())
+            .unwrap_or(bounds);
         self.state.update(bounds, text_bounds);
         self.content.overlay(layout)
     }
@@ -110,7 +120,5 @@ where
     R: 'a + iced::Renderer,
     M: 'a,
 {
-    fn from(track_bounds: TrackBounds<'a, M, R>) -> Element<'a, M, R> {
-        Element::new(track_bounds)
-    }
+    fn from(track_bounds: TrackBounds<'a, M, R>) -> Element<'a, M, R> { Element::new(track_bounds) }
 }

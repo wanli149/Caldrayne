@@ -33,8 +33,7 @@ use crate::{
         DynamicModel, Mesh, RenderError, Renderer, UiBoundLocals, UiDrawer, UiLocals, UiMode,
         UiVertex, create_ui_quad, create_ui_tri,
     },
-    window::TextCursorRect,
-    window::Window,
+    window::{TextCursorRect, Window},
 };
 #[rustfmt::skip]
 use ::image::GenericImageView;
@@ -309,7 +308,8 @@ impl Ui {
     pub fn text_edit_cursor_rect(&self, id: widget::Id) -> Option<TextCursorRect> {
         let graph = self.ui.widget_graph();
         let widget = graph.widget(id)?;
-        if widget.type_id != TypeId::of::<<widget::TextEdit<'static> as conrod_core::Widget>::State>()
+        if widget.type_id
+            != TypeId::of::<<widget::TextEdit<'static> as conrod_core::Widget>::State>()
         {
             return None;
         }

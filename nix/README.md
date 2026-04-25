@@ -44,6 +44,14 @@ nix run
 nix run .#veloren-server-cli
 ```
 
+Current packaging stance:
+
+- `veloren-voxygen` is the current technical desktop client package family.
+- `Public` and `Dev` are two runtime product modes of that same client family, not two separate install products.
+- Flake outputs suffixed with `-dev` are development build-profile outputs, not a second desktop client product.
+- Technical names such as `veloren-voxygen`, `veloren-server-cli`, `veloren-voxygen-dev`, and `veloren-server-cli-dev` are currently retained as compatibility-oriented package/output identifiers, not brand names.
+- The `-dev` outputs are development convenience surfaces and should not be treated as long-term player-facing install product names.
+
 For local or private deployments, the server examples in this repository
 currently assume `--no-auth` unless you configure your own auth provider.
 

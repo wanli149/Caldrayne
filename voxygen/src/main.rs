@@ -26,8 +26,9 @@ use veloren_voxygen::singleplayer::SingleplayerState;
 use veloren_voxygen::{
     GlobalState,
     audio::AudioFrontend,
-    cli, panic_handler,
+    cli,
     entry::EntryPolicy,
+    panic_handler,
     profile::Profile,
     run,
     scene::terrain::SpriteRenderContext,
@@ -117,6 +118,40 @@ fn main() {
     settings.display_warnings();
 
     let entry_policy = EntryPolicy::load(&args);
+    let entry_upgrade_contract = entry_policy.upgrade_boundary_contract();
+    let public_auth_handoff_contract = entry_policy.public_official_auth_handoff_contract();
+    info!(
+        product_mode = ?entry_policy.product_mode(),
+        official_source_kind = ?entry_upgrade_contract.official_source_kind,
+        launcher_may_replace_official_source =
+            entry_upgrade_contract.launcher_may_replace_official_source,
+        launcher_must_not_override_runtime_policy =
+            entry_upgrade_contract.launcher_must_not_override_runtime_policy,
+        lightweight_discovery_remains_optional_observability_plane =
+            entry_upgrade_contract
+                .lightweight_discovery_boundary
+                .remains_optional_observability_plane,
+        public_bundled_official_entry_artifact_identity =
+            public_auth_handoff_contract
+                .bundled_official_entry_artifact_identity
+                .as_str(),
+        public_bundled_target_kind = public_auth_handoff_contract.bundled_target_kind.as_str(),
+        public_bundled_target_is_non_local_candidate =
+            public_auth_handoff_contract.bundled_target_is_non_local_candidate,
+        public_bundled_transport_kind =
+            public_auth_handoff_contract.bundled_transport_kind.as_str(),
+        public_bundled_official_entry_use_srv = public_auth_handoff_contract.bundled_use_srv,
+        public_bundled_official_entry_use_quic = public_auth_handoff_contract.bundled_use_quic,
+        public_bundled_official_entry_validate_tls =
+            public_auth_handoff_contract.bundled_validate_tls,
+        public_bundled_auth_mode = public_auth_handoff_contract.bundled_auth_mode.as_str(),
+        public_external_auth_rollout_ready =
+            public_auth_handoff_contract.external_auth_rollout_ready,
+        public_non_local_cutover_ready = public_auth_handoff_contract.non_local_cutover_ready,
+        public_non_local_cutover_gap_reasons =
+            ?public_auth_handoff_contract.non_local_cutover_gap_reasons,
+        "Entry upgrade boundary contract loaded"
+    );
 
     panic_handler::set_panic_hook(log_filename, logs_dir);
 
@@ -205,15 +240,20 @@ fn main() {
             const POTENTIAL_FIX_KEY: &str = "main-login-render_backend_failed-fix-vulkan";
 
             let potential_fix = i18n.read().get_msg(POTENTIAL_FIX_KEY).into_owned();
-            panic!("{}", i18n.read().get_msg_ctx("main-login-render_backend_failed", &i18n::fluent_args! {
-                "potential_fix" => potential_fix,
-            }));
+            panic!(
+                "{}",
+                i18n.read()
+                    .get_msg_ctx("main-login-render_backend_failed", &i18n::fluent_args! {
+                        "potential_fix" => potential_fix,
+                    })
+            );
         },
         Err(error) => panic!(
             "{}",
-            i18n.read().get_msg_ctx("main-login-window_create_failed", &i18n::fluent_args! {
-                "raw_error" => format!("{error:?}"),
-            })
+            i18n.read()
+                .get_msg_ctx("main-login-window_create_failed", &i18n::fluent_args! {
+                    "raw_error" => format!("{error:?}"),
+                })
         ),
     };
 

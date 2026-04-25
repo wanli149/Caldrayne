@@ -319,6 +319,8 @@ mod tests {
         ServerInfo {
             realm_id,
             name: name.to_string(),
+            environment: client::ServerEnvironment::Local,
+            compatibility: client::ServerCompatibility::current(),
             git_hash: 0,
             git_timestamp: 0,
             auth_provider: None,

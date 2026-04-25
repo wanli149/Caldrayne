@@ -19,7 +19,9 @@ use winit::monitor::VideoModeHandle;
 
 mod text_input;
 
-pub use text_input::{TextCursorRect, TextInputManager, TextInputPolicy, TextInputSource, TextInputTarget};
+pub use text_input::{
+    TextCursorRect, TextInputManager, TextInputPolicy, TextInputSource, TextInputTarget,
+};
 
 /// Represents a key that the game menus recognise after input mapping
 #[derive(
@@ -829,7 +831,10 @@ impl Window {
                     }
                 }
 
-                for text_event in self.text_input.handle_keyboard_input(&event, self.modifiers) {
+                for text_event in self
+                    .text_input
+                    .handle_keyboard_input(&event, self.modifiers)
+                {
                     self.dispatch_text_input(text_event);
                 }
             },

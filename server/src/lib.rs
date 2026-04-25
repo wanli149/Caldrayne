@@ -39,7 +39,11 @@ pub mod wiring;
 
 // Reexports
 pub use crate::{
-    data_dir::DEFAULT_DATA_DIR_NAME,
+    data_dir::{
+        DEFAULT_DATA_DIR_NAME, RecoveryClass, ServerStateConsistency, ServerStateDomain,
+        ServerStateEntry, ServerStateKind, ServerStateMigration, ServerStatePaths,
+        ServerStateWriteOwner,
+    },
     error::Error,
     events::Event,
     input::Input,
@@ -94,7 +98,10 @@ use common::{
 use common_base::prof_span;
 use common_ecs::run_now;
 use common_net::{
-    msg::{ClientType, DisconnectReason, PlayerListUpdate, ServerGeneral, ServerInfo, ServerMsg},
+    msg::{
+        ClientType, DisconnectReason, PlayerListUpdate, ServerCompatibility, ServerGeneral,
+        ServerInfo, ServerMsg,
+    },
     sync::WorldSyncExt,
 };
 use common_state::{AreasContainer, BlockDiff, BuildArea, State};
@@ -106,7 +113,6 @@ use persistence::{
     character_updater::CharacterUpdater,
 };
 use prometheus::Registry;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use settings::banlist::NormalizedIpAddr;
 use specs::{
     Builder, Entity as EcsEntity, Entity, Join, LendJoin, WorldExt, shred::SendDispatcher,
@@ -237,6 +243,114 @@ pub enum ServerInitStage {
     StartingSystems,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeListenerSurface {
+    GameTcp,
+    GameQuic,
+    QueryServer,
+}
+
+impl RuntimeListenerSurface {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GameTcp => "game-tcp",
+            Self::GameQuic => "game-quic",
+            Self::QueryServer => "query-server",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuntimeListenerState {
+    Listening,
+    StartupFailed,
+    StoppedUnexpectedly,
+}
+
+impl RuntimeListenerState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Listening => "listening",
+            Self::StartupFailed => "startup-failed",
+            Self::StoppedUnexpectedly => "stopped-unexpectedly",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuntimeListenerStatus {
+    pub surface: RuntimeListenerSurface,
+    pub bind_address: std::net::SocketAddr,
+    pub state: RuntimeListenerState,
+    pub detail: String,
+}
+
+pub type RuntimeListenerInventory = Arc<Mutex<Vec<RuntimeListenerStatus>>>;
+
+fn record_runtime_listener_status(
+    inventory: &RuntimeListenerInventory,
+    surface: RuntimeListenerSurface,
+    bind_address: std::net::SocketAddr,
+    state: RuntimeListenerState,
+    detail: impl Into<String>,
+) {
+    let status = RuntimeListenerStatus {
+        surface,
+        bind_address,
+        state,
+        detail: detail.into(),
+    };
+
+    match inventory.lock() {
+        Ok(mut entries) => {
+            if let Some(existing) = entries
+                .iter_mut()
+                .find(|entry| entry.surface == surface && entry.bind_address == bind_address)
+            {
+                *existing = status;
+            } else {
+                entries.push(status);
+            }
+        },
+        Err(poisoned) => {
+            let mut entries = poisoned.into_inner();
+            if let Some(existing) = entries
+                .iter_mut()
+                .find(|entry| entry.surface == surface && entry.bind_address == bind_address)
+            {
+                *existing = status;
+            } else {
+                entries.push(status);
+            }
+        },
+    }
+}
+
+pub fn build_query_server_info(
+    settings: &Settings,
+    identity: &ServerIdentity,
+    players_count: u16,
+) -> veloren_query_server::proto::ServerInfo {
+    use veloren_query_server::proto::{ServerCompatibility, ServerInfo, ServerRealmId};
+    let server_auth_mode = settings.server_auth_mode();
+
+    ServerInfo {
+        realm_id: ServerRealmId::from_u128(identity.realm_id.as_u128()),
+        environment: settings.runtime_environment.into(),
+        compatibility: ServerCompatibility {
+            generation: common_net::msg::CURRENT_COMPATIBILITY_GENERATION,
+            minimum_supported_generation:
+                common_net::msg::MINIMUM_SUPPORTED_COMPATIBILITY_GENERATION,
+        },
+        auth_required: server_auth_mode.requires_external_auth(),
+        git_hash: *common::util::GIT_HASH,
+        git_timestamp: *common::util::GIT_TIMESTAMP,
+        players_count,
+        player_cap: settings.max_players,
+        battlemode: settings.gameplay.battle_mode.into(),
+    }
+}
+
 pub struct Server {
     state: State,
     world: Arc<World>,
@@ -250,6 +364,7 @@ pub struct Server {
     metrics_registry: Arc<Registry>,
     chat_cache: ChatCache,
     database_settings: Arc<RwLock<DatabaseSettings>>,
+    runtime_listener_inventory: RuntimeListenerInventory,
     disconnect_all_clients_requested: bool,
 
     event_dispatcher: SendDispatcher<'static>,
@@ -268,6 +383,9 @@ impl Server {
     ) -> Result<Self, Error> {
         prof_span!("Server::new");
         info!("Server data dir is: {}", data_dir.display());
+        settings
+            .validate_account_auth_topology()
+            .map_err(|error| Error::Other(error.to_string()))?;
         if settings.auth_server_address.is_none() {
             info!("Authentication is disabled");
         }
@@ -370,6 +488,7 @@ impl Server {
         state.ecs_mut().insert(battlemode_buffer);
         state.ecs_mut().insert(RecentClientIPs::default());
         state.ecs_mut().insert(settings.clone());
+        state.ecs_mut().insert(identity.clone());
         state.ecs_mut().insert(editable_settings);
         state.ecs_mut().insert(DataDir {
             path: data_dir.to_owned(),
@@ -554,65 +673,58 @@ impl Server {
         let network = Network::new_with_registry(Pid::new(), &runtime, &registry);
         let (chat_cache, chat_tracker) = ChatCache::new(Duration::from_secs(60), &runtime);
         state.ecs_mut().insert(chat_tracker);
+        let runtime_listener_inventory: RuntimeListenerInventory = Arc::new(Mutex::new(Vec::new()));
 
         let mut printed_quic_warning = false;
         for protocol in &settings.gameserver_protocols {
             match protocol {
                 Protocol::Tcp { address } => {
-                    runtime.block_on(network.listen(ListenAddr::Tcp(*address)))?;
+                    runtime
+                        .block_on(network.listen(ListenAddr::Tcp(*address)))
+                        .map_err(|error| {
+                            Error::Other(format!(
+                                "failed to bind TCP gameplay listener on {}: {error}",
+                                *address
+                            ))
+                        })?;
+                    record_runtime_listener_status(
+                        &runtime_listener_inventory,
+                        RuntimeListenerSurface::GameTcp,
+                        *address,
+                        RuntimeListenerState::Listening,
+                        "listener accepted the declared TCP gameplay bind address",
+                    );
                 },
                 Protocol::Quic {
                     address,
                     cert_file_path,
                     key_file_path,
                 } => {
-                    use rustls_pemfile::Item;
-                    use std::fs;
-
-                    match || -> Result<_, Box<dyn std::error::Error>> {
-                        let key = fs::read(key_file_path)?;
-                        let key = if key_file_path.extension().is_some_and(|x| x == "der") {
-                            PrivateKeyDer::try_from(key).map_err(|_| "No valid pem key in file")?
-                        } else {
-                            debug!("convert pem key to der");
-                            rustls_pemfile::read_all(&mut key.as_slice())
-                                .find_map(|item| match item {
-                                    Ok(Item::Pkcs1Key(v)) => Some(PrivateKeyDer::Pkcs1(v)),
-                                    Ok(Item::Pkcs8Key(v)) => Some(PrivateKeyDer::Pkcs8(v)),
-                                    Ok(Item::Sec1Key(v)) => Some(PrivateKeyDer::Sec1(v)),
-                                    Ok(Item::Crl(_)) => None,
-                                    Ok(Item::Csr(_)) => None,
-                                    Ok(Item::X509Certificate(_)) => None,
-                                    Ok(_) => None,
-                                    Err(e) => {
-                                        tracing::warn!(?e, "error while reading key_file");
-                                        None
-                                    },
-                                })
-                                .ok_or("No valid pem key in file")?
-                        };
-                        let cert_chain = fs::read(cert_file_path)?;
-                        let cert_chain = if cert_file_path.extension().is_some_and(|x| x == "der") {
-                            vec![CertificateDer::from(cert_chain)]
-                        } else {
-                            debug!("convert pem cert to der");
-                            rustls_pemfile::certs(&mut cert_chain.as_slice())
-                                .filter_map(|item| match item {
-                                    Ok(cert) => Some(cert),
-                                    Err(e) => {
-                                        tracing::warn!(?e, "error while reading cert_file");
-                                        None
-                                    },
-                                })
-                                .collect()
-                        };
-                        let server_config = quinn::ServerConfig::with_single_cert(cert_chain, key)?;
-                        Ok(server_config)
-                    }() {
+                    let binding = settings::QuicBinding {
+                        address: *address,
+                        cert_file_path: cert_file_path.clone(),
+                        key_file_path: key_file_path.clone(),
+                    };
+                    match binding.load_server_config() {
                         Ok(server_config) => {
-                            runtime.block_on(
-                                network.listen(ListenAddr::Quic(*address, server_config.clone())),
-                            )?;
+                            runtime
+                                .block_on(
+                                    network
+                                        .listen(ListenAddr::Quic(*address, server_config.clone())),
+                                )
+                                .map_err(|error| {
+                                    Error::Other(format!(
+                                        "failed to bind QUIC gameplay listener on {}: {error}",
+                                        *address
+                                    ))
+                                })?;
+                            record_runtime_listener_status(
+                                &runtime_listener_inventory,
+                                RuntimeListenerSurface::GameQuic,
+                                *address,
+                                RuntimeListenerState::Listening,
+                                "listener accepted the declared QUIC gameplay bind address",
+                            );
 
                             if !printed_quic_warning {
                                 warn!(
@@ -623,6 +735,15 @@ impl Server {
                             }
                         },
                         Err(e) => {
+                            let detail =
+                                format!("failed to load QUIC TLS material for {}: {e}", *address);
+                            record_runtime_listener_status(
+                                &runtime_listener_inventory,
+                                RuntimeListenerSurface::GameQuic,
+                                *address,
+                                RuntimeListenerState::StartupFailed,
+                                detail.clone(),
+                            );
                             error!(
                                 ?e,
                                 "Failed to load the TLS certificate, running without QUIC {}",
@@ -635,32 +756,73 @@ impl Server {
         }
 
         if let Some(addr) = settings.query_address {
-            use veloren_query_server::proto::ServerInfo;
-
             const QUERY_SERVER_RATELIMIT: u16 = 120;
 
             let (query_server_info_tx, query_server_info_rx) =
-                tokio::sync::watch::channel(ServerInfo {
-                    git_hash: *common::util::GIT_HASH,
-                    git_timestamp: *common::util::GIT_TIMESTAMP,
-                    players_count: 0,
-                    player_cap: settings.max_players,
-                    battlemode: settings.gameplay.battle_mode.into(),
-                });
+                tokio::sync::watch::channel(build_query_server_info(&settings, &identity, 0));
             let mut query_server =
                 QueryServer::new(addr, query_server_info_rx, QUERY_SERVER_RATELIMIT);
             let query_server_metrics =
                 Arc::new(Mutex::new(veloren_query_server::server::Metrics::default()));
             let query_server_metrics2 = Arc::clone(&query_server_metrics);
-            runtime.spawn(async move {
-                let err = query_server.run(query_server_metrics2).await.err();
-                error!(?err, "Query server stopped unexpectedly");
-            });
+            let query_listener_inventory = Arc::clone(&runtime_listener_inventory);
+            match runtime.block_on(query_server.bind_socket()) {
+                Ok(socket) => {
+                    record_runtime_listener_status(
+                        &runtime_listener_inventory,
+                        RuntimeListenerSurface::QueryServer,
+                        addr,
+                        RuntimeListenerState::Listening,
+                        "listener accepted the declared query server bind address",
+                    );
+                    runtime.spawn(async move {
+                        let err = query_server
+                            .run_with_socket(socket, query_server_metrics2)
+                            .await;
+                        let detail = match err {
+                            Ok(()) => {
+                                "query server task returned unexpectedly after startup".to_owned()
+                            },
+                            Err(error) => {
+                                format!("query server stopped unexpectedly after startup: {error}")
+                            },
+                        };
+                        record_runtime_listener_status(
+                            &query_listener_inventory,
+                            RuntimeListenerSurface::QueryServer,
+                            addr,
+                            RuntimeListenerState::StoppedUnexpectedly,
+                            detail.clone(),
+                        );
+                        error!(
+                            detail = detail.as_str(),
+                            "Query server stopped unexpectedly"
+                        );
+                    });
+                },
+                Err(error) => {
+                    let detail = format!("failed to bind query server listener on {addr}: {error}");
+                    record_runtime_listener_status(
+                        &runtime_listener_inventory,
+                        RuntimeListenerSurface::QueryServer,
+                        addr,
+                        RuntimeListenerState::StartupFailed,
+                        detail.clone(),
+                    );
+                    error!(detail = detail.as_str(), "Query server failed to start");
+                },
+            }
             state.ecs_mut().insert(query_server_info_tx);
             state.ecs_mut().insert(query_server_metrics);
         }
 
-        runtime.block_on(network.listen(ListenAddr::Mpsc(14004)))?;
+        runtime
+            .block_on(network.listen(ListenAddr::Mpsc(14004)))
+            .map_err(|error| {
+                Error::Other(format!(
+                    "failed to bind internal MPSC server listener on 14004: {error}"
+                ))
+            })?;
 
         let connection_handler = ConnectionHandler::new(network, &runtime);
 
@@ -696,6 +858,7 @@ impl Server {
             metrics_registry: registry,
             chat_cache,
             database_settings,
+            runtime_listener_inventory,
             disconnect_all_clients_requested: false,
 
             event_dispatcher: Self::create_event_dispatcher(pools),
@@ -710,13 +873,16 @@ impl Server {
 
     pub fn get_server_info(&self) -> ServerInfo {
         let settings = self.state.ecs().fetch::<Settings>();
+        let server_auth = settings.server_auth();
 
         ServerInfo {
             realm_id: self.identity.realm_id,
             name: settings.server_name.clone(),
+            environment: settings.runtime_environment.into(),
+            compatibility: ServerCompatibility::current(),
             git_hash: *common::util::GIT_HASH,
             git_timestamp: *common::util::GIT_TIMESTAMP,
-            auth_provider: settings.auth_server_address.clone(),
+            auth_provider: server_auth.provider_url().map(str::to_owned),
         }
     }
 
@@ -761,6 +927,10 @@ impl Server {
 
     /// Get a reference to the Chat Cache
     pub fn chat_cache(&self) -> &ChatCache { &self.chat_cache }
+
+    pub fn runtime_listener_inventory(&self) -> RuntimeListenerInventory {
+        Arc::clone(&self.runtime_listener_inventory)
+    }
 
     fn parse_locations(&self, character_list_data: &mut [CharacterItem]) {
         character_list_data.iter_mut().for_each(|c| {

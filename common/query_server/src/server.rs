@@ -14,8 +14,9 @@ use tracing::{debug, error, trace};
 
 use crate::{
     proto::{
-        Init, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE, QueryServerRequest, QueryServerResponse,
-        RawQueryServerRequest, RawQueryServerResponse, ServerInfo, VELOREN_HEADER, VERSION,
+        CURRENT_PROTOCOL_VERSION, Init, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE, QueryServerRequest,
+        QueryServerResponse, RawQueryServerRequest, RawQueryServerResponse, ServerInfo,
+        VELOREN_HEADER,
     },
     ratelimit::{RateLimiter, ReducedIpAddr},
 };
@@ -53,6 +54,10 @@ impl QueryServer {
         }
     }
 
+    pub async fn bind_socket(&self) -> Result<UdpSocket, tokio::io::Error> {
+        UdpSocket::bind(self.addr).await
+    }
+
     /// This produces TRACE level logs for any packet received on the assigned
     /// port. To prevent potentially unfettered log spam, disable the TRACE
     /// level for this crate (when outside of debugging contexts).
@@ -60,8 +65,15 @@ impl QueryServer {
     /// NOTE: TRACE and DEBUG levels are disabled by default for this crate when
     /// using `veloren-common-frontend`.
     pub async fn run(&mut self, metrics: Arc<Mutex<Metrics>>) -> Result<(), tokio::io::Error> {
-        let mut socket = UdpSocket::bind(self.addr).await?;
+        let socket = self.bind_socket().await?;
+        self.run_with_socket(socket, metrics).await
+    }
 
+    pub async fn run_with_socket(
+        &mut self,
+        mut socket: UdpSocket,
+        metrics: Arc<Mutex<Metrics>>,
+    ) -> Result<(), tokio::io::Error> {
         let gen_secret = || {
             let mut rng = rng();
             (rng.random::<u64>(), rng.random::<u64>())
@@ -124,7 +136,8 @@ impl QueryServer {
     // Header must be discarded after this validation passes
     fn validate_datagram(data: &[u8]) -> bool {
         let len = data.len();
-        // Require 2 extra bytes for version (currently unused)
+        // Require 2 extra bytes for protocol version information. This is
+        // currently used for exact-version gating, not negotiation.
         if len < MAX_RESPONSE_SIZE.max(VELOREN_HEADER.len() + 2) {
             trace!(?len, "Datagram too short");
             false
@@ -135,9 +148,9 @@ impl QueryServer {
             trace!(?len, "Datagram header invalid");
             false
         // TODO: Allow lower versions once proper versioning is added.
-        } else if u16::from_ne_bytes(data[..2].try_into().unwrap()) != VERSION {
+        } else if u16::from_ne_bytes(data[..2].try_into().unwrap()) != CURRENT_PROTOCOL_VERSION {
             trace!(
-                "Datagram has invalid version {:?}, current {VERSION:?}",
+                "Datagram has invalid version {:?}, current {CURRENT_PROTOCOL_VERSION:?}",
                 &data[..2]
             );
             false
@@ -186,7 +199,7 @@ impl QueryServer {
             Self::send_response(
                 RawQueryServerResponse::Init(Init {
                     p: real_p,
-                    max_supported_version: VERSION,
+                    max_supported_version: CURRENT_PROTOCOL_VERSION,
                 }),
                 remote,
                 socket,
@@ -209,7 +222,7 @@ impl QueryServer {
                 Self::send_response(
                     RawQueryServerResponse::Init(Init {
                         p: real_p,
-                        max_supported_version: VERSION,
+                        max_supported_version: CURRENT_PROTOCOL_VERSION,
                     }),
                     remote,
                     socket,

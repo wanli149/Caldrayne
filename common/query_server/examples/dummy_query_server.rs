@@ -8,11 +8,18 @@ use tokio::sync::watch;
 use tracing::error;
 use veloren_query_server::{
     client::QueryClient,
-    proto::{ServerBattleMode, ServerInfo},
+    proto::{ServerBattleMode, ServerCompatibility, ServerEnvironment, ServerInfo, ServerRealmId},
     server::{Metrics, QueryServer},
 };
 
 const DEFAULT_SERVER_INFO: ServerInfo = ServerInfo {
+    realm_id: ServerRealmId { msb: 0, lsb: 0 },
+    environment: ServerEnvironment::Local,
+    compatibility: ServerCompatibility {
+        generation: 1,
+        minimum_supported_generation: 1,
+    },
+    auth_required: false,
     git_hash: 0,
     git_timestamp: 0,
     players_count: 100,

@@ -13,9 +13,11 @@ pub use self::{
     },
     ecs_packet::EcsCompPacket,
     server::{
-        CharacterInfo, ChatTypeContext, DisconnectReason, InviteAnswer, Notification, PlayerInfo,
-        PlayerListUpdate, RegisterError, SerializedTerrainChunk, ServerGeneral, ServerInfo,
-        ServerInit, ServerMsg, ServerRegisterAnswer,
+        CURRENT_COMPATIBILITY_GENERATION, CharacterInfo, ChatTypeContext, DisconnectReason,
+        InviteAnswer, MINIMUM_SUPPORTED_COMPATIBILITY_GENERATION, Notification, PlayerInfo,
+        PlayerListUpdate, RegisterError, SerializedTerrainChunk, ServerAuth, ServerAuthMode,
+        ServerCompatibility, ServerEnvironment, ServerGeneral, ServerInfo, ServerInit, ServerMsg,
+        ServerRegisterAnswer,
     },
     world_msg::WorldMapMsg,
 };

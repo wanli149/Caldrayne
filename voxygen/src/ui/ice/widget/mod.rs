@@ -6,8 +6,8 @@ pub mod image;
 pub mod mouse_detector;
 pub mod overlay;
 pub mod stack;
-pub mod tracked_bounds;
 pub mod tooltip;
+pub mod tracked_bounds;
 
 pub use self::{
     aspect_ratio_container::AspectRatioContainer,
@@ -16,6 +16,6 @@ pub use self::{
     image::Image,
     mouse_detector::MouseDetector,
     overlay::Overlay,
-    tracked_bounds::{BoundsState, TrackBounds},
     tooltip::{Tooltip, TooltipManager},
+    tracked_bounds::{BoundsState, TrackBounds},
 };

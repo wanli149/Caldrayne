@@ -1,3 +1,4 @@
+use crate::ServerStatePaths;
 use atomicwrites::{AtomicFile, OverwriteBehavior};
 use bincode::{
     config::legacy,
@@ -41,13 +42,8 @@ impl TerrainPersistence {
     ///
     /// If the `VELOREN_TERRAIN` environment variable is set, this will be used
     /// as the persistence directory instead.
-    pub fn new(mut data_dir: PathBuf) -> Self {
-        let path = std::env::var("VELOREN_TERRAIN")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                data_dir.push("terrain");
-                data_dir
-            });
+    pub fn new(data_dir: PathBuf) -> Self {
+        let path = ServerStatePaths::new(data_dir).terrain_dir;
 
         std::fs::create_dir_all(&path).expect("Failed to create terrain persistence directory");
 

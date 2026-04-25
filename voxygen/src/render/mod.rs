@@ -490,8 +490,8 @@ struct OtherModes {
 
 /// Experimental shader modes.
 ///
-/// You can enable these using Voxygen's `settings.ron`. See the project graphics
-/// documentation for more information.
+/// You can enable these using Voxygen's `settings.ron`. See the project
+/// graphics documentation for more information.
 #[derive(
     Clone,
     Debug,

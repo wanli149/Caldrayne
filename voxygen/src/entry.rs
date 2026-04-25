@@ -4,11 +4,14 @@ use crate::{
 };
 use client::addr::ConnectionArgs;
 use common::{
-    assets::{AssetExt, Ron},
+    official_entry::{
+        BundledOfficialAuthMode, BundledOfficialTargetKind, BundledOfficialTransportKind,
+        OfficialEntry, OfficialEntrySourceKind,
+    },
     uuid::Uuid,
 };
+use common_net::msg::ServerAuthMode;
 use hashbrown::HashSet;
-use serde::Deserialize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostKind {
@@ -39,36 +42,12 @@ pub struct DevMultiplayerEntry {
     pub can_delete: bool,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct OfficialEntry {
-    pub display_name: String,
-    pub server_address: String,
-    pub auth_server: Option<String>,
-    pub use_srv: bool,
-    pub use_quic: bool,
-    pub validate_tls: bool,
+trait OfficialEntryExt {
+    fn connection_args(&self) -> Result<ConnectionArgs, String>;
 }
 
-impl OfficialEntry {
-    pub fn load() -> Self { Ron::<Self>::load_expect_cloned("voxygen.official_entry").into_inner() }
-
-    pub fn is_configured(&self) -> bool { !self.server_address.trim().is_empty() }
-
-    pub fn login_label(&self) -> String {
-        let display_name = self.display_name.trim();
-        if !display_name.is_empty() {
-            display_name.to_string()
-        } else {
-            let server_address = self.server_address.trim();
-            if server_address.is_empty() {
-                "Official Realm".to_string()
-            } else {
-                server_address.to_string()
-            }
-        }
-    }
-
-    pub fn connection_args(&self) -> Result<ConnectionArgs, String> {
+impl OfficialEntryExt for OfficialEntry {
+    fn connection_args(&self) -> Result<ConnectionArgs, String> {
         let hostname = self.server_address.trim();
         if hostname.is_empty() {
             return Err(
@@ -99,6 +78,102 @@ impl OfficialEntry {
             }
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OfficialClientMetadataSurface {
+    RealmLabelAndAddress,
+    RealmStatus,
+    Announcement,
+    News,
+    ProductHallMetadata,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OfficialClientAuthorityBoundary {
+    AccountRouting,
+    AuthTrustOverrides,
+    FreeServerSelection,
+    ArbitraryRealmDirectory,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OfficialClientMetadataBoundaryContract {
+    pub may_render: Vec<OfficialClientMetadataSurface>,
+    pub must_not_become_authority_for: Vec<OfficialClientAuthorityBoundary>,
+    pub requires_explicit_integration: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LightweightDiscoverySurface {
+    RealmIdentityHint,
+    EnvironmentHint,
+    AuthRequirementHint,
+    CompatibilityHint,
+    PopulationSnapshot,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LightweightDiscoveryAuthorityBoundary {
+    PublicRealmTargeting,
+    MainHandshakeRealmIdentity,
+    MainHandshakeEnvironmentTruth,
+    MainHandshakeAuthRequirement,
+    DirectoryOrReleaseControlPlane,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LightweightDiscoveryBoundaryContract {
+    pub may_expose: Vec<LightweightDiscoverySurface>,
+    pub must_not_become_authority_for: Vec<LightweightDiscoveryAuthorityBoundary>,
+    pub remains_optional_observability_plane: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EntryUpgradeBoundaryContract {
+    pub official_source_kind: OfficialEntrySourceKind,
+    pub official_source_role: &'static str,
+    pub launcher_role: &'static str,
+    pub launcher_may_replace_official_source: bool,
+    pub launcher_must_not_override_runtime_policy: bool,
+    pub client_metadata_boundary: OfficialClientMetadataBoundaryContract,
+    pub lightweight_discovery_boundary: LightweightDiscoveryBoundaryContract,
+    pub forbidden_runtime_overrides: Vec<&'static str>,
+    pub must_remain_external: Vec<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PublicOfficialAuthTrustOutcome {
+    TrustedExactBundledProvider,
+    RejectedMissingBundledProvider,
+    RejectedProviderMismatch,
+}
+
+impl PublicOfficialAuthTrustOutcome {
+    pub fn is_trusted(self) -> bool { matches!(self, Self::TrustedExactBundledProvider) }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublicOfficialAuthHandoffContract {
+    pub bundled_server_address_configured: bool,
+    pub bundled_official_entry_artifact_identity: String,
+    pub bundled_target_kind: BundledOfficialTargetKind,
+    pub bundled_target_is_non_local_candidate: bool,
+    pub bundled_transport_kind: BundledOfficialTransportKind,
+    pub bundled_use_srv: bool,
+    pub bundled_use_quic: bool,
+    pub bundled_validate_tls: bool,
+    pub bundled_auth_mode: ServerAuthMode,
+    pub bundled_auth_provider_url: Option<String>,
+    pub public_target_authority: &'static str,
+    pub public_auth_authority: &'static str,
+    pub exact_provider_match_required: bool,
+    pub prompt_for_manual_trust: bool,
+    pub persist_manual_trust: bool,
+    pub external_auth_rollout_ready: bool,
+    pub non_local_cutover_ready: bool,
+    pub non_local_cutover_gap_reasons: Vec<&'static str>,
+    pub rollout_readiness_scope: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -171,6 +246,108 @@ impl EntryPolicy {
     pub fn can_show_server_list(&self) -> bool { self.is_dev() }
 
     pub fn can_manage_server_history(&self) -> bool { self.is_dev() }
+
+    pub fn upgrade_boundary_contract(&self) -> EntryUpgradeBoundaryContract {
+        EntryUpgradeBoundaryContract {
+            official_source_kind: self.official_entry.source_kind,
+            official_source_role: "single official entry source for public-mode realm targeting",
+            launcher_role: "may deliver or replace the official entry source, but must not bypass \
+                            the entry policy layer",
+            launcher_may_replace_official_source: true,
+            launcher_must_not_override_runtime_policy: true,
+            client_metadata_boundary: OfficialClientMetadataBoundaryContract {
+                may_render: vec![
+                    OfficialClientMetadataSurface::RealmLabelAndAddress,
+                    OfficialClientMetadataSurface::RealmStatus,
+                    OfficialClientMetadataSurface::Announcement,
+                    OfficialClientMetadataSurface::News,
+                    OfficialClientMetadataSurface::ProductHallMetadata,
+                ],
+                must_not_become_authority_for: vec![
+                    OfficialClientAuthorityBoundary::AccountRouting,
+                    OfficialClientAuthorityBoundary::AuthTrustOverrides,
+                    OfficialClientAuthorityBoundary::FreeServerSelection,
+                    OfficialClientAuthorityBoundary::ArbitraryRealmDirectory,
+                ],
+                requires_explicit_integration: true,
+            },
+            lightweight_discovery_boundary: LightweightDiscoveryBoundaryContract {
+                may_expose: vec![
+                    LightweightDiscoverySurface::RealmIdentityHint,
+                    LightweightDiscoverySurface::EnvironmentHint,
+                    LightweightDiscoverySurface::AuthRequirementHint,
+                    LightweightDiscoverySurface::CompatibilityHint,
+                    LightweightDiscoverySurface::PopulationSnapshot,
+                ],
+                must_not_become_authority_for: vec![
+                    LightweightDiscoveryAuthorityBoundary::PublicRealmTargeting,
+                    LightweightDiscoveryAuthorityBoundary::MainHandshakeRealmIdentity,
+                    LightweightDiscoveryAuthorityBoundary::MainHandshakeEnvironmentTruth,
+                    LightweightDiscoveryAuthorityBoundary::MainHandshakeAuthRequirement,
+                    LightweightDiscoveryAuthorityBoundary::DirectoryOrReleaseControlPlane,
+                ],
+                remains_optional_observability_plane: true,
+            },
+            forbidden_runtime_overrides: vec![
+                "public-mode server target via --server",
+                "public-mode target derived from settings.networking.default_server",
+                "public-mode target derived from settings.networking.servers history",
+                "public-mode target derived from lightweight discovery or query-server responses",
+                "public-mode auth trust sourced from arbitrary local trust cache entries",
+            ],
+            must_remain_external: vec![
+                "patching and binary repair orchestration",
+                "anti-cheat bootstrap or preflight enforcement",
+                "release-channel selection and staged rollout control",
+            ],
+        }
+    }
+
+    pub fn public_official_auth_handoff_contract(&self) -> PublicOfficialAuthHandoffContract {
+        let posture = self.official_entry.posture();
+        let bundled_server_address_configured = posture.server_address_configured;
+        let bundled_official_entry_artifact_identity = posture.artifact_identity.clone();
+        let bundled_target_kind = posture.target_kind;
+        let bundled_target_is_non_local_candidate = posture.target_is_non_local_candidate;
+        let bundled_transport_kind = posture.transport_kind;
+        let bundled_use_srv = posture.use_srv;
+        let bundled_use_quic = posture.use_quic;
+        let bundled_validate_tls = posture.validate_tls;
+        let bundled_auth_mode = match posture.auth_mode {
+            BundledOfficialAuthMode::ExternalProvider => ServerAuthMode::ExternalProvider,
+            BundledOfficialAuthMode::NoExternalAuth => ServerAuthMode::NoExternalAuth,
+        };
+        let bundled_auth_provider_url = posture.auth_server.clone();
+        let external_auth_rollout_ready =
+            bundled_server_address_configured && posture.auth_mode.requires_external_auth();
+        let non_local_cutover_ready = posture.non_local_cutover_ready;
+        let non_local_cutover_gap_reasons = posture.non_local_cutover_gap_reasons.clone();
+        let rollout_readiness_scope = posture.rollout_readiness_scope;
+
+        PublicOfficialAuthHandoffContract {
+            bundled_server_address_configured,
+            bundled_official_entry_artifact_identity,
+            bundled_target_kind,
+            bundled_target_is_non_local_candidate,
+            bundled_transport_kind,
+            bundled_use_srv,
+            bundled_use_quic,
+            bundled_validate_tls,
+            bundled_auth_mode,
+            bundled_auth_provider_url,
+            public_target_authority: "official_entry.server_address -> EntryPolicy -> realm \
+                                      handshake",
+            public_auth_authority: "official_entry.auth_server exact-match pin for PublicOfficial \
+                                    auth trust",
+            exact_provider_match_required: true,
+            prompt_for_manual_trust: false,
+            persist_manual_trust: false,
+            external_auth_rollout_ready,
+            non_local_cutover_ready,
+            non_local_cutover_gap_reasons,
+            rollout_readiness_scope,
+        }
+    }
 
     pub fn multiplayer_host_kind(&self) -> HostKind {
         match self.product_mode {
@@ -498,10 +675,8 @@ impl EntryPolicy {
     ) -> bool {
         match host_kind {
             HostKind::PublicOfficial => self
-                .official_entry
-                .auth_server
-                .as_deref()
-                .is_some_and(|expected| expected == auth_server),
+                .public_official_auth_trust_outcome(auth_server)
+                .is_trusted(),
             HostKind::DevDirectConnect | HostKind::DevLocalDedicated => {
                 trusted_auth_servers.contains(auth_server)
             },
@@ -522,6 +697,19 @@ impl EntryPolicy {
             host_kind,
             HostKind::DevDirectConnect | HostKind::DevLocalDedicated
         )
+    }
+
+    pub fn public_official_auth_trust_outcome(
+        &self,
+        auth_server: &str,
+    ) -> PublicOfficialAuthTrustOutcome {
+        match self.official_entry.auth_server.as_deref() {
+            Some(expected) if expected == auth_server => {
+                PublicOfficialAuthTrustOutcome::TrustedExactBundledProvider
+            },
+            Some(_) => PublicOfficialAuthTrustOutcome::RejectedProviderMismatch,
+            None => PublicOfficialAuthTrustOutcome::RejectedMissingBundledProvider,
+        }
     }
 }
 
@@ -557,13 +745,24 @@ mod tests {
     use super::*;
 
     fn official_entry(server_address: &str, auth_server: Option<&str>) -> OfficialEntry {
+        official_entry_with_transport(server_address, auth_server, false, false, true)
+    }
+
+    fn official_entry_with_transport(
+        server_address: &str,
+        auth_server: Option<&str>,
+        use_srv: bool,
+        use_quic: bool,
+        validate_tls: bool,
+    ) -> OfficialEntry {
         OfficialEntry {
             display_name: "Official Realm".to_string(),
             server_address: server_address.to_string(),
             auth_server: auth_server.map(ToOwned::to_owned),
-            use_srv: false,
-            use_quic: false,
-            validate_tls: true,
+            use_srv,
+            use_quic,
+            validate_tls,
+            source_kind: OfficialEntrySourceKind::Bundled,
         }
     }
 
@@ -599,6 +798,40 @@ mod tests {
             .expect("public mode should resolve to official entry");
 
         assert_eq!(host.kind, HostKind::PublicOfficial);
+
+        match host.connection_args {
+            ConnectionArgs::Tcp { hostname, .. } => {
+                assert_eq!(hostname, "192.168.1.8:14004");
+            },
+            other => panic!("unexpected connection args: {other:?}"),
+        }
+        assert_eq!(host.target_address.as_deref(), Some("192.168.1.8:14004"));
+    }
+
+    #[test]
+    fn public_mode_reclaims_drifted_ui_host_selection_back_to_official_entry() {
+        let policy = entry_policy(
+            ProductMode::Public,
+            official_entry("192.168.1.8:14004", Some("auth.example.test")),
+        );
+        let settings = NetworkingSettings {
+            use_srv: true,
+            use_quic: true,
+            validate_tls: false,
+            ..NetworkingSettings::default()
+        };
+
+        let host = policy
+            .resolve_multiplayer_host(
+                HostKind::DevDirectConnect,
+                "203.0.113.20:14004",
+                None,
+                &settings,
+            )
+            .expect("public mode should reclaim drifted host selection to official entry");
+
+        assert_eq!(host.kind, HostKind::PublicOfficial);
+        assert_eq!(host.target_address.as_deref(), Some("192.168.1.8:14004"));
 
         match host.connection_args {
             ConnectionArgs::Tcp { hostname, .. } => {
@@ -663,6 +896,316 @@ mod tests {
         let policy = entry_policy(ProductMode::Public, official_entry("", None));
 
         assert!(!policy.can_attempt_multiplayer());
+    }
+
+    #[test]
+    fn module_f_boundary_keeps_public_entry_as_single_source() {
+        let policy = entry_policy(
+            ProductMode::Public,
+            official_entry("192.168.1.8:14004", Some("auth.example.test")),
+        );
+
+        let contract = policy.upgrade_boundary_contract();
+
+        assert_eq!(
+            contract.official_source_kind,
+            OfficialEntrySourceKind::Bundled
+        );
+        assert!(contract.launcher_may_replace_official_source);
+        assert!(contract.launcher_must_not_override_runtime_policy);
+        assert!(
+            contract
+                .client_metadata_boundary
+                .may_render
+                .contains(&OfficialClientMetadataSurface::Announcement)
+        );
+        assert!(
+            contract
+                .client_metadata_boundary
+                .may_render
+                .contains(&OfficialClientMetadataSurface::ProductHallMetadata)
+        );
+        assert!(
+            contract
+                .client_metadata_boundary
+                .must_not_become_authority_for
+                .contains(&OfficialClientAuthorityBoundary::AccountRouting)
+        );
+        assert!(
+            contract
+                .client_metadata_boundary
+                .must_not_become_authority_for
+                .contains(&OfficialClientAuthorityBoundary::FreeServerSelection)
+        );
+        assert!(
+            contract
+                .client_metadata_boundary
+                .requires_explicit_integration
+        );
+        assert!(
+            contract
+                .lightweight_discovery_boundary
+                .may_expose
+                .contains(&LightweightDiscoverySurface::EnvironmentHint)
+        );
+        assert!(
+            contract
+                .lightweight_discovery_boundary
+                .must_not_become_authority_for
+                .contains(&LightweightDiscoveryAuthorityBoundary::PublicRealmTargeting)
+        );
+        assert!(
+            contract
+                .lightweight_discovery_boundary
+                .must_not_become_authority_for
+                .contains(&LightweightDiscoveryAuthorityBoundary::DirectoryOrReleaseControlPlane)
+        );
+        assert!(
+            contract
+                .lightweight_discovery_boundary
+                .remains_optional_observability_plane
+        );
+        assert!(
+            contract
+                .forbidden_runtime_overrides
+                .iter()
+                .any(|item| item.contains("--server"))
+        );
+        assert!(
+            contract
+                .forbidden_runtime_overrides
+                .iter()
+                .any(|item| item.contains("query-server"))
+        );
+        assert!(
+            contract
+                .must_remain_external
+                .iter()
+                .any(|item| item.contains("anti-cheat"))
+        );
+    }
+
+    #[test]
+    fn public_auth_handoff_contract_marks_missing_bundled_auth_pin_as_not_external_ready() {
+        let policy = entry_policy(
+            ProductMode::Public,
+            official_entry("192.168.1.8:14004", None),
+        );
+
+        let contract = policy.public_official_auth_handoff_contract();
+
+        assert!(contract.bundled_server_address_configured);
+        assert!(
+            contract
+                .bundled_official_entry_artifact_identity
+                .starts_with("official-entry-content-sha256-v1:")
+        );
+        assert_eq!(
+            contract.bundled_target_kind,
+            BundledOfficialTargetKind::PrivateOrUniqueLocalIp
+        );
+        assert!(!contract.bundled_target_is_non_local_candidate);
+        assert_eq!(
+            contract.bundled_transport_kind,
+            BundledOfficialTransportKind::DirectTcp
+        );
+        assert!(!contract.bundled_use_srv);
+        assert!(!contract.bundled_use_quic);
+        assert!(contract.bundled_validate_tls);
+        assert_eq!(contract.bundled_auth_mode, ServerAuthMode::NoExternalAuth);
+        assert_eq!(contract.bundled_auth_provider_url, None);
+        assert!(contract.exact_provider_match_required);
+        assert!(!contract.prompt_for_manual_trust);
+        assert!(!contract.persist_manual_trust);
+        assert!(!contract.external_auth_rollout_ready);
+        assert!(!contract.non_local_cutover_ready);
+        assert!(
+            contract
+                .non_local_cutover_gap_reasons
+                .contains(&"bundled_public_target_is_private_or_unique_local_ip")
+        );
+        assert!(
+            contract
+                .non_local_cutover_gap_reasons
+                .contains(&"bundled_public_auth_pin_missing")
+        );
+        assert!(
+            contract
+                .rollout_readiness_scope
+                .contains("transitional mode")
+        );
+    }
+
+    #[test]
+    fn public_auth_handoff_contract_marks_bundled_external_auth_pin_as_rollout_ready() {
+        let policy = entry_policy(
+            ProductMode::Public,
+            official_entry("192.168.1.8:14004", Some("https://auth.official.test")),
+        );
+
+        let contract = policy.public_official_auth_handoff_contract();
+
+        assert!(contract.bundled_server_address_configured);
+        assert!(
+            contract
+                .bundled_official_entry_artifact_identity
+                .starts_with("official-entry-content-sha256-v1:")
+        );
+        assert_eq!(
+            contract.bundled_target_kind,
+            BundledOfficialTargetKind::PrivateOrUniqueLocalIp
+        );
+        assert!(!contract.bundled_target_is_non_local_candidate);
+        assert_eq!(contract.bundled_auth_mode, ServerAuthMode::ExternalProvider);
+        assert_eq!(
+            contract.bundled_auth_provider_url.as_deref(),
+            Some("https://auth.official.test")
+        );
+        assert!(contract.external_auth_rollout_ready);
+        assert!(!contract.non_local_cutover_ready);
+        assert_eq!(contract.non_local_cutover_gap_reasons, vec![
+            "bundled_public_target_is_private_or_unique_local_ip"
+        ]);
+        assert!(contract.public_auth_authority.contains("exact-match"));
+    }
+
+    #[test]
+    fn public_auth_handoff_contract_exports_bundled_transport_policy() {
+        let policy = entry_policy(
+            ProductMode::Public,
+            official_entry_with_transport(
+                "play.caldrayne.example",
+                Some("https://auth.official.test"),
+                true,
+                true,
+                false,
+            ),
+        );
+
+        let contract = policy.public_official_auth_handoff_contract();
+
+        assert_eq!(
+            contract.bundled_transport_kind,
+            BundledOfficialTransportKind::SrvLookup
+        );
+        assert!(contract.bundled_use_srv);
+        assert!(contract.bundled_use_quic);
+        assert!(!contract.bundled_validate_tls);
+    }
+
+    #[test]
+    fn public_auth_handoff_contract_marks_named_host_with_external_auth_as_non_local_cutover_ready()
+    {
+        let policy = entry_policy(
+            ProductMode::Public,
+            official_entry(
+                "play.caldrayne.example:14004",
+                Some("https://auth.official.test"),
+            ),
+        );
+
+        let contract = policy.public_official_auth_handoff_contract();
+
+        assert_eq!(
+            contract.bundled_target_kind,
+            BundledOfficialTargetKind::NamedHostCandidate
+        );
+        assert!(contract.bundled_target_is_non_local_candidate);
+        assert!(contract.external_auth_rollout_ready);
+        assert!(contract.non_local_cutover_ready);
+        assert!(contract.non_local_cutover_gap_reasons.is_empty());
+    }
+
+    #[test]
+    fn public_auth_handoff_contract_marks_reserved_public_doc_ip_as_not_cutover_ready() {
+        let policy = entry_policy(
+            ProductMode::Public,
+            official_entry("203.0.113.10:14004", Some("https://auth.official.test")),
+        );
+
+        let contract = policy.public_official_auth_handoff_contract();
+
+        assert_eq!(
+            contract.bundled_target_kind,
+            BundledOfficialTargetKind::ReservedNonPublicIp
+        );
+        assert!(!contract.bundled_target_is_non_local_candidate);
+        assert!(contract.external_auth_rollout_ready);
+        assert!(!contract.non_local_cutover_ready);
+        assert_eq!(contract.non_local_cutover_gap_reasons, vec![
+            "bundled_public_target_is_reserved_non_public_ip"
+        ]);
+    }
+
+    #[test]
+    fn public_auth_handoff_contract_artifact_identity_is_stable_for_same_entry_content() {
+        let first = entry_policy(
+            ProductMode::Public,
+            official_entry("192.168.1.8:14004", Some("https://auth.official.test")),
+        )
+        .public_official_auth_handoff_contract()
+        .bundled_official_entry_artifact_identity;
+        let second = entry_policy(
+            ProductMode::Public,
+            official_entry("192.168.1.8:14004", Some("https://auth.official.test")),
+        )
+        .public_official_auth_handoff_contract()
+        .bundled_official_entry_artifact_identity;
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn public_auth_handoff_contract_artifact_identity_changes_when_server_address_changes() {
+        let baseline = entry_policy(
+            ProductMode::Public,
+            official_entry("192.168.1.8:14004", Some("https://auth.official.test")),
+        )
+        .public_official_auth_handoff_contract()
+        .bundled_official_entry_artifact_identity;
+        let changed = entry_policy(
+            ProductMode::Public,
+            official_entry("203.0.113.10:14004", Some("https://auth.official.test")),
+        )
+        .public_official_auth_handoff_contract()
+        .bundled_official_entry_artifact_identity;
+
+        assert_ne!(baseline, changed);
+    }
+
+    #[test]
+    fn public_auth_handoff_contract_artifact_identity_changes_when_auth_server_changes() {
+        let baseline = entry_policy(
+            ProductMode::Public,
+            official_entry("192.168.1.8:14004", Some("https://auth.official.test")),
+        )
+        .public_official_auth_handoff_contract()
+        .bundled_official_entry_artifact_identity;
+        let changed = entry_policy(
+            ProductMode::Public,
+            official_entry("192.168.1.8:14004", Some("https://auth.backup.test")),
+        )
+        .public_official_auth_handoff_contract()
+        .bundled_official_entry_artifact_identity;
+
+        assert_ne!(baseline, changed);
+    }
+
+    #[test]
+    fn official_entry_source_kind_defaults_to_bundled_when_omitted() {
+        let entry: OfficialEntry = ron::from_str(
+            r#"(
+                display_name: "Official Realm",
+                server_address: "192.168.1.8:14004",
+                auth_server: None,
+                use_srv: false,
+                use_quic: false,
+                validate_tls: true,
+            )"#,
+        )
+        .expect("legacy official entry should deserialize");
+
+        assert_eq!(entry.source_kind, OfficialEntrySourceKind::Bundled);
     }
 
     #[test]
@@ -735,6 +1278,30 @@ mod tests {
             "auth.other.test",
             &trusted_auth_servers
         ));
+        assert_eq!(
+            policy.public_official_auth_trust_outcome("auth.other.test"),
+            PublicOfficialAuthTrustOutcome::RejectedProviderMismatch
+        );
+    }
+
+    #[test]
+    fn public_mode_does_not_fall_back_to_saved_auth_cache_without_bundled_auth_pin() {
+        let policy = entry_policy(
+            ProductMode::Public,
+            official_entry("192.168.1.8:14004", None),
+        );
+        let mut trusted_auth_servers = HashSet::new();
+        trusted_auth_servers.insert("auth.official.test".to_string());
+
+        assert!(!policy.is_auth_server_trusted(
+            HostKind::PublicOfficial,
+            "auth.official.test",
+            &trusted_auth_servers
+        ));
+        assert_eq!(
+            policy.public_official_auth_trust_outcome("auth.official.test"),
+            PublicOfficialAuthTrustOutcome::RejectedMissingBundledProvider
+        );
     }
 
     #[test]

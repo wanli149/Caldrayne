@@ -7,7 +7,7 @@ pub mod error;
 // Reexports
 pub use crate::error::Error;
 pub use authc::AuthClientError;
-pub use common_net::msg::ServerInfo;
+pub use common_net::msg::{ServerAuth, ServerCompatibility, ServerEnvironment, ServerInfo};
 pub use specs::{
     Builder, DispatcherBuilder, Entity as EcsEntity, Join, LendJoin, ReadStorage, World, WorldExt,
 };
@@ -613,6 +613,17 @@ impl Client {
         init_stage_update(ClientInitStage::WatingForServerVersion);
         register_stream.send(client_type)?;
         let server_info: ServerInfo = register_stream.recv().await?;
+        let client_compatibility = ServerCompatibility::current();
+        *mismatched_server_info = Some(server_info.clone());
+        if !server_info
+            .compatibility
+            .is_compatible_with(client_compatibility)
+        {
+            return Err(Error::IncompatibleServerGeneration {
+                client: client_compatibility,
+                server: server_info.compatibility,
+            });
+        }
         if server_info.git_hash != *common::util::GIT_HASH
             || server_info.git_timestamp != *common::util::GIT_TIMESTAMP
         {
@@ -622,10 +633,11 @@ impl Client {
                 *common::util::DISPLAY_VERSION,
             );
         }
-        // Pass the server info back to the caller to ensure they can access it even
-        // if this function errors.
-        *mismatched_server_info = Some(server_info.clone());
-        debug!("Auth Server: {:?}", server_info.auth_provider);
+        debug!(
+            "Server auth mode: {}, provider: {:?}",
+            server_info.auth_mode().as_str(),
+            server_info.auth().provider_url()
+        );
 
         ping_stream.send(PingMsg::Ping)?;
 
@@ -1117,23 +1129,29 @@ impl Client {
         register_stream: &mut Stream,
     ) -> Result<(), Error> {
         // Authentication
-        let token_or_username = match &server_info.auth_provider {
-            Some(addr) => {
+        let token_or_username = match server_info.auth() {
+            ServerAuth::External { provider_url } => {
                 // Query whether this is a trusted auth server
-                if auth_trusted(addr) {
-                    let (scheme, authority) = match addr.split_once("://") {
+                if auth_trusted(&provider_url) {
+                    let (scheme, authority) = match provider_url.split_once("://") {
                         Some((s, a)) => (s, a),
-                        None => return Err(Error::AuthServerUrlInvalid(addr.to_string())),
+                        None => {
+                            return Err(Error::AuthServerUrlInvalid(provider_url.to_string()));
+                        },
                     };
 
                     let scheme = match scheme.parse::<authc::Scheme>() {
                         Ok(s) => s,
-                        Err(_) => return Err(Error::AuthServerUrlInvalid(addr.to_string())),
+                        Err(_) => {
+                            return Err(Error::AuthServerUrlInvalid(provider_url.to_string()));
+                        },
                     };
 
                     let authority = match authority.parse::<authc::Authority>() {
                         Ok(a) => a,
-                        Err(_) => return Err(Error::AuthServerUrlInvalid(addr.to_string())),
+                        Err(_) => {
+                            return Err(Error::AuthServerUrlInvalid(provider_url.to_string()));
+                        },
                     };
 
                     Ok(authc::AuthClient::new(scheme, authority)?
@@ -1144,7 +1162,7 @@ impl Client {
                     Err(Error::AuthServerNotTrusted)
                 }
             },
-            None => Ok(username.to_owned()),
+            ServerAuth::None => Ok(username.to_owned()),
         }?;
 
         debug!("Registering client...");

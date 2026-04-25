@@ -1,7 +1,20 @@
 #![expect(non_local_definitions)] // necessary because of the Protocol derive macro
 use protocol::Protocol;
 
-pub(crate) const VERSION: u16 = 0;
+pub const CURRENT_PROTOCOL_VERSION: u16 = 2;
+pub const VERSION_SELECTION_POLICY: &str = "exact-match";
+pub const SUPPORTS_MULTI_VERSION_NEGOTIATION: bool = false;
+pub const PUBLISHED_SERVER_INFO_FIELDS: &[&str] = &[
+    "realm_id",
+    "environment",
+    "compatibility",
+    "auth_required",
+    "git_hash",
+    "git_timestamp",
+    "players_count",
+    "player_cap",
+    "battlemode",
+];
 pub(crate) const VELOREN_HEADER: [u8; 7] = [b'v', b'e', b'l', b'o', b'r', b'e', b'n'];
 pub(crate) const MAX_REQUEST_CONTENT_SIZE: usize = 300;
 // NOTE: The actual maximum size must never exceed 1200 or we risk getting near
@@ -21,11 +34,12 @@ pub(crate) struct RawQueryServerRequest {
 #[protocol(discriminator(u8))]
 pub enum QueryServerRequest {
     /// This requests exists mostly for backwards-compatibilty reasons. As the
-    /// first message sent to the server should always be in the V0 version
-    /// of the protocol, if future versions of the protocol have more
-    /// requests than server info it may be confusing to request `P` and the max
-    /// version with a `QueryServerRequest::ServerInfo` request (the request
-    /// will still be dropped as the supplied `P` value is invalid).
+    /// first message sent to the server should always be in the currently
+    /// supported version of the protocol, if future versions of the protocol
+    /// have more requests than server info it may be confusing to request
+    /// `P` and the max version with a `QueryServerRequest::ServerInfo`
+    /// request (the request will still be dropped as the supplied `P` value
+    /// is invalid).
     Init,
     ServerInfo,
     // New requests should be added at the end to prevent breakage.
@@ -43,10 +57,10 @@ pub(crate) struct Init {
     /// for later requests).
     pub p: u64,
     /// The maximum supported protocol version by the server. The first request
-    /// to a server must always be done in the V0 protocol to query this value.
-    /// Following requests (when the version is known), can be done in the
-    /// maximum version or below, responses will be sent in the same version as
-    /// the requests.
+    /// to a server must always be done in the current protocol to query this
+    /// value. Following requests (when the version is known), can be done
+    /// in the maximum version or below, responses will be sent in the same
+    /// version as the requests.
     pub max_supported_version: u16,
 }
 
@@ -68,11 +82,46 @@ pub enum QueryServerResponse {
 
 #[derive(Protocol, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServerInfo {
+    pub realm_id: ServerRealmId,
+    pub environment: ServerEnvironment,
+    pub compatibility: ServerCompatibility,
+    pub auth_required: bool,
     pub git_hash: u32,
     pub git_timestamp: i64,
     pub players_count: u16,
     pub player_cap: u16,
     pub battlemode: ServerBattleMode,
+}
+
+#[derive(Protocol, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServerRealmId {
+    pub msb: u64,
+    pub lsb: u64,
+}
+
+impl ServerRealmId {
+    pub fn from_u128(value: u128) -> Self {
+        Self {
+            msb: (value >> 64) as u64,
+            lsb: value as u64,
+        }
+    }
+}
+
+#[derive(Protocol, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServerCompatibility {
+    pub generation: u16,
+    pub minimum_supported_generation: u16,
+}
+
+#[derive(Protocol, Debug, Clone, Copy, PartialEq, Eq)]
+#[protocol(discriminant = "integer")]
+#[protocol(discriminator(u8))]
+#[repr(u8)]
+pub enum ServerEnvironment {
+    Local,
+    Test,
+    Production,
 }
 
 #[derive(Protocol, Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,8 +141,9 @@ impl RawQueryServerRequest {
 
         let mut buf = Vec::with_capacity(MAX_REQUEST_SIZE);
 
-        // 2 extra bytes for version information, currently unused
-        buf.extend(VERSION.to_le_bytes());
+        // 2 extra bytes for protocol version information. This is currently
+        // only used for exact-version gating, not multi-version negotiation.
+        buf.extend(CURRENT_PROTOCOL_VERSION.to_le_bytes());
         buf.extend({
             let request_data =
                 <RawQueryServerRequest as Parcel>::raw_bytes(self, &Default::default())?;
@@ -115,7 +165,11 @@ impl RawQueryServerRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::{QueryServerRequest, RawQueryServerRequest};
+    use super::{
+        QueryServerRequest, QueryServerResponse, RawQueryServerRequest, RawQueryServerResponse,
+        ServerBattleMode, ServerCompatibility, ServerEnvironment, ServerInfo, ServerRealmId,
+    };
+    use protocol::Parcel;
 
     #[test]
     fn check_request_sizes() {
@@ -128,5 +182,36 @@ mod tests {
             };
             request.serialize().unwrap(); // This will panic if the size is above MAX_REQUEST_SIZE
         }
+    }
+
+    #[test]
+    fn check_response_sizes() {
+        let response =
+            RawQueryServerResponse::Response(QueryServerResponse::ServerInfo(ServerInfo {
+                realm_id: ServerRealmId {
+                    msb: u64::MAX,
+                    lsb: u64::MAX,
+                },
+                environment: ServerEnvironment::Production,
+                compatibility: ServerCompatibility {
+                    generation: u16::MAX,
+                    minimum_supported_generation: u16::MAX,
+                },
+                auth_required: true,
+                git_hash: u32::MAX,
+                git_timestamp: i64::MAX,
+                players_count: u16::MAX,
+                player_cap: u16::MAX,
+                battlemode: ServerBattleMode::PerPlayer,
+            }));
+
+        let bytes =
+            <RawQueryServerResponse as Parcel>::raw_bytes(&response, &Default::default()).unwrap();
+        assert!(
+            bytes.len() <= super::MAX_RESPONSE_SIZE,
+            "response size {} exceeds {}",
+            bytes.len(),
+            super::MAX_RESPONSE_SIZE
+        );
     }
 }

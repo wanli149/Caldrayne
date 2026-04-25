@@ -9516,6 +9516,7 @@ dependencies = [
  "veloren-common-base",
  "veloren-common-frontend",
  "veloren-common-net",
+ "veloren-query-server",
  "veloren-server",
  "veloren-server-agent",
  "veloren-world",

@@ -764,6 +764,15 @@ pub(crate) fn get_client_msg_error(
         Error::AuthServerNotTrusted => localization
             .get_msg("main-login-untrusted_auth_server")
             .into(),
+        Error::IncompatibleServerGeneration { client, server } => format!(
+            "{} Client compatibility generation: {} (min {}), server compatibility generation: {} \
+             (min {}).",
+            localization.get_msg("main-login-network_wrong_version"),
+            client.generation,
+            client.minimum_supported_generation,
+            server.generation,
+            server.minimum_supported_generation,
+        ),
         Error::ServerTimeout => localization.get_msg("main-login-timeout").into(),
         Error::ServerShutdown => localization.get_msg("main-login-server_shut_down").into(),
         Error::NotOnWhitelist => localization.get_msg("main-login-not_on_whitelist").into(),

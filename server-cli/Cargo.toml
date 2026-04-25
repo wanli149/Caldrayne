@@ -11,7 +11,8 @@ workspace = true
 build = true
 app = true
 longDescription = """
-Caldrayne Online is a multiplayer voxel RPG built on the Veloren open-source foundation.
+Caldrayne Online is a multiplayer voxel action RPG for the Veldr project line.
+It is a Caldrayne-branded derivative built on top of the open-source Veloren codebase while preserving required upstream credit.
 It is inspired by games such as Cube World, The Legend of Zelda: Breath of the Wild, Dwarf Fortress and Minecraft.
 
 This package includes the Caldrayne Online server CLI.
@@ -37,6 +38,7 @@ agent = { package = "veloren-server-agent", path = "../server/agent", optional =
 common = { package = "veloren-common", path = "../common" }
 common-base = { package = "veloren-common-base", path = "../common/base" }
 common-net = { package = "veloren-common-net", path = "../common/net" }
+veloren-query-server = { path = "../common/query_server" }
 common-frontend = { package = "veloren-common-frontend", path = "../common/frontend" }
 world = { package = "veloren-world", path = "../world", optional = true }
 

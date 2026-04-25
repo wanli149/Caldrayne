@@ -20,8 +20,9 @@ pub fn set_panic_hook(log_filename: String, logs_dir: PathBuf) {
         let potential_cause = potential_cause(panic_info);
 
         let mut dialog_message = format!(
-            "A critical error has occurred and the Caldrayne Online client has been forced to terminate in an unusual \
-             manner. Details about the error can be found below.\n\nPanic reason: {}\n\n",
+            "A critical error has occurred and the Caldrayne Online client has been forced to \
+             terminate in an unusual manner. Details about the error can be found below.\n\nPanic \
+             reason: {}\n\n",
             reason
         );
 

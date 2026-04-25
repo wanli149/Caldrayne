@@ -49,9 +49,7 @@ impl Tui {
         let matches = Command::new("veloren-botclient")
             .version(common::util::DISPLAY_VERSION.as_str())
             .author("The Caldrayne contributors <https://github.com/wanli149/Caldrayne>")
-            .about(
-                "The Caldrayne bot client allows logging in as a horde of bots for load-testing",
-            )
+            .about("The Caldrayne bot client allows logging in as a horde of bots for load-testing")
             .no_binary_name(true)
             .subcommand(
                 Command::new("register")

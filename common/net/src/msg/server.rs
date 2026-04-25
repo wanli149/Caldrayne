@@ -53,9 +53,106 @@ pub enum ServerMsg {
 pub struct ServerInfo {
     pub realm_id: Uuid,
     pub name: String,
+    pub environment: ServerEnvironment,
+    pub compatibility: ServerCompatibility,
     pub git_hash: u32,
     pub git_timestamp: i64,
     pub auth_provider: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServerAuthMode {
+    NoExternalAuth,
+    ExternalProvider,
+}
+
+impl ServerAuthMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NoExternalAuth => "no-external-auth",
+            Self::ExternalProvider => "external-provider",
+        }
+    }
+
+    pub const fn requires_external_auth(self) -> bool { matches!(self, Self::ExternalProvider) }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServerAuth {
+    None,
+    External { provider_url: String },
+}
+
+impl ServerAuth {
+    pub fn mode(&self) -> ServerAuthMode {
+        match self {
+            Self::None => ServerAuthMode::NoExternalAuth,
+            Self::External { .. } => ServerAuthMode::ExternalProvider,
+        }
+    }
+
+    pub fn provider_url(&self) -> Option<&str> {
+        match self {
+            Self::None => None,
+            Self::External { provider_url } => Some(provider_url.as_str()),
+        }
+    }
+
+    pub fn requires_external_auth(&self) -> bool { self.mode().requires_external_auth() }
+}
+
+impl ServerInfo {
+    pub fn auth_mode(&self) -> ServerAuthMode {
+        if self.auth_provider.is_some() {
+            ServerAuthMode::ExternalProvider
+        } else {
+            ServerAuthMode::NoExternalAuth
+        }
+    }
+
+    pub fn auth(&self) -> ServerAuth {
+        match &self.auth_provider {
+            Some(provider_url) => ServerAuth::External {
+                provider_url: provider_url.clone(),
+            },
+            None => ServerAuth::None,
+        }
+    }
+}
+
+pub const CURRENT_COMPATIBILITY_GENERATION: u16 = 1;
+pub const MINIMUM_SUPPORTED_COMPATIBILITY_GENERATION: u16 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerCompatibility {
+    pub generation: u16,
+    pub minimum_supported_generation: u16,
+}
+
+impl Default for ServerCompatibility {
+    fn default() -> Self { Self::current() }
+}
+
+impl ServerCompatibility {
+    pub const fn current() -> Self {
+        Self {
+            generation: CURRENT_COMPATIBILITY_GENERATION,
+            minimum_supported_generation: MINIMUM_SUPPORTED_COMPATIBILITY_GENERATION,
+        }
+    }
+
+    pub const fn is_compatible_with(self, other: Self) -> bool {
+        self.generation >= other.minimum_supported_generation
+            && other.generation >= self.minimum_supported_generation
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ServerEnvironment {
+    #[default]
+    Local,
+    Test,
+    Production,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -442,6 +539,11 @@ mod tests {
         let info = ServerInfo {
             realm_id: Uuid::new_v4(),
             name: "Official Realm".to_string(),
+            environment: ServerEnvironment::Production,
+            compatibility: ServerCompatibility {
+                generation: 2,
+                minimum_supported_generation: 1,
+            },
             git_hash: 123,
             git_timestamp: 456,
             auth_provider: Some("https://auth.example.test".to_string()),
@@ -455,5 +557,50 @@ mod tests {
 
         assert_eq!(decoded.realm_id, info.realm_id);
         assert_eq!(decoded.name, info.name);
+        assert_eq!(decoded.environment, info.environment);
+        assert_eq!(decoded.compatibility, info.compatibility);
+    }
+
+    #[test]
+    fn server_compatibility_requires_mutual_generation_support() {
+        let current = ServerCompatibility {
+            generation: 3,
+            minimum_supported_generation: 2,
+        };
+        let compatible = ServerCompatibility {
+            generation: 2,
+            minimum_supported_generation: 2,
+        };
+        let incompatible = ServerCompatibility {
+            generation: 1,
+            minimum_supported_generation: 1,
+        };
+
+        assert!(current.is_compatible_with(compatible));
+        assert!(!current.is_compatible_with(incompatible));
+    }
+
+    #[test]
+    fn server_info_auth_helpers_structure_existing_auth_provider_contract() {
+        let external = ServerInfo {
+            realm_id: Uuid::new_v4(),
+            name: "External Auth Realm".to_string(),
+            environment: ServerEnvironment::Production,
+            compatibility: ServerCompatibility::current(),
+            git_hash: 1,
+            git_timestamp: 2,
+            auth_provider: Some("https://auth.example.test".to_string()),
+        };
+        let none = ServerInfo {
+            auth_provider: None,
+            ..external.clone()
+        };
+
+        assert_eq!(external.auth_mode(), ServerAuthMode::ExternalProvider);
+        assert_eq!(external.auth(), ServerAuth::External {
+            provider_url: "https://auth.example.test".to_string()
+        });
+        assert_eq!(none.auth_mode(), ServerAuthMode::NoExternalAuth);
+        assert_eq!(none.auth(), ServerAuth::None);
     }
 }

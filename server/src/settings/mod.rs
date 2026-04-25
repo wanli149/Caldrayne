@@ -1,3 +1,4 @@
+mod account_auth;
 pub mod admin;
 pub mod banlist;
 mod editable;
@@ -6,8 +7,13 @@ pub mod server_description;
 pub mod server_physics;
 pub mod whitelist;
 
+pub use account_auth::{
+    AccountAuthGovernanceReport, AccountAuthRuntimeTopologyReport, AccountAuthStartupPolicyReport,
+    AccountAuthTopologyError, AccountIdentityScopeReport, AccountNamespacePolicyReport,
+    AccountPrincipalDefinitionReport, UnsupportedAccountAuthTopologyReport,
+};
 pub use editable::{EditableSetting, Error as SettingError};
-pub use identity::ServerIdentity;
+pub use identity::{IdentityFileProbe, ServerIdentity, identity_file_path, inspect_identity_file};
 
 pub use admin::{AdminRecord, Admins};
 pub use banlist::{
@@ -29,7 +35,7 @@ use portpicker::pick_unused_port;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
-    fs,
+    fs, io,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     path::{Path, PathBuf},
 };
@@ -37,8 +43,8 @@ use tracing::{error, warn};
 use world::sim::{DEFAULT_WORLD_SEED, FileOpts};
 
 use self::server_physics::ServerPhysicsForceList;
+use crate::data_dir;
 
-const CONFIG_DIR: &str = "server_config";
 const SETTINGS_FILENAME: &str = "settings.ron";
 const WHITELIST_FILENAME: &str = "whitelist.ron";
 const BANLIST_FILENAME: &str = "banlist.ron";
@@ -47,6 +53,46 @@ const ADMINS_FILENAME: &str = "admins.ron";
 const SERVER_PHYSICS_FORCE_FILENAME: &str = "server_physics_force.ron";
 
 pub const SINGLEPLAYER_SERVER_NAME: &str = "Singleplayer";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SettingsFileProbe {
+    Ready { path: PathBuf },
+    Missing { path: PathBuf },
+    Unreadable { path: PathBuf, message: String },
+    Invalid { path: PathBuf, message: String },
+}
+
+impl SettingsFileProbe {
+    pub fn is_ready(&self) -> bool { matches!(self, Self::Ready { .. }) }
+
+    pub fn detail(&self) -> String {
+        match self {
+            Self::Ready { path } => {
+                format!(
+                    "server settings file is present and parseable at {}",
+                    path.display()
+                )
+            },
+            Self::Missing { path } => {
+                format!("server settings file missing at {}", path.display())
+            },
+            Self::Unreadable { path, message } => {
+                format!(
+                    "server settings file could not be read at {}: {}",
+                    path.display(),
+                    message
+                )
+            },
+            Self::Invalid { path, message } => {
+                format!(
+                    "server settings file is not valid RON at {}: {}",
+                    path.display(),
+                    message
+                )
+            },
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub enum ServerBattleMode {
@@ -88,6 +134,38 @@ impl From<ServerBattleMode> for veloren_query_server::proto::ServerBattleMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RuntimeEnvironment {
+    #[default]
+    Local,
+    Test,
+    Production,
+}
+
+impl From<RuntimeEnvironment> for veloren_query_server::proto::ServerEnvironment {
+    fn from(value: RuntimeEnvironment) -> Self {
+        use veloren_query_server::proto::ServerEnvironment;
+
+        match value {
+            RuntimeEnvironment::Local => ServerEnvironment::Local,
+            RuntimeEnvironment::Test => ServerEnvironment::Test,
+            RuntimeEnvironment::Production => ServerEnvironment::Production,
+        }
+    }
+}
+
+impl From<RuntimeEnvironment> for common_net::msg::ServerEnvironment {
+    fn from(value: RuntimeEnvironment) -> Self {
+        use common_net::msg::ServerEnvironment;
+
+        match value {
+            RuntimeEnvironment::Local => ServerEnvironment::Local,
+            RuntimeEnvironment::Test => ServerEnvironment::Test,
+            RuntimeEnvironment::Production => ServerEnvironment::Production,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Protocol {
     Quic {
@@ -98,6 +176,178 @@ pub enum Protocol {
     Tcp {
         address: SocketAddr,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuicBinding {
+    pub address: SocketAddr,
+    pub cert_file_path: PathBuf,
+    pub key_file_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QuicTlsConfigError {
+    Io {
+        path: PathBuf,
+        message: String,
+    },
+    InvalidPrivateKey {
+        path: PathBuf,
+    },
+    InvalidCertificateChain {
+        path: PathBuf,
+    },
+    InvalidTlsConfig {
+        cert_file_path: PathBuf,
+        key_file_path: PathBuf,
+        message: String,
+    },
+}
+
+impl Display for QuicTlsConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io { path, message } => {
+                write!(f, "I/O error while reading {}: {message}", path.display())
+            },
+            Self::InvalidPrivateKey { path } => {
+                write!(f, "No valid TLS private key found in {}", path.display())
+            },
+            Self::InvalidCertificateChain { path } => {
+                write!(
+                    f,
+                    "No valid TLS certificate chain found in {}",
+                    path.display()
+                )
+            },
+            Self::InvalidTlsConfig {
+                cert_file_path,
+                key_file_path,
+                message,
+            } => write!(
+                f,
+                "Failed to build QUIC/TLS config from cert {} and key {}: {message}",
+                cert_file_path.display(),
+                key_file_path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for QuicTlsConfigError {}
+
+impl Protocol {
+    pub fn address(&self) -> SocketAddr {
+        match self {
+            Self::Quic { address, .. } | Self::Tcp { address } => *address,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Quic { .. } => "quic",
+            Self::Tcp { .. } => "tcp",
+        }
+    }
+
+    pub fn quic_binding(&self) -> Option<QuicBinding> {
+        match self {
+            Self::Quic {
+                address,
+                cert_file_path,
+                key_file_path,
+            } => Some(QuicBinding {
+                address: *address,
+                cert_file_path: cert_file_path.clone(),
+                key_file_path: key_file_path.clone(),
+            }),
+            Self::Tcp { .. } => None,
+        }
+    }
+}
+
+impl QuicBinding {
+    pub fn from_protocols(protocols: &[Protocol]) -> Vec<Self> {
+        protocols
+            .iter()
+            .filter_map(Protocol::quic_binding)
+            .collect()
+    }
+
+    pub fn validate_tls_material(&self) -> Result<(), QuicTlsConfigError> {
+        self.load_server_config().map(|_| ())
+    }
+
+    pub fn load_server_config(&self) -> Result<quinn::ServerConfig, QuicTlsConfigError> {
+        use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer};
+        use rustls_pemfile::Item;
+
+        let key = fs::read(&self.key_file_path).map_err(|error| QuicTlsConfigError::Io {
+            path: self.key_file_path.clone(),
+            message: error.to_string(),
+        })?;
+        let key = if self
+            .key_file_path
+            .extension()
+            .is_some_and(|extension| extension == "der")
+        {
+            PrivateKeyDer::try_from(key).map_err(|_| QuicTlsConfigError::InvalidPrivateKey {
+                path: self.key_file_path.clone(),
+            })?
+        } else {
+            rustls_pemfile::read_all(&mut key.as_slice())
+                .find_map(|item| match item {
+                    Ok(Item::Pkcs1Key(v)) => Some(Ok(PrivateKeyDer::Pkcs1(v))),
+                    Ok(Item::Pkcs8Key(v)) => Some(Ok(PrivateKeyDer::Pkcs8(v))),
+                    Ok(Item::Sec1Key(v)) => Some(Ok(PrivateKeyDer::Sec1(v))),
+                    Ok(Item::Crl(_)) | Ok(Item::Csr(_)) | Ok(Item::X509Certificate(_)) | Ok(_) => {
+                        None
+                    },
+                    Err(error) => Some(Err(QuicTlsConfigError::Io {
+                        path: self.key_file_path.clone(),
+                        message: error.to_string(),
+                    })),
+                })
+                .transpose()?
+                .ok_or_else(|| QuicTlsConfigError::InvalidPrivateKey {
+                    path: self.key_file_path.clone(),
+                })?
+        };
+
+        let cert_chain =
+            fs::read(&self.cert_file_path).map_err(|error| QuicTlsConfigError::Io {
+                path: self.cert_file_path.clone(),
+                message: error.to_string(),
+            })?;
+        let cert_chain = if self
+            .cert_file_path
+            .extension()
+            .is_some_and(|extension| extension == "der")
+        {
+            vec![CertificateDer::from(cert_chain)]
+        } else {
+            let certs = rustls_pemfile::certs(&mut cert_chain.as_slice())
+                .collect::<Result<Vec<_>, io::Error>>()
+                .map_err(|error| QuicTlsConfigError::Io {
+                    path: self.cert_file_path.clone(),
+                    message: error.to_string(),
+                })?;
+            if certs.is_empty() {
+                return Err(QuicTlsConfigError::InvalidCertificateChain {
+                    path: self.cert_file_path.clone(),
+                });
+            }
+            certs
+        };
+
+        quinn::ServerConfig::with_single_cert(cert_chain, key).map_err(|error| {
+            QuicTlsConfigError::InvalidTlsConfig {
+                cert_file_path: self.cert_file_path.clone(),
+                key_file_path: self.key_file_path.clone(),
+                message: error.to_string(),
+            }
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -182,6 +432,8 @@ pub struct Settings {
     pub gameserver_protocols: Vec<Protocol>,
     pub auth_server_address: Option<String>,
     pub query_address: Option<SocketAddr>,
+    #[serde(default, skip_serializing)]
+    pub runtime_environment: RuntimeEnvironment,
     pub max_players: u16,
     pub world_seed: u32,
     pub server_name: String,
@@ -223,6 +475,7 @@ impl Default for Settings {
             ],
             auth_server_address: None,
             query_address: Some(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 14006))),
+            runtime_environment: RuntimeEnvironment::Local,
             world_seed: DEFAULT_WORLD_SEED,
             server_name: "Caldrayne Online Server".into(),
             max_players: 100,
@@ -242,9 +495,26 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub fn server_auth_mode(&self) -> common_net::msg::ServerAuthMode {
+        if self.auth_server_address.is_some() {
+            common_net::msg::ServerAuthMode::ExternalProvider
+        } else {
+            common_net::msg::ServerAuthMode::NoExternalAuth
+        }
+    }
+
+    pub fn server_auth(&self) -> common_net::msg::ServerAuth {
+        match &self.auth_server_address {
+            Some(provider_url) => common_net::msg::ServerAuth::External {
+                provider_url: provider_url.clone(),
+            },
+            None => common_net::msg::ServerAuth::None,
+        }
+    }
+
     /// path: Directory that contains the server config directory
     pub fn load(path: &Path) -> Self {
-        let path = Self::get_settings_path(path);
+        let path = settings_file_path(path);
 
         let mut settings = if let Ok(file) = fs::File::open(&path) {
             match ron::de::from_reader(file) {
@@ -316,12 +586,6 @@ impl Settings {
         }
     }
 
-    fn get_settings_path(path: &Path) -> PathBuf {
-        let mut path = with_config_dir(path);
-        path.push(SETTINGS_FILENAME);
-        path
-    }
-
     fn validate(&mut self) {
         const INVALID_SETTING_MSG: &str =
             "Invalid value for setting in userdata/server/server_config/settings.ron.";
@@ -356,11 +620,36 @@ impl Display for InvalidSettingsError {
     }
 }
 
-pub fn with_config_dir(path: &Path) -> PathBuf {
-    let mut path = PathBuf::from(path);
-    path.push(CONFIG_DIR);
+pub fn settings_file_path(path: &Path) -> PathBuf {
+    let mut path = with_config_dir(path);
+    path.push(SETTINGS_FILENAME);
     path
 }
+
+pub fn inspect_settings_file(path: &Path) -> SettingsFileProbe {
+    let settings_path = settings_file_path(path);
+
+    match fs::File::open(&settings_path) {
+        Ok(file) => match ron::de::from_reader::<_, Settings>(file) {
+            Ok(_) => SettingsFileProbe::Ready {
+                path: settings_path,
+            },
+            Err(error) => SettingsFileProbe::Invalid {
+                path: settings_path,
+                message: error.to_string(),
+            },
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => SettingsFileProbe::Missing {
+            path: settings_path,
+        },
+        Err(error) => SettingsFileProbe::Unreadable {
+            path: settings_path,
+            message: error.to_string(),
+        },
+    }
+}
+
+pub fn with_config_dir(path: &Path) -> PathBuf { data_dir::with_config_dir(path) }
 
 /// Our upgrade guarantee is that if validation succeeds
 /// for an old version, then migration to the next version must always succeed

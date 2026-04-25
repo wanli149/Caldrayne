@@ -1,12 +1,46 @@
+use crate::ServerStatePaths;
 use common::uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 use tracing::warn;
 
-const IDENTITY_FILENAME: &str = "identity.ron";
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IdentityFileProbe {
+    Ready { path: PathBuf, realm_id: Uuid },
+    Missing { path: PathBuf },
+    Unreadable { path: PathBuf, message: String },
+    Invalid { path: PathBuf, message: String },
+}
+
+impl IdentityFileProbe {
+    pub fn is_ready(&self) -> bool { matches!(self, Self::Ready { .. }) }
+
+    pub fn detail(&self) -> String {
+        match self {
+            Self::Ready { path, realm_id } => format!(
+                "server identity file is present and parseable at {} with realm_id {}",
+                path.display(),
+                realm_id
+            ),
+            Self::Missing { path } => {
+                format!("server identity file missing at {}", path.display())
+            },
+            Self::Unreadable { path, message } => format!(
+                "server identity file could not be read at {}: {}",
+                path.display(),
+                message
+            ),
+            Self::Invalid { path, message } => format!(
+                "server identity file is not valid RON at {}: {}",
+                path.display(),
+                message
+            ),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
@@ -28,7 +62,7 @@ impl ServerIdentity {
     pub fn from_realm_id(realm_id: Uuid) -> Self { Self { realm_id } }
 
     pub fn load(data_dir: &Path) -> Self {
-        let path = Self::get_path(data_dir);
+        let path = identity_file_path(data_dir);
         let identity = if let Ok(file) = fs::File::open(&path) {
             match ron::de::from_reader(file) {
                 Ok(identity) => identity,
@@ -56,7 +90,7 @@ impl ServerIdentity {
     }
 
     fn save_to_file(&self, data_dir: &Path) -> std::io::Result<()> {
-        let path = Self::get_path(data_dir);
+        let path = identity_file_path(data_dir);
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;
         }
@@ -64,8 +98,34 @@ impl ServerIdentity {
         let ron = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default()).unwrap();
         fs::write(path, ron.as_bytes())
     }
+}
 
-    fn get_path(data_dir: &Path) -> PathBuf { data_dir.join(IDENTITY_FILENAME) }
+pub fn identity_file_path(data_dir: &Path) -> PathBuf {
+    ServerStatePaths::new(data_dir).identity_file
+}
+
+pub fn inspect_identity_file(data_dir: &Path) -> IdentityFileProbe {
+    let path = identity_file_path(data_dir);
+
+    match fs::File::open(&path) {
+        Ok(file) => match ron::de::from_reader::<_, ServerIdentity>(file) {
+            Ok(identity) => IdentityFileProbe::Ready {
+                path,
+                realm_id: identity.realm_id,
+            },
+            Err(error) => IdentityFileProbe::Invalid {
+                path,
+                message: error.to_string(),
+            },
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            IdentityFileProbe::Missing { path }
+        },
+        Err(error) => IdentityFileProbe::Unreadable {
+            path,
+            message: error.to_string(),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -81,6 +141,30 @@ mod tests {
         let second = ServerIdentity::load(&dir);
 
         assert_eq!(first.realm_id, second.realm_id);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn inspect_identity_file_reports_missing_invalid_and_ready_states() {
+        let dir = std::env::temp_dir().join(format!(
+            "caldrayne-server-identity-probe-{}",
+            Uuid::new_v4()
+        ));
+
+        let missing = inspect_identity_file(&dir);
+        assert!(matches!(missing, IdentityFileProbe::Missing { .. }));
+
+        fs::create_dir_all(&dir).expect("should create temp dir");
+        fs::write(identity_file_path(&dir), b"not valid ron")
+            .expect("should write invalid identity");
+        let invalid = inspect_identity_file(&dir);
+        assert!(matches!(invalid, IdentityFileProbe::Invalid { .. }));
+
+        let identity = ServerIdentity::from_realm_id(Uuid::new_v4());
+        identity.save_to_data_dir_warn(&dir);
+        let ready = inspect_identity_file(&dir);
+        assert!(matches!(ready, IdentityFileProbe::Ready { .. }));
 
         let _ = fs::remove_dir_all(dir);
     }

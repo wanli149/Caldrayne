@@ -20,6 +20,7 @@ Caldrayne Online 不是从零重写的新项目，而是建立在 Veloren 现有
 ## 文档
 
 - 英文项目说明：[README.md](README.md)
+- 模块 C 环境 / 分发 / 发布回滚基线：[CALDRAYNE_环境分发与发布回滚基线.zh-CN.md](CALDRAYNE_环境分发与发布回滚基线.zh-CN.md)
 
 ## 上游说明
 
@@ -31,6 +32,14 @@ Caldrayne Online 不是从零重写的新项目，而是建立在 Veloren 现有
 
 当前仓库优先服务于本地开发与品牌整合，因此部分内部 crate 名称、资源键、兼容性变量、桌面集成标识以及构建产物名称，仍可能保留历史 `veloren` 命名。这样做是为了避免在品牌化早期破坏构建、资源加载、联机兼容或工具链行为。
 
+## 客户端安装边界
+
+- 当前桌面客户端家族仍是技术包与技术二进制 `veloren-voxygen`。
+- `Public` 与 `Dev` 是这一套技术客户端的两种运行模式，不是两套独立安装产品。
+- `veloren-voxygen-dev` 这类导出当前表示开发构建 profile，不表示第二个玩家桌面客户端。
+- `veloren-voxygen`、`veloren-server-cli`、桌面集成 id 以及兼容性相关键名等技术标识，当前为了构建、工具链、打包与协议稳定性而保留；它们不是对外品牌面。
+- `veloren-server-cli` 是独立的专用服务端运行体和运维二进制，不属于桌面客户端安装边界。
+
 ## 参考资料
 
 在 Caldrayne 专属文档进一步完善之前，优先参考仓库内已有资料：
@@ -38,6 +47,7 @@ Caldrayne Online 不是从零重写的新项目，而是建立在 Veloren 现有
 - 英文项目说明：[README.md](README.md)
 - 协作规范：[CONTRIBUTING.md](CONTRIBUTING.md)
 - Nix 与打包说明：[nix/README.md](nix/README.md)
+- 模块 C 环境 / 分发 / 发布回滚基线：[CALDRAYNE_环境分发与发布回滚基线.zh-CN.md](CALDRAYNE_环境分发与发布回滚基线.zh-CN.md)
 
 如果确实需要追溯上游引擎背景或实现来源，再单独查阅保留的 Veloren 参考资料，但不要把它们视为 Caldrayne 当前的官方社区入口。
 

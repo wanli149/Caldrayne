@@ -18,8 +18,7 @@ use super::{
 use crate::{
     error::Error,
     render::{Renderer, UiDrawer},
-    window::TextCursorRect,
-    window::Window,
+    window::{TextCursorRect, Window},
 };
 use common::slowjob::SlowJobPool;
 use common_base::span;
@@ -110,9 +109,14 @@ impl IcedUi {
         is_secure: bool,
     ) -> Option<TextCursorRect> {
         let text_bounds = bounds.text_bounds().or_else(|| bounds.bounds())?;
-        let rect = self
-            .renderer
-            .text_input_cursor_bounds(text_bounds, font, size, value, state, is_secure)?;
+        let rect = self.renderer.text_input_cursor_bounds(
+            text_bounds,
+            font,
+            size,
+            value,
+            state,
+            is_secure,
+        )?;
         let scale = self.scale.scale_factor_logical();
 
         Some(TextCursorRect {

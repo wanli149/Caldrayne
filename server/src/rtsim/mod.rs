@@ -1,3 +1,4 @@
+use crate::ServerStatePaths;
 pub mod event;
 pub mod rule;
 pub mod tick;
@@ -137,15 +138,8 @@ impl RtSim {
         Ok(this)
     }
 
-    fn get_file_path(mut data_dir: PathBuf) -> PathBuf {
-        let mut path = std::env::var("VELOREN_RTSIM")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                data_dir.push("rtsim");
-                data_dir
-            });
-        path.push("data.dat");
-        path
+    fn get_file_path(data_dir: PathBuf) -> PathBuf {
+        ServerStatePaths::new(data_dir).rtsim_data_file
     }
 
     pub fn hook_character_mount_volume(

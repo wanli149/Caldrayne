@@ -127,8 +127,8 @@ impl BotClient {
             None => vec![prefix.to_string()],
         };
         info!("usernames: {:?}", usernames);
-        if let Some(auth_addr) = self.server_info.auth_provider.as_ref() {
-            let (scheme, authority) = auth_addr.split_once("://").expect("invalid auth url");
+        if let common_net::msg::ServerAuth::External { provider_url } = self.server_info.auth() {
+            let (scheme, authority) = provider_url.split_once("://").expect("invalid auth url");
             let scheme = scheme
                 .parse::<authc::Scheme>()
                 .expect("invalid auth url scheme");
@@ -161,7 +161,10 @@ impl BotClient {
                 }
             }
         } else {
-            warn!("Server's auth_provider is None");
+            warn!(
+                "Server auth mode is {}",
+                self.server_info.auth_mode().as_str()
+            );
         }
         info!("register done");
     }

@@ -32,9 +32,7 @@ pub fn is_free_tcp(port: Port) -> bool {
 }
 
 /// Check if a port is free on both TCP and UDP
-pub fn is_free(port: Port) -> bool {
-    is_free_tcp(port) && is_free_udp(port)
-}
+pub fn is_free(port: Port) -> bool { is_free_tcp(port) && is_free_udp(port) }
 
 /// Asks the OS for a free port
 fn ask_free_tcp_port() -> Option<Port> {
