@@ -1,0 +1,20 @@
+(
+    fixture_id: "fixed_overlay_fixture_v1",
+    operations: [
+        (
+            rel_xy: (8, 8),
+            target: TopMostNonAir,
+            block: Solid(kind: Misc, color: (212, 48, 92)),
+        ),
+        (
+            rel_xy: (16, 16),
+            target: TopMostNonAir,
+            block: Solid(kind: GlowingRock, color: (42, 118, 176)),
+        ),
+        (
+            rel_xy: (24, 24),
+            target: TopMostNonAir,
+            block: Solid(kind: WeakRock, color: (188, 164, 96)),
+        ),
+    ],
+)

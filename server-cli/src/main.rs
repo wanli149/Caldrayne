@@ -85,6 +85,71 @@ fn startup_failure_error(
     io::Error::new(kind, detail)
 }
 
+#[cfg(feature = "worldgen")]
+fn compat_audit_summary(audit: server::CompatAuditV1) -> String {
+    format!(
+        "world compat audit: entry={}, decision={}, failure={}",
+        audit.entry.as_str(),
+        audit.decision.as_str(),
+        audit.failure_kind.as_str()
+    )
+}
+
+fn startup_server_error(audit_log_path: &std::path::Path, error: server::Error) -> io::Error {
+    #[cfg(feature = "worldgen")]
+    if let Some(audit) = error.compat_audit() {
+        let detail = format!(
+            "failed to create server instance: {error}; {}",
+            compat_audit_summary(audit)
+        );
+        tracing::error!(
+            compat_entry = %audit.entry.as_str(),
+            compat_decision = %audit.decision.as_str(),
+            compat_failure = %audit.failure_kind.as_str(),
+            "dedicated startup failed with world compatibility rejection"
+        );
+        append_audit_event_warn(
+            audit_log_path,
+            AuditSource::Runtime,
+            AuditAction::WorldCompatStartupReject,
+            AuditOutcome::Failed,
+            &detail,
+        );
+        return io::Error::new(io::ErrorKind::InvalidData, detail);
+    }
+
+    startup_failure_error(
+        audit_log_path,
+        io::ErrorKind::Other,
+        format!("failed to create server instance: {error}"),
+    )
+}
+
+#[cfg(feature = "worldgen")]
+fn observe_startup_compat_fallback(audit_log_path: &std::path::Path, audit: server::CompatAuditV1) {
+    if !audit.is_strict_load_contract_gap() {
+        return;
+    }
+
+    let detail = format!(
+        "dedicated startup continued after strict world load contract fallback: {}",
+        compat_audit_summary(audit)
+    );
+    warn!(
+        compat_entry = %audit.entry.as_str(),
+        compat_decision = %audit.decision.as_str(),
+        compat_failure = %audit.failure_kind.as_str(),
+        "dedicated startup continued after a strict world load contract fallback; keep this observable before enforce"
+    );
+    append_audit_event_warn(
+        audit_log_path,
+        AuditSource::Runtime,
+        AuditAction::WorldCompatFallback,
+        AuditOutcome::Accepted,
+        &detail,
+    );
+}
+
 fn snapshot_runtime_listener_inventory(
     runtime_listener_inventory: &server::RuntimeListenerInventory,
 ) -> Vec<server::RuntimeListenerStatus> {
@@ -563,13 +628,10 @@ fn main() -> io::Result<()> {
         &|_| {},
         Arc::clone(&runtime),
     )
-    .map_err(|error| {
-        startup_failure_error(
-            &audit_log_path,
-            io::ErrorKind::Other,
-            format!("failed to create server instance: {error}"),
-        )
-    })?;
+    .map_err(|error| startup_server_error(&audit_log_path, error))?;
+
+    #[cfg(feature = "worldgen")]
+    observe_startup_compat_fallback(&audit_log_path, server.world().sim().compat_audit());
 
     let registry = Arc::clone(server.metrics_registry());
     let chat = server.chat_cache().clone();
@@ -578,6 +640,13 @@ fn main() -> io::Result<()> {
     let runtime_listener_audit_state =
         append_runtime_listener_startup_audit_events(&audit_log_path, &runtime_listener_inventory);
     let runtime_observability_inventory = web::default_runtime_observability_inventory();
+    #[cfg(feature = "worldgen")]
+    web::set_world_compat_observability_status(
+        &runtime_observability_inventory,
+        server.world().sim().compat_mode().as_str(),
+        server.world().sim().compat_audit(),
+        server.world().sim().recipe_manifest(),
+    );
     let runtime_observability_audit_state = runtime_observability_audit_state(
         &web::snapshot_runtime_observability_inventory(&runtime_observability_inventory),
     );

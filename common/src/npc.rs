@@ -4,7 +4,7 @@ use crate::{
 };
 use common_i18n::Content;
 use lazy_static::lazy_static;
-use rand::seq::IndexedRandom;
+use rand::{RngExt, seq::IndexedRandom};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -139,6 +139,72 @@ pub fn kind_to_body(kind: NpcKind) -> Body {
         NpcKind::Crocodile => comp::quadruped_low::Body::random().into(),
         NpcKind::Tarantula => comp::arthropod::Body::random().into(),
         NpcKind::Crab => comp::crustacean::Body::random().into(),
+        NpcKind::Plugin => comp::plugin::Body::random().into(),
+    }
+}
+
+pub fn kind_to_body_with_rng<R: RngExt>(kind: NpcKind, rng: &mut R) -> Body {
+    match kind {
+        NpcKind::Humanoid => {
+            let species = *body::humanoid::ALL_SPECIES.choose(rng).unwrap();
+            comp::humanoid::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Pig => {
+            let species = *body::quadruped_small::ALL_SPECIES.choose(rng).unwrap();
+            comp::quadruped_small::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Wolf => {
+            let species = *body::quadruped_medium::ALL_SPECIES.choose(rng).unwrap();
+            comp::quadruped_medium::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Duck => {
+            let species = *body::bird_medium::ALL_SPECIES.choose(rng).unwrap();
+            comp::bird_medium::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Phoenix => {
+            let species = *body::bird_large::ALL_SPECIES.choose(rng).unwrap();
+            comp::bird_large::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Clownfish => {
+            let species = *body::fish_small::ALL_SPECIES.choose(rng).unwrap();
+            comp::fish_small::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Marlin => {
+            let species = *body::fish_medium::ALL_SPECIES.choose(rng).unwrap();
+            comp::fish_medium::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Ogre => {
+            let species = *body::biped_large::ALL_SPECIES.choose(rng).unwrap();
+            comp::biped_large::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Gnome => {
+            let species = *body::biped_small::ALL_SPECIES.choose(rng).unwrap();
+            comp::biped_small::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Archaeos => {
+            let species = *body::theropod::ALL_SPECIES.choose(rng).unwrap();
+            comp::theropod::Body::random_with(rng, &species).into()
+        },
+        NpcKind::StoneGolem => {
+            let species = *body::golem::ALL_SPECIES.choose(rng).unwrap();
+            comp::golem::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Reddragon => {
+            let species = *body::dragon::ALL_SPECIES.choose(rng).unwrap();
+            comp::dragon::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Crocodile => {
+            let species = *body::quadruped_low::ALL_SPECIES.choose(rng).unwrap();
+            comp::quadruped_low::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Tarantula => {
+            let species = *body::arthropod::ALL_SPECIES.choose(rng).unwrap();
+            comp::arthropod::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Crab => {
+            let species = *body::crustacean::ALL_SPECIES.choose(rng).unwrap();
+            comp::crustacean::Body::random_with(rng, &species).into()
+        },
         NpcKind::Plugin => comp::plugin::Body::random().into(),
     }
 }
@@ -335,6 +401,190 @@ impl NpcBody {
                 )
             })
             .or_else(|| crate::comp::body::plugin::parse_name(s))
+            .ok_or(())
+    }
+
+    #[expect(clippy::result_unit_err)]
+    pub fn resolve_with_rng<R: RngExt>(s: &str, rng: &mut R) -> Result<(NpcKind, Body), ()> {
+        fn parse<
+            'a,
+            R: RngExt,
+            B: Into<Body>,
+            Species,
+            BodyMeta,
+            SpeciesData: for<'b> core::ops::Index<&'b Species, Output = SpeciesNames>,
+        >(
+            s: &str,
+            npc_kind: NpcKind,
+            body_data: &'a comp::BodyData<BodyMeta, SpeciesData>,
+            rng: &mut R,
+            conv_func: fn(&mut R, &Species) -> B,
+        ) -> Option<(NpcKind, Body)>
+        where
+            &'a SpeciesData: IntoIterator<Item = Species>,
+        {
+            let npc_names = &body_data.species;
+            body_data
+                .species
+                .into_iter()
+                .find(|species| npc_names[species].keyword == s)
+                .map(|species| (npc_kind, conv_func(rng, &species).into()))
+        }
+
+        let npc_names = &*NPC_NAMES.read();
+        NpcKind::from_str(s)
+            .map(|kind| (kind, kind_to_body_with_rng(kind, rng)))
+            .ok()
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Humanoid,
+                    &npc_names.humanoid,
+                    rng,
+                    comp::humanoid::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Pig,
+                    &npc_names.quadruped_small,
+                    rng,
+                    comp::quadruped_small::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Wolf,
+                    &npc_names.quadruped_medium,
+                    rng,
+                    comp::quadruped_medium::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Duck,
+                    &npc_names.bird_medium,
+                    rng,
+                    comp::bird_medium::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Phoenix,
+                    &npc_names.bird_large,
+                    rng,
+                    comp::bird_large::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Clownfish,
+                    &npc_names.fish_small,
+                    rng,
+                    comp::fish_small::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Marlin,
+                    &npc_names.fish_medium,
+                    rng,
+                    comp::fish_medium::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Ogre,
+                    &npc_names.biped_large,
+                    rng,
+                    comp::biped_large::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Gnome,
+                    &npc_names.biped_small,
+                    rng,
+                    comp::biped_small::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Archaeos,
+                    &npc_names.theropod,
+                    rng,
+                    comp::theropod::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::StoneGolem,
+                    &npc_names.golem,
+                    rng,
+                    comp::golem::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Reddragon,
+                    &npc_names.dragon,
+                    rng,
+                    comp::dragon::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Crocodile,
+                    &npc_names.quadruped_low,
+                    rng,
+                    comp::quadruped_low::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Tarantula,
+                    &npc_names.arthropod,
+                    rng,
+                    comp::arthropod::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Crab,
+                    &npc_names.crustacean,
+                    rng,
+                    comp::crustacean::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                parse(
+                    s,
+                    NpcKind::Plugin,
+                    &npc_names.plugin,
+                    rng,
+                    comp::plugin::Body::random_with,
+                )
+            })
+            .or_else(|| {
+                crate::comp::body::plugin::parse_name(s).map(|npc_body| {
+                    let NpcBody(kind, mut body_creator) = npc_body;
+                    (kind, body_creator())
+                })
+            })
             .ok_or(())
     }
 }

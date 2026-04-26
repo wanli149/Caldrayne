@@ -1,0 +1,126 @@
+name: worldgen-audit
+run-name: worldgen-audit (${{ github.event_name == 'workflow_dispatch' && inputs.tier || 'smoke' }})
+
+concurrency:
+  group: worldgen-audit-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.tier || 'smoke' }}
+  cancel-in-progress: false
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/worldgen-audit.yml'
+      - 'tools/worldgen-audit-verify.ps1'
+      - 'world/**'
+      - 'server/**'
+      - 'server-cli/**'
+      - 'common/**'
+      - 'voxygen/src/singleplayer/**'
+      - 'voxygen/src/menu/main/**'
+      - 'vendor/specs/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  push:
+    paths:
+      - '.github/workflows/worldgen-audit.yml'
+      - 'tools/worldgen-audit-verify.ps1'
+      - 'world/**'
+      - 'server/**'
+      - 'server-cli/**'
+      - 'common/**'
+      - 'voxygen/src/singleplayer/**'
+      - 'voxygen/src/menu/main/**'
+      - 'vendor/specs/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Worldgen audit tier to verify. smoke is the default C1 gate; medium/nightly/all remain manual extended verification tiers.
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - medium
+          - nightly
+          - all
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      WORLDGEN_AUDIT_TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.tier || 'smoke' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-09-08
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Resolve audit roots
+        id: audit
+        shell: pwsh
+        run: |
+          $tier = $env:WORLDGEN_AUDIT_TIER
+          if ([string]::IsNullOrWhiteSpace($tier)) {
+            $tier = 'smoke'
+          }
+
+          switch ($tier) {
+            'all' {
+              $corpusRoot = 'world/tests/data/worldgen_corpus'
+              $baselineRoot = 'world/tests/data/worldgen_baselines'
+            }
+            'smoke' {
+              $corpusRoot = "world/tests/data/worldgen_corpus/$tier"
+              $baselineRoot = "world/tests/data/worldgen_baselines/$tier"
+            }
+            'medium' {
+              $corpusRoot = "world/tests/data/worldgen_corpus/$tier"
+              $baselineRoot = "world/tests/data/worldgen_baselines/$tier"
+            }
+            'nightly' {
+              $corpusRoot = "world/tests/data/worldgen_corpus/$tier"
+              $baselineRoot = "world/tests/data/worldgen_baselines/$tier"
+            }
+            default {
+              throw "Unsupported audit tier '$tier'."
+            }
+          }
+
+          "tier=$tier" >> $env:GITHUB_OUTPUT
+          "corpus_root=$corpusRoot" >> $env:GITHUB_OUTPUT
+          "baseline_root=$baselineRoot" >> $env:GITHUB_OUTPUT
+          "artifact_name=worldgen-audit-$tier" >> $env:GITHUB_OUTPUT
+          "output_root=target/worldgen-audit-ci-$tier" >> $env:GITHUB_OUTPUT
+
+      - name: Verify worldgen audit baseline
+        shell: pwsh
+        run: >
+          ./tools/worldgen-audit-verify.ps1
+          -CorpusRoot ${{ steps.audit.outputs.corpus_root }}
+          -BaselineRoot ${{ steps.audit.outputs.baseline_root }}
+          -OutputRoot ${{ steps.audit.outputs.output_root }}
+
+      - name: Publish tier policy summary
+        if: always()
+        shell: pwsh
+        run: |
+          @"
+          ## Worldgen audit tier policy
+          - trigger: `${{ github.event_name }}`
+          - selected tier: `${{ steps.audit.outputs.tier }}`
+          - default repo gate on `push` / `pull_request`: `smoke`
+          - extended manual verification tiers: `medium`, `nightly`, `all`
+          - current workflow contract: automatic events always resolve to `smoke`; extended tiers stay on `workflow_dispatch`
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.audit.outputs.artifact_name }}
+          path: ${{ steps.audit.outputs.output_root }}

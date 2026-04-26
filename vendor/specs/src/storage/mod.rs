@@ -446,7 +446,7 @@ where
 
     /// Creates a draining storage wrapper which can be `.join`ed
     /// to get a draining iterator.
-    pub fn drain(&mut self) -> Drain<T> {
+    pub fn drain(&mut self) -> Drain<'_, T> {
         Drain {
             data: &mut self.data,
         }

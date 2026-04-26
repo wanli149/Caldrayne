@@ -393,7 +393,11 @@ impl Structure for DwarvenMine {
     }
 }
 fn spawn_entity(pos: Vec3<f32>, painter: &Painter, entity_path: &str) {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng(0x4457_454E, &[
+        pos.x.to_bits(),
+        pos.y.to_bits(),
+        pos.z.to_bits(),
+    ]);
     painter.spawn(
         EntityInfo::at(pos)
             .with_asset_expect(entity_path, &mut rng, None)
@@ -409,7 +413,14 @@ fn spawn_entities(
     max_distance: f32,
     entity_distance: f32,
 ) {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng(0x4457_4D47, &[
+        pos.x.to_bits(),
+        pos.y.to_bits(),
+        pos.z.to_bits(),
+        num_entities,
+        max_distance.to_bits(),
+        entity_distance.to_bits(),
+    ]);
     let num_paths = entity_paths.len();
 
     let side_length = (num_entities as f32).sqrt().ceil() as u32;
@@ -432,7 +443,12 @@ fn spawn_entities(
 }
 
 fn spawn_random_entity(pos: Vec3<i32>, painter: &Painter, rot: u8) {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng(0x4457_5254, &[
+        pos.x as u32,
+        pos.y as u32,
+        pos.z as u32,
+        rot as u32,
+    ]);
 
     let entities = [
         "common.entity.dungeon.dwarven_quarry.miner",

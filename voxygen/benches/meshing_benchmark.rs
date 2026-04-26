@@ -23,10 +23,12 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             seed_elements: true,
             world_file: sim::FileOpts::LoadAsset(sim::DEFAULT_WORLD_MAP.into()),
             calendar: None,
+            compat_mode: Default::default(),
         },
         &pool,
         &|_| {},
-    );
+    )
+    .expect("meshing benchmark world should load");
     let mut terrain = TerrainGrid::new(
         world.sim().map_size_lg(),
         Arc::new(world.sim().generate_oob_chunk()),

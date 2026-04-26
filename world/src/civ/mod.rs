@@ -40,6 +40,11 @@ fn initial_civ_count(map_size_lg: MapSizeLg) -> u32 {
     cnt.max(1) // we need at least one civ in order to generate a starting site
 }
 
+fn suppress_civ_bootstrap_warning_on_tiny_world(map_size_lg: MapSizeLg) -> bool {
+    let map_size = map_size_lg.vec();
+    map_size.x <= 8 || map_size.y <= 8
+}
+
 #[derive(Default)]
 pub struct Civs {
     pub civs: Store<Civ>,
@@ -248,7 +253,10 @@ impl Civs {
             this.name_biomes(&mut name_ctx);
         }
 
-        let initial_civ_count = initial_civ_count(sim.map_size_lg());
+        let map_size_lg = sim.map_size_lg();
+        let initial_civ_count = initial_civ_count(map_size_lg);
+        let suppress_tiny_world_bootstrap_warning =
+            suppress_civ_bootstrap_warning_on_tiny_world(map_size_lg);
         let mut ctx = GenCtx { sim, rng };
 
         // info!("starting cave generation");
@@ -260,7 +268,26 @@ impl Civs {
             prof_span!("create civ");
             debug!("Creating civilisation...");
             if this.birth_civ(&mut ctx.reseed()).is_none() {
-                warn!("Failed to find starting site for civilisation.");
+                if suppress_tiny_world_bootstrap_warning {
+                    debug!(
+                        seed,
+                        civ_index = i,
+                        initial_civ_count,
+                        map_size_x_lg = map_size_lg.vec().x,
+                        map_size_y_lg = map_size_lg.vec().y,
+                        "Failed to find starting site for civilisation on tiny world; treating as \
+                         audit noise"
+                    );
+                } else {
+                    warn!(
+                        seed,
+                        civ_index = i,
+                        initial_civ_count,
+                        map_size_x_lg = map_size_lg.vec().x,
+                        map_size_y_lg = map_size_lg.vec().y,
+                        "Failed to find starting site for civilisation."
+                    );
+                }
             }
             report_stage(WorldCivStage::CivCreation(i, initial_civ_count));
         }

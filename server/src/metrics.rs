@@ -36,6 +36,9 @@ pub struct NetworkRequestMetrics {
     pub chunks_generation_triggered: IntCounter,
     pub chunks_served_lossy: IntCounter,
     pub chunks_served_lossless: IntCounter,
+    pub chunks_send_failed_lossy: IntCounter,
+    pub chunks_send_failed_lossless: IntCounter,
+    pub chunks_serialize_handoff_dropped: IntCounter,
     pub chunks_serialisation_requests: IntCounter,
     pub chunks_distinct_serialisation_requests: IntCounter,
 }
@@ -43,7 +46,15 @@ pub struct NetworkRequestMetrics {
 pub struct ChunkGenMetrics {
     pub chunks_requested: IntCounter,
     pub chunks_served: IntCounter,
+    pub chunks_failed: IntCounter,
     pub chunks_canceled: IntCounter,
+}
+
+pub struct ChunkLifecycleMetrics {
+    pub chunk_requests_len: IntGauge,
+    pub pending_chunks_len: IntGauge,
+    pub send_queue_len: IntGauge,
+    pub active_entries_len: IntGauge,
 }
 
 pub struct JobMetrics {
@@ -217,11 +228,23 @@ impl NetworkRequestMetrics {
         ))?;
         let chunks_served_lossy = IntCounter::with_opts(Opts::new(
             "chunks_served_lossy",
-            "number of chunks that were sent with lossy compression requested",
+            "number of chunk deliveries successfully sent with lossy compression",
         ))?;
         let chunks_served_lossless = IntCounter::with_opts(Opts::new(
             "chunks_served_lossless",
-            "number of chunks that were sent with lossless compression requested",
+            "number of chunk deliveries successfully sent with lossless compression",
+        ))?;
+        let chunks_send_failed_lossy = IntCounter::with_opts(Opts::new(
+            "chunks_send_failed_lossy",
+            "number of lossy chunk deliveries that failed before reaching the client",
+        ))?;
+        let chunks_send_failed_lossless = IntCounter::with_opts(Opts::new(
+            "chunks_send_failed_lossless",
+            "number of lossless chunk deliveries that failed before reaching the client",
+        ))?;
+        let chunks_serialize_handoff_dropped = IntCounter::with_opts(Opts::new(
+            "chunks_serialize_handoff_dropped",
+            "number of serialized chunk payloads dropped before entering the chunk_send queue",
         ))?;
         let chunks_serialisation_requests = IntCounter::with_opts(Opts::new(
             "chunks_serialisation_requests",
@@ -237,6 +260,9 @@ impl NetworkRequestMetrics {
         registry.register(Box::new(chunks_generation_triggered.clone()))?;
         registry.register(Box::new(chunks_served_lossy.clone()))?;
         registry.register(Box::new(chunks_served_lossless.clone()))?;
+        registry.register(Box::new(chunks_send_failed_lossy.clone()))?;
+        registry.register(Box::new(chunks_send_failed_lossless.clone()))?;
+        registry.register(Box::new(chunks_serialize_handoff_dropped.clone()))?;
         registry.register(Box::new(chunks_serialisation_requests.clone()))?;
         registry.register(Box::new(chunks_distinct_serialisation_requests.clone()))?;
 
@@ -246,6 +272,9 @@ impl NetworkRequestMetrics {
             chunks_generation_triggered,
             chunks_served_lossy,
             chunks_served_lossless,
+            chunks_send_failed_lossy,
+            chunks_send_failed_lossless,
+            chunks_serialize_handoff_dropped,
             chunks_serialisation_requests,
             chunks_distinct_serialisation_requests,
         })
@@ -260,7 +289,11 @@ impl ChunkGenMetrics {
         ))?;
         let chunks_served = IntCounter::with_opts(Opts::new(
             "chunks_served",
-            "number of all requested chunks already served on the server",
+            "number of chunk generation jobs that completed successfully",
+        ))?;
+        let chunks_failed = IntCounter::with_opts(Opts::new(
+            "chunks_failed",
+            "number of chunk generation jobs that terminated with an error result",
         ))?;
         let chunks_canceled = IntCounter::with_opts(Opts::new(
             "chunks_canceled",
@@ -269,12 +302,49 @@ impl ChunkGenMetrics {
 
         registry.register(Box::new(chunks_requested.clone()))?;
         registry.register(Box::new(chunks_served.clone()))?;
+        registry.register(Box::new(chunks_failed.clone()))?;
         registry.register(Box::new(chunks_canceled.clone()))?;
 
         Ok(Self {
             chunks_requested,
             chunks_served,
+            chunks_failed,
             chunks_canceled,
+        })
+    }
+}
+
+impl ChunkLifecycleMetrics {
+    pub fn new(registry: &Registry) -> Result<Self, prometheus::Error> {
+        let chunk_requests_len = IntGauge::with_opts(Opts::new(
+            "chunk_requests_len",
+            "number of queued chunk requests observed at terrain handoff before submission to \
+             generation",
+        ))?;
+        let pending_chunks_len = IntGauge::with_opts(Opts::new(
+            "pending_chunks_len",
+            "number of chunks currently queued or executing in chunk generation",
+        ))?;
+        let send_queue_len = IntGauge::with_opts(Opts::new(
+            "send_queue_len",
+            "number of serialized chunks observed in the serialize-to-send handoff queue at \
+             chunk_send intake before delivery drain",
+        ))?;
+        let active_entries_len = IntGauge::with_opts(Opts::new(
+            "chunk_lifecycle_entries_len",
+            "number of active chunk lifecycle entries currently tracked by the server",
+        ))?;
+
+        registry.register(Box::new(chunk_requests_len.clone()))?;
+        registry.register(Box::new(pending_chunks_len.clone()))?;
+        registry.register(Box::new(send_queue_len.clone()))?;
+        registry.register(Box::new(active_entries_len.clone()))?;
+
+        Ok(Self {
+            chunk_requests_len,
+            pending_chunks_len,
+            send_queue_len,
+            active_entries_len,
         })
     }
 }

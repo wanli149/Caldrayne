@@ -125,10 +125,12 @@ fn main() {
             seed_elements: true,
             world_file: FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into()),
             calendar: None,
+            compat_mode: Default::default(),
         },
         &pool,
         &|_| {},
-    );
+    )
+    .expect("heightmap visualization world should load");
     println!("Loaded world");
 
     let land = Land::from_sim(world.sim());

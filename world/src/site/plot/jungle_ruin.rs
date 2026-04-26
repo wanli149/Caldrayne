@@ -41,7 +41,7 @@ impl Structure for JungleRuin {
     fn render_inner(&self, _site: &Site, land: &Land, painter: &Painter) {
         let center = self.bounds.center();
         let plot_base = land.get_alt_approx(center) as i32;
-        let mut rng = rand::rng();
+        let mut rng = seeded_rng_from_aabr(0x4A52_554E, self.bounds);
         let stone = Fill::Sampling(stone_color(BlockKind::Rock));
         let weak_stone = Fill::Sampling(stone_color(BlockKind::WeakRock));
         let stone_broken = Fill::Sampling(Arc::new(|center| {

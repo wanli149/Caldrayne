@@ -21,7 +21,8 @@ fn main() {
         },
         &pool,
         &|_| {},
-    );
+    )
+    .expect("cave biomes world should load");
     let land = Land::from_sim(world.sim());
 
     let mut biomes: Vec<(Biome, u32)> = vec![(Biome::default(), 0); LAYERS as usize];

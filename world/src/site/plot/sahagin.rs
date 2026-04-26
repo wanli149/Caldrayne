@@ -77,7 +77,7 @@ impl Structure for Sahagin {
         let center = self.center;
         let base = self.alt - room_size + 1;
         let rooms = &self.rooms;
-        let mut rng = rand::rng();
+        let mut rng = seeded_rng_from_aabr(0x5341_4847, self.bounds);
         let surface_color = self.surface_color.map(|e| (e * 255.0) as u8);
         let sub_surface_color = self.sub_surface_color.map(|e| (e * 255.0) as u8);
         let gradient_center = Vec3::new(center.x as f32, center.y as f32, (base + 1) as f32);

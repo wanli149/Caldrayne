@@ -13,7 +13,7 @@ use delaunator::{Point, Triangulation, triangulate};
 use itertools::Itertools;
 use rand::{SeedableRng, prelude::*};
 use rand_chacha::ChaChaRng;
-use tracing::error;
+use tracing::{error, warn};
 use vek::*;
 
 #[cfg(feature = "airship_maps")]
@@ -1119,6 +1119,8 @@ impl Airships {
         _sampler: Option<&WorldSim>,
         _map_image_path: Option<&str>,
     ) {
+        self.routes.clear();
+
         let all_dock_points = self
             .airship_docks
             .iter()
@@ -1289,7 +1291,31 @@ impl Airships {
                 _map_image_path,
             );
         } else {
-            eprintln!("Error - cannot eulerize the dock points.");
+            let map_size = map_size_lg.vec();
+            // Tiny audit worlds can legitimately end up without a usable airship route
+            // circuit; suppress stderr noise there, but keep a structured warning for
+            // normal-sized worlds where this is more likely to indicate degraded content.
+            if map_size.x <= 8 || map_size.y <= 8 {
+                debug_airships!(
+                    3,
+                    "Skipping airship route warning on tiny world: seed={}, map_size_lg=({}, {}), \
+                     docks={}, iterations={}",
+                    seed,
+                    map_size.x,
+                    map_size.y,
+                    all_dock_points.len(),
+                    max_iterations,
+                );
+            } else {
+                warn!(
+                    seed,
+                    map_size_x_lg = map_size.x,
+                    map_size_y_lg = map_size.y,
+                    dock_count = all_dock_points.len(),
+                    max_iterations,
+                    "Could not eulerize airship dock points; airship routes remain empty"
+                );
+            }
         }
     }
 

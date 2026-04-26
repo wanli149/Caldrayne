@@ -64,6 +64,7 @@ fn health_router(health_state: HealthState) -> Router {
         .route("/transport-security", get(health_transport_security))
         .route("/listeners", get(health_runtime_listeners))
         .route("/observability", get(health_runtime_observability))
+        .route("/world-compat", get(health_world_compat))
         .route("/preflight", get(health_preflight))
         .route("/governance", get(health_governance))
         .route("/policy", get(health_policy))
@@ -171,6 +172,14 @@ async fn health_runtime_observability(State(health): State<HealthState>) -> impl
         StatusCode::OK,
         [(header::CACHE_CONTROL, "no-store")],
         Json(health.runtime_observability_report()),
+    )
+}
+
+async fn health_world_compat(State(health): State<HealthState>) -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(health.world_compat_report()),
     )
 }
 

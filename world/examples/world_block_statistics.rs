@@ -148,10 +148,12 @@ fn generate(db_path: &str, ymin: Option<i32>, ymax: Option<i32>) -> Result<(), B
             seed_elements: true,
             world_file: FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into()),
             calendar: None,
+            compat_mode: Default::default(),
         },
         &pool,
         &|_| {},
-    );
+    )
+    .expect("world block statistics world should load");
     println!("Loaded world");
 
     let conn = block_statistics_db(db_path)?;

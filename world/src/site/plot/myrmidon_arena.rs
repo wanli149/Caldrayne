@@ -71,7 +71,7 @@ impl Structure for MyrmidonArena {
     fn render_inner(&self, _site: &Site, _land: &Land, painter: &Painter) {
         let base = self.arena_data.base + 1;
         let center = self.arena_data.center;
-        let mut rng = rand::rng();
+        let mut rng = seeded_rng_from_aabr(0x4D59_4152, self.bounds);
         let sandstone_unbroken = Fill::Sampling(Arc::new(|center| {
             Some(match (RandomField::new(0).get(center)) % 37 {
                 0..=8 => Block::new(BlockKind::Rock, Rgb::new(245, 212, 129)),

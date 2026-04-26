@@ -8,8 +8,13 @@ use world::{IndexOwned, World};
 
 #[cfg(feature = "worldgen")] use crate::rtsim;
 use crate::{
-    ChunkRequest, Tick, chunk_generator::ChunkGenerator, chunk_serialize::ChunkSendEntry,
-    client::Client, presence::RepositionToFreeSpace, settings::Settings,
+    ChunkRequest, Tick,
+    chunk_generator::ChunkGenerator,
+    chunk_lifecycle::{ChunkLifecycleHandle, ChunkLifecycleTerminal},
+    chunk_serialize::ChunkSendEntry,
+    client::Client,
+    presence::RepositionToFreeSpace,
+    settings::Settings,
 };
 use common::{
     SkillSetBuilder,
@@ -78,6 +83,8 @@ pub struct Data<'a> {
     world: ReadExpect<'a, Arc<World>>,
     chunk_send_bus: ReadExpect<'a, EventBus<ChunkSendEntry>>,
     chunk_generator: WriteExpect<'a, ChunkGenerator>,
+    chunk_lifecycle: ReadExpect<'a, ChunkLifecycleHandle>,
+    chunk_lifecycle_metrics: ReadExpect<'a, crate::metrics::ChunkLifecycleMetrics>,
     terrain: WriteExpect<'a, TerrainGrid>,
     terrain_changes: Write<'a, TerrainChanges>,
     chunk_requests: Write<'a, Vec<ChunkRequest>>,
@@ -117,6 +124,9 @@ impl<'a> System<'a> for Sys {
         // Submit requests for chunks right before receiving finished chunks so that we
         // don't create duplicate work for chunks that just finished but are not
         // yet added to the terrain.
+        data.chunk_lifecycle_metrics
+            .chunk_requests_len
+            .set(data.chunk_requests.len() as i64);
         data.chunk_requests.drain(..).for_each(|request| {
             data.chunk_generator.generate_chunk(
                 Some(request.entity),
@@ -126,6 +136,7 @@ impl<'a> System<'a> for Sys {
                 &data.rtsim,
                 data.index.clone(),
                 (*data.time_of_day, data.calendar.clone()),
+                data.tick.0,
             )
         });
 
@@ -133,11 +144,23 @@ impl<'a> System<'a> for Sys {
         // Fetch any generated `TerrainChunk`s and insert them into the terrain.
         // Also, send the chunk data to anybody that is close by.
         let mut new_chunks = Vec::new();
-        'insert_terrain_chunks: while let Some((key, res)) = data.chunk_generator.recv_new_chunk() {
+        'insert_terrain_chunks: while let Some((key, res)) =
+            data.chunk_generator.recv_new_chunk(data.tick.0)
+        {
             #[cfg_attr(not(feature = "persistent_world"), expect(unused_mut))]
             let (mut chunk, supplement) = match res {
-                Ok((chunk, supplement)) => (chunk, supplement),
+                Ok((chunk, supplement)) => {
+                    data.chunk_generator.record_chunk_generated();
+                    (chunk, supplement)
+                },
                 Err(Some(entity)) => {
+                    data.chunk_generator.record_chunk_failed();
+                    let _ = data.chunk_lifecycle.lock().expect("Poisoned").complete(
+                        key,
+                        Some(data.tick.0),
+                        ChunkLifecycleTerminal::GenerateErr,
+                        None,
+                    );
                     if let Some(client) = data.clients.get(entity) {
                         client.send_fallible(ServerGeneral::TerrainChunkUpdate {
                             key,
@@ -147,6 +170,13 @@ impl<'a> System<'a> for Sys {
                     continue 'insert_terrain_chunks;
                 },
                 Err(None) => {
+                    data.chunk_generator.record_chunk_failed();
+                    let _ = data.chunk_lifecycle.lock().expect("Poisoned").complete(
+                        key,
+                        Some(data.tick.0),
+                        ChunkLifecycleTerminal::GenerateErr,
+                        None,
+                    );
                     continue 'insert_terrain_chunks;
                 },
             };
@@ -389,7 +419,7 @@ impl<'a> System<'a> for Sys {
                     terrain_persistence.unload_chunk(key);
                 }
 
-                data.chunk_generator.cancel_if_pending(key);
+                data.chunk_generator.cancel_if_pending(key, data.tick.0);
 
                 // If you want to trigger any behaivour on unload, do it in `Server::tick` by
                 // reading `TerrainChanges::removed_chunks` since chunks can also be removed

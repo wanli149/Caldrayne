@@ -1,7 +1,11 @@
 use crate::{
     HwStats, Tick, TickStart,
     chunk_generator::ChunkGenerator,
-    metrics::{EcsSystemMetrics, JobMetrics, PhysicsMetrics, QueryServerMetrics, TickMetrics},
+    chunk_lifecycle::ChunkLifecycleHandle,
+    metrics::{
+        ChunkLifecycleMetrics, EcsSystemMetrics, JobMetrics, PhysicsMetrics, QueryServerMetrics,
+        TickMetrics,
+    },
 };
 use common::{resources::TimeOfDay, slowjob::SlowJobPool, terrain::TerrainGrid};
 use common_ecs::{Job, Origin, Phase, SysMetrics, System};
@@ -23,6 +27,7 @@ impl<'a> System<'a> for Sys {
         ReadExpect<'a, TimeOfDay>,
         ReadExpect<'a, TickStart>,
         ReadExpect<'a, ChunkGenerator>,
+        ReadExpect<'a, ChunkLifecycleHandle>,
         Option<Read<'a, TerrainGrid>>,
         Read<'a, SysMetrics>,
         Read<'a, common_ecs::PhysicsMetrics>,
@@ -31,6 +36,7 @@ impl<'a> System<'a> for Sys {
         ReadExpect<'a, TickMetrics>,
         ReadExpect<'a, PhysicsMetrics>,
         ReadExpect<'a, JobMetrics>,
+        ReadExpect<'a, ChunkLifecycleMetrics>,
         Option<Read<'a, Arc<Mutex<RawQueryServerMetrics>>>>,
         ReadExpect<'a, QueryServerMetrics>,
     );
@@ -48,6 +54,7 @@ impl<'a> System<'a> for Sys {
             time_of_day,
             tick_start,
             chunk_generator,
+            chunk_lifecycle,
             terrain,
             sys_metrics,
             phys_metrics,
@@ -56,6 +63,7 @@ impl<'a> System<'a> for Sys {
             export_tick,
             export_physics,
             export_jobs,
+            export_chunk_lifecycle,
             raw_query_server,
             export_query_server,
         ): Self::SystemData,
@@ -121,6 +129,16 @@ impl<'a> System<'a> for Sys {
             "pending chunks",
             chunk_generator.pending_chunks().count() as f64
         );
+        export_chunk_lifecycle
+            .pending_chunks_len
+            .set(chunk_generator.pending_chunks().count() as i64);
+        {
+            let mut lifecycle = chunk_lifecycle.lock().expect("Poisoned");
+            lifecycle.prune_stale(tick.0.saturating_sub(600));
+            export_chunk_lifecycle
+                .active_entries_len
+                .set(lifecycle.active_entries_len() as i64);
+        }
         if let Some(terrain) = terrain.as_ref() {
             common_base::plot!("chunk count", terrain.iter().count() as f64);
         }

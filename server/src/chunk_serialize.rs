@@ -20,6 +20,7 @@ pub struct ChunkSendEntry {
 }
 
 pub struct SerializedChunk {
+    pub(crate) chunk_key: Vec2<i32>,
     pub(crate) lossy_compression: bool,
     pub(crate) msg: PreparedMsg,
     pub(crate) recipients: Vec<Entity>,

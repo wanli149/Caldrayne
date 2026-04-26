@@ -31,7 +31,7 @@ use common_net::msg::ClientType;
 use common_state::plugin::PluginMgr;
 use i18n::{LocalizationGuard, LocalizationHandle, fluent_args};
 #[cfg(feature = "singleplayer")]
-use server::ServerInitStage;
+use server::{CompatEntryKindV1, CompatFailureKindV1, ServerInitStage};
 #[cfg(any(feature = "singleplayer", feature = "plugins"))]
 use specs::WorldExt;
 use std::{cell::RefCell, path::Path, rc::Rc, sync::Arc};
@@ -108,6 +108,94 @@ impl MainMenuState {
     }
 }
 
+#[cfg(feature = "singleplayer")]
+const fn compat_entry_msg_key(entry: CompatEntryKindV1) -> &'static str {
+    match entry {
+        CompatEntryKindV1::Load => "main-servers-world_compat_entry-load",
+        CompatEntryKindV1::LoadLegacy => "main-servers-world_compat_entry-load_legacy",
+        CompatEntryKindV1::LoadAsset => "main-servers-world_compat_entry-load_asset",
+        CompatEntryKindV1::Generate
+        | CompatEntryKindV1::Save
+        | CompatEntryKindV1::LoadOrGenerate => "main-servers-world_compat_entry-generic",
+    }
+}
+
+#[cfg(feature = "singleplayer")]
+const fn compat_failure_msg_key(failure: CompatFailureKindV1) -> &'static str {
+    match failure {
+        CompatFailureKindV1::MissingInput => "main-servers-world_compat_failure-missing_input",
+        CompatFailureKindV1::ParseError => "main-servers-world_compat_failure-parse_error",
+        CompatFailureKindV1::InvalidWorld => "main-servers-world_compat_failure-invalid_world",
+        CompatFailureKindV1::OptionMismatch => "main-servers-world_compat_failure-option_mismatch",
+        CompatFailureKindV1::None => "main-servers-world_compat_failure-generic",
+    }
+}
+
+#[cfg(feature = "singleplayer")]
+const fn compat_remediation_msg_key(entry: CompatEntryKindV1) -> &'static str {
+    match entry {
+        CompatEntryKindV1::Load | CompatEntryKindV1::LoadLegacy => {
+            "main-servers-world_compat_remediation-load"
+        },
+        CompatEntryKindV1::LoadAsset => "main-servers-world_compat_remediation-load_asset",
+        CompatEntryKindV1::Generate
+        | CompatEntryKindV1::Save
+        | CompatEntryKindV1::LoadOrGenerate => "main-servers-world_compat_remediation-generic",
+    }
+}
+
+#[cfg(feature = "singleplayer")]
+const fn compat_notice_remediation_msg_key(entry: CompatEntryKindV1) -> &'static str {
+    match entry {
+        CompatEntryKindV1::Load | CompatEntryKindV1::LoadLegacy => {
+            "main-servers-world_compat_notice_remediation-load"
+        },
+        CompatEntryKindV1::LoadAsset => "main-servers-world_compat_notice_remediation-load_asset",
+        CompatEntryKindV1::Generate
+        | CompatEntryKindV1::Save
+        | CompatEntryKindV1::LoadOrGenerate => {
+            "main-servers-world_compat_notice_remediation-generic"
+        },
+    }
+}
+
+#[cfg(feature = "singleplayer")]
+fn localized_compat_world_error(
+    localization: &LocalizationGuard,
+    audit: server::CompatAuditV1,
+) -> String {
+    localization
+        .get_msg_ctx("main-servers-world_compat_error", &fluent_args! {
+            "entry" => localization.get_msg(compat_entry_msg_key(audit.entry)),
+            "failure" => localization.get_msg(compat_failure_msg_key(audit.failure_kind)),
+            "remediation" => localization.get_msg(compat_remediation_msg_key(audit.entry)),
+        })
+        .into_owned()
+}
+
+#[cfg(feature = "singleplayer")]
+fn localized_compat_world_notice(
+    localization: &LocalizationGuard,
+    audit: server::CompatAuditV1,
+) -> String {
+    localization
+        .get_msg_ctx("main-servers-world_compat_notice", &fluent_args! {
+            "entry" => localization.get_msg(compat_entry_msg_key(audit.entry)),
+            "failure" => localization.get_msg(compat_failure_msg_key(audit.failure_kind)),
+            "remediation" => localization.get_msg(compat_notice_remediation_msg_key(audit.entry)),
+        })
+        .into_owned()
+}
+
+#[cfg(feature = "singleplayer")]
+fn localized_world_error(localization: &LocalizationGuard, error: String) -> String {
+    localization
+        .get_msg_ctx("main-servers-other_error", &fluent_args! {
+            "raw_error" => error,
+        })
+        .into_owned()
+}
+
 impl PlayState for MainMenuState {
     fn enter(&mut self, global_state: &mut GlobalState, _: Direction) {
         // Kick off title music
@@ -153,7 +241,16 @@ impl PlayState for MainMenuState {
                 }
 
                 match singleplayer.receiver.try_recv() {
-                    Ok(Ok(())) => {
+                    Ok(Ok(init_outcome)) => {
+                        if init_outcome.compat_audit.is_strict_load_contract_gap() {
+                            self.main_menu_ui.show_connection_notice(
+                                localized_compat_world_notice(
+                                    localized_strings,
+                                    init_outcome.compat_audit,
+                                ),
+                            );
+                        }
+
                         // Attempt login after the server is finished initializing
                         attempt_login(
                             &mut global_state.info_message,
@@ -217,6 +314,12 @@ impl PlayState for MainMenuState {
                                     "raw_error" => e.to_string(),
                                 })
                                 .into_owned(),
+                            server::Error::WorldErr(e) => match e.compat_audit() {
+                                Some(audit) => {
+                                    localized_compat_world_error(localized_strings, audit)
+                                },
+                                None => localized_world_error(localized_strings, e.to_string()),
+                            },
                             server::Error::Other(e) => localized_strings
                                 .get_msg_ctx("main-servers-other_error", &i18n::fluent_args! {
                                     "raw_error" => e,
@@ -709,6 +812,60 @@ impl PlayState for MainMenuState {
     }
 
     fn egui_enabled(&self) -> bool { false }
+}
+
+#[cfg(all(test, feature = "singleplayer"))]
+mod tests {
+    use super::{compat_entry_msg_key, compat_failure_msg_key, compat_remediation_msg_key};
+    use server::{CompatEntryKindV1, CompatFailureKindV1};
+
+    #[test]
+    fn compat_entry_keys_match_expected_variants() {
+        assert_eq!(
+            compat_entry_msg_key(CompatEntryKindV1::Load),
+            "main-servers-world_compat_entry-load"
+        );
+        assert_eq!(
+            compat_entry_msg_key(CompatEntryKindV1::LoadAsset),
+            "main-servers-world_compat_entry-load_asset"
+        );
+        assert_eq!(
+            compat_entry_msg_key(CompatEntryKindV1::Generate),
+            "main-servers-world_compat_entry-generic"
+        );
+    }
+
+    #[test]
+    fn compat_failure_keys_match_expected_variants() {
+        assert_eq!(
+            compat_failure_msg_key(CompatFailureKindV1::MissingInput),
+            "main-servers-world_compat_failure-missing_input"
+        );
+        assert_eq!(
+            compat_failure_msg_key(CompatFailureKindV1::OptionMismatch),
+            "main-servers-world_compat_failure-option_mismatch"
+        );
+        assert_eq!(
+            compat_failure_msg_key(CompatFailureKindV1::None),
+            "main-servers-world_compat_failure-generic"
+        );
+    }
+
+    #[test]
+    fn compat_remediation_keys_match_expected_variants() {
+        assert_eq!(
+            compat_remediation_msg_key(CompatEntryKindV1::LoadLegacy),
+            "main-servers-world_compat_remediation-load"
+        );
+        assert_eq!(
+            compat_remediation_msg_key(CompatEntryKindV1::LoadAsset),
+            "main-servers-world_compat_remediation-load_asset"
+        );
+        assert_eq!(
+            compat_remediation_msg_key(CompatEntryKindV1::LoadOrGenerate),
+            "main-servers-world_compat_remediation-generic"
+        );
+    }
 }
 
 pub(crate) fn get_client_msg_error(

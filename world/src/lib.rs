@@ -44,7 +44,7 @@ use crate::{
     index::Index,
     layer::spot::SpotGenerate,
     site::{SiteKind, SpawnRules},
-    util::{Grid, Sampler},
+    util::{Grid, Sampler, seed_expan},
 };
 use common::{
     assets::{self, BoxedError, FileAsset, load_ron},
@@ -69,7 +69,7 @@ use enum_map::EnumMap;
 use rand::{RngExt, prelude::*};
 use rand_chacha::ChaCha8Rng;
 use serde::Deserialize;
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, fmt, time::Duration};
 use vek::*;
 
 #[cfg(all(feature = "be-dyn-lib", feature = "use-dyn-lib"))]
@@ -90,7 +90,34 @@ pub fn init() { lazy_static::initialize(&LIB); }
 #[derive(Debug)]
 pub enum Error {
     Other(String),
+    CompatEnforce { audit: recipe::CompatAuditV1 },
 }
+
+impl Error {
+    pub const fn compat_audit(&self) -> Option<recipe::CompatAuditV1> {
+        match self {
+            Self::CompatEnforce { audit } => Some(*audit),
+            Self::Other(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Other(message) => f.write_str(message),
+            Self::CompatEnforce { audit } => write!(
+                f,
+                "world compat enforce rejected load: entry={}, decision={}, failure={}",
+                audit.entry.as_str(),
+                audit.decision.as_str(),
+                audit.failure_kind.as_str()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 #[derive(Debug)]
 pub enum WorldGenerateStage {
@@ -98,6 +125,12 @@ pub enum WorldGenerateStage {
     WorldCivGenerate(WorldCivStage),
     EconomySimulation,
     SpotGeneration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChunkGenerationMode {
+    StaticSnapshot,
+    RuntimeFinalized,
 }
 
 pub struct World {
@@ -136,17 +169,17 @@ impl World {
         opts: sim::WorldOpts,
         threadpool: &rayon::ThreadPool,
         report_stage: &(dyn Fn(WorldGenerateStage) + Send + Sync),
-    ) -> (Self, IndexOwned) {
+    ) -> Result<(Self, IndexOwned), Error> {
         prof_span!("World::generate");
         // NOTE: Generating index first in order to quickly fail if the color manifest
         // is broken.
-        threadpool.install(|| {
+        threadpool.install(|| -> Result<(Self, IndexOwned), Error> {
             let mut index = Index::new(seed);
             let calendar = opts.calendar.clone();
 
             let mut sim = sim::WorldSim::generate(seed, opts, threadpool, &|stage| {
                 report_stage(WorldGenerateStage::WorldSimGenerate(stage))
-            });
+            })?;
 
             let civs =
                 civ::Civs::generate(seed, &mut sim, &mut index, calendar.as_ref(), &|stage| {
@@ -159,7 +192,7 @@ impl World {
             report_stage(WorldGenerateStage::SpotGeneration);
             Spot::generate(&mut sim);
 
-            (Self { sim, civs }, IndexOwned::new(index))
+            Ok((Self { sim, civs }, IndexOwned::new(index)))
         })
     }
 
@@ -329,11 +362,30 @@ impl World {
 
         // Unwrapping because generate_chunk only returns err when should_continue evals
         // to true
-        let (tc, _cs) = self
-            .generate_chunk(index, chunk_pos, None, || false, None)
+        let tc = self
+            .generate_chunk_static_snapshot(index, chunk_pos, || false, None)
             .unwrap();
 
         tc.find_accessible_pos(spawn_wpos, ascending)
+    }
+
+    #[expect(clippy::result_unit_err)]
+    pub fn generate_chunk_static_snapshot(
+        &self,
+        index: IndexRef,
+        chunk_pos: Vec2<i32>,
+        should_continue: impl FnMut() -> bool,
+        time: Option<(TimeOfDay, Calendar)>,
+    ) -> Result<TerrainChunk, ()> {
+        self.generate_chunk_with_mode(
+            index,
+            chunk_pos,
+            None,
+            should_continue,
+            time,
+            ChunkGenerationMode::StaticSnapshot,
+        )
+        .map(|(chunk, _)| chunk)
     }
 
     #[expect(clippy::result_unit_err)]
@@ -343,8 +395,29 @@ impl World {
         chunk_pos: Vec2<i32>,
         rtsim_resources: Option<EnumMap<TerrainResource, f32>>,
         // TODO: misleading name
+        should_continue: impl FnMut() -> bool,
+        time: Option<(TimeOfDay, Calendar)>,
+    ) -> Result<(TerrainChunk, ChunkSupplement), ()> {
+        self.generate_chunk_with_mode(
+            index,
+            chunk_pos,
+            rtsim_resources,
+            should_continue,
+            time,
+            ChunkGenerationMode::RuntimeFinalized,
+        )
+    }
+
+    #[expect(clippy::result_unit_err)]
+    fn generate_chunk_with_mode(
+        &self,
+        index: IndexRef,
+        chunk_pos: Vec2<i32>,
+        rtsim_resources: Option<EnumMap<TerrainResource, f32>>,
+        // TODO: misleading name
         mut should_continue: impl FnMut() -> bool,
         time: Option<(TimeOfDay, Calendar)>,
+        generation_mode: ChunkGenerationMode,
     ) -> Result<(TerrainChunk, ChunkSupplement), ()> {
         let calendar = time.as_ref().map(|(_, cal)| cal);
 
@@ -449,15 +522,13 @@ impl World {
             }
         }
 
-        let sample_get = |offs| {
-            zcache_grid
-                .get(grid_border + offs)
-                .and_then(Option::as_ref)
-                .map(|zc| &zc.sample)
-        };
-
-        // Only use for rng affecting dynamic elements like chests and entities!
-        let mut dynamic_rng = ChaCha8Rng::from_seed(rand::rng().random());
+        let static_rng_seed = seed_expan::diffuse_mult(&[
+            self.sim.seed,
+            chunk_pos.x as u32,
+            chunk_pos.y as u32,
+            0x5354_4154,
+        ]);
+        let mut static_rng = ChaCha8Rng::from_seed(seed_expan::rng_state(static_rng_seed));
 
         // Apply layers (paths, caves, etc.)
         let mut canvas = Canvas {
@@ -481,28 +552,28 @@ impl World {
         }
 
         if index.features.caverns {
-            layer::apply_caverns_to(&mut canvas, &mut dynamic_rng);
+            layer::apply_caverns_to(&mut canvas, &mut static_rng);
         }
         if index.features.caves {
-            layer::apply_caves_to(&mut canvas, &mut dynamic_rng);
+            layer::apply_caves_to(&mut canvas, &mut static_rng);
         }
         if index.features.rocks {
-            layer::apply_rocks_to(&mut canvas, &mut dynamic_rng);
+            layer::apply_rocks_to(&mut canvas, &mut static_rng);
         }
         if index.features.shrubs {
-            layer::apply_shrubs_to(&mut canvas, &mut dynamic_rng);
+            layer::apply_shrubs_to(&mut canvas, &mut static_rng);
         }
         if index.features.trees {
-            layer::apply_trees_to(&mut canvas, &mut dynamic_rng, calendar);
+            layer::apply_trees_to(&mut canvas, &mut static_rng, calendar);
         }
         if index.features.scatter {
-            layer::apply_scatter_to(&mut canvas, &mut dynamic_rng, calendar);
+            layer::apply_scatter_to(&mut canvas, &mut static_rng, calendar);
         }
         if index.features.paths {
             layer::apply_paths_to(&mut canvas);
         }
         if index.features.spots {
-            layer::apply_spots_to(&mut canvas, &mut dynamic_rng);
+            layer::apply_spots_to(&mut canvas, &mut static_rng);
         }
         // layer::apply_coral_to(&mut canvas);
 
@@ -510,7 +581,7 @@ impl World {
         sim_chunk
             .sites
             .iter()
-            .for_each(|site| index.sites[*site].render(&mut canvas, &mut dynamic_rng));
+            .for_each(|site| index.sites[*site].render(&mut canvas, &mut static_rng));
 
         let mut rtsim_resource_blocks = std::mem::take(&mut canvas.rtsim_resource_blocks);
         let mut supplement = ChunkSupplement {
@@ -519,9 +590,83 @@ impl World {
         };
         drop(canvas);
 
-        let gen_entity_pos = |dynamic_rng: &mut ChaCha8Rng| {
+        if generation_mode == ChunkGenerationMode::RuntimeFinalized {
+            let runtime_time_bits = time
+                .as_ref()
+                .map(|(time_of_day, _)| time_of_day.day().to_bits())
+                .unwrap_or_default();
+            let runtime_calendar_mask = time
+                .as_ref()
+                .map(|(_, calendar)| {
+                    calendar
+                        .events()
+                        .fold(0u32, |mask, event| mask | (1u32 << (*event as u32)))
+                })
+                .unwrap_or_default();
+            let runtime_rng_seed = seed_expan::diffuse_mult(&[
+                self.sim.seed,
+                chunk_pos.x as u32,
+                chunk_pos.y as u32,
+                runtime_time_bits as u32,
+                (runtime_time_bits >> 32) as u32,
+                runtime_calendar_mask,
+                0x5255_4E54,
+            ]);
+            let mut runtime_rng = ChaCha8Rng::from_seed(seed_expan::rng_state(runtime_rng_seed));
+            Self::apply_runtime_chunk_supplement(
+                &chunk,
+                &mut supplement,
+                &mut runtime_rng,
+                chunk_wpos2d,
+                &zcache_grid,
+                grid_border,
+                index,
+                sim_chunk,
+                time.as_ref(),
+            );
+
+            // Finally, defragment to minimize space consumption.
+            chunk.defragment();
+
+            Self::finalize_rtsim_resources(
+                &mut chunk,
+                &mut supplement,
+                &mut rtsim_resource_blocks,
+                rtsim_resources,
+                &mut runtime_rng,
+                chunk_wpos2d,
+            );
+        } else {
+            // Static snapshot callers compare only deterministic chunk facts and stop
+            // before runtime supplement / rtsim finalize mutate the returned
+            // value contract.
+            chunk.defragment();
+        }
+
+        Ok((chunk, supplement))
+    }
+
+    fn apply_runtime_chunk_supplement(
+        chunk: &TerrainChunk,
+        supplement: &mut ChunkSupplement,
+        runtime_rng: &mut ChaCha8Rng,
+        chunk_wpos2d: Vec2<i32>,
+        zcache_grid: &Grid<Option<block::ZCache<'_>>>,
+        grid_border: i32,
+        index: IndexRef<'_>,
+        sim_chunk: &sim::SimChunk,
+        time: Option<&(TimeOfDay, Calendar)>,
+    ) {
+        let sample_get = |offs| {
+            zcache_grid
+                .get(grid_border + offs)
+                .and_then(Option::as_ref)
+                .map(|zc| &zc.sample)
+        };
+
+        let gen_entity_pos = |runtime_rng: &mut ChaCha8Rng| {
             let lpos2d = TerrainChunkSize::RECT_SIZE
-                .map(|sz| dynamic_rng.random::<u32>().rem_euclid(sz) as i32);
+                .map(|sz| runtime_rng.random::<u32>().rem_euclid(sz) as i32);
             let mut lpos = Vec3::new(
                 lpos2d.x,
                 lpos2d.y,
@@ -536,7 +681,7 @@ impl World {
         };
 
         if sim_chunk.contains_waypoint {
-            let waypoint_pos = gen_entity_pos(&mut dynamic_rng);
+            let waypoint_pos = gen_entity_pos(runtime_rng);
             if sim_chunk
                 .sites
                 .iter()
@@ -552,24 +697,30 @@ impl World {
 
         // Apply layer supplement
         layer::wildlife::apply_wildlife_supplement(
-            &mut dynamic_rng,
+            runtime_rng,
             chunk_wpos2d,
             sample_get,
-            &chunk,
+            chunk,
             index,
             sim_chunk,
-            &mut supplement,
-            time.as_ref(),
+            supplement,
+            time,
         );
 
         // Apply site supplementary information
         sim_chunk.sites.iter().for_each(|site| {
-            index.sites[*site].apply_supplement(&mut dynamic_rng, chunk_wpos2d, &mut supplement)
+            index.sites[*site].apply_supplement(runtime_rng, chunk_wpos2d, supplement)
         });
+    }
 
-        // Finally, defragment to minimize space consumption.
-        chunk.defragment();
-
+    fn finalize_rtsim_resources(
+        chunk: &mut TerrainChunk,
+        supplement: &mut ChunkSupplement,
+        rtsim_resource_blocks: &mut Vec<Vec3<i32>>,
+        rtsim_resources: Option<EnumMap<TerrainResource, f32>>,
+        runtime_rng: &mut ChaCha8Rng,
+        chunk_wpos2d: Vec2<i32>,
+    ) {
         // Before we finish, we check candidate rtsim resource blocks, deduplicating
         // positions and only keeping those that actually do have resources.
         // Although this looks potentially very expensive, only blocks that are rtsim
@@ -577,7 +728,7 @@ impl World {
         if let Some(rtsim_resources) = rtsim_resources {
             rtsim_resource_blocks.sort_unstable_by_key(|pos| pos.into_array());
             rtsim_resource_blocks.dedup();
-            for wpos in rtsim_resource_blocks {
+            for wpos in rtsim_resource_blocks.iter().copied() {
                 let _ = chunk.map(wpos - chunk_wpos2d.with_z(0), |block| {
                     if let Some(res) = block.get_rtsim_resource() {
                         // Note: this represents the upper limit, not the actual number spanwed, so
@@ -597,7 +748,7 @@ impl World {
 
                         // Throw a dice to determine whether this resource should actually spawn
                         // TODO: Don't throw a dice, try to generate the *exact* correct number
-                        if dynamic_rng.random_bool(rtsim_resources[res].clamp(0.0, 1.0) as f64) {
+                        if runtime_rng.random_bool(rtsim_resources[res].clamp(0.0, 1.0) as f64) {
                             block
                         } else {
                             block.into_vacant()
@@ -608,8 +759,6 @@ impl World {
                 });
             }
         }
-
-        Ok((chunk, supplement))
     }
 
     // Zone coordinates
@@ -797,5 +946,52 @@ impl World {
         let chunk_pos = wpos2d.wpos_to_cpos();
         let sim_chunk = self.sim.get(chunk_pos)?;
         sim_chunk.get_location_name(&index.sites, &self.civs.pois, wpos2d)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Error, World};
+    use crate::sim::{CompatMode, FileOpts, WorldOpts};
+    use rayon::ThreadPoolBuilder;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn generate_returns_structured_error_for_enforced_missing_load() {
+        let pool = ThreadPoolBuilder::new().build().unwrap();
+        let missing_path = std::env::temp_dir().join(format!(
+            "caldrayne-world-missing-{}.bin",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos()
+        ));
+        let _ = fs::remove_file(&missing_path);
+
+        let result = World::generate(
+            42,
+            WorldOpts {
+                world_file: FileOpts::Load(missing_path.clone()),
+                compat_mode: CompatMode::Enforce,
+                ..WorldOpts::default()
+            },
+            &pool,
+            &|_| {},
+        );
+
+        match result {
+            Err(Error::CompatEnforce { audit }) => {
+                assert_eq!(audit.entry.as_str(), "load");
+                assert_eq!(audit.decision.as_str(), "fallback_generate");
+                assert_eq!(audit.failure_kind.as_str(), "missing_input");
+            },
+            Ok(_) => panic!("expected compat enforce error, got successful world generation"),
+            Err(other) => panic!("expected compat enforce error, got {other}"),
+        }
+
+        let _ = fs::remove_file(missing_path);
     }
 }

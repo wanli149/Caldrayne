@@ -15,7 +15,8 @@ fn main() {
         },
         &threadpool,
         &|_| {},
-    );
+    )
+    .expect("view example world generation should succeed");
 
     let index = index.as_index_ref();
 

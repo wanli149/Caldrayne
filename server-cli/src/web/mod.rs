@@ -9,6 +9,8 @@ mod health;
 mod routes;
 mod ui;
 
+#[cfg(feature = "worldgen")]
+pub(crate) use health::set_world_compat_observability_status;
 pub use health::{
     HealthState, RuntimeObservabilityInventory, RuntimeObservabilityState,
     RuntimeObservabilityStatus, default_runtime_observability_inventory,

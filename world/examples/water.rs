@@ -52,10 +52,12 @@ fn main() {
             // world_file: sim::FileOpts::Save(sim::SizeOpts::default()),
             // world_file: sim::FileOpts::Save(sim::SizeOpts::new(12, 12, 4.0)),
             calendar: None,
+            compat_mode: Default::default(),
         },
         &threadpool,
         &|_| {},
-    );
+    )
+    .expect("water example world should load");
     let index = index.as_index_ref();
     tracing::info!("Sampling data...");
     let sampler = world.sim();

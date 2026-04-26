@@ -64,7 +64,7 @@ impl Structure for TerracottaHouse {
     fn render_inner(&self, _site: &Site, _land: &Land, painter: &Painter) {
         let base = self.alt + 3;
         let center = self.bounds.center();
-        let mut rng = rand::rng();
+        let mut rng = seeded_rng_from_aabr(0x5448_4F55, self.bounds);
         let clay_broken = Fill::Sampling(Arc::new(|center| {
             Some(match (RandomField::new(0).get(center)) % 42 {
                 0..=8 => Block::new(BlockKind::Rock, Rgb::new(242, 161, 53)),

@@ -166,7 +166,7 @@ pub trait WorldExt {
     ///
     /// Panics if it is already borrowed mutably.
     /// Panics if the component has not been registered.
-    fn read_component<T: Component>(&self) -> ReadStorage<T>;
+    fn read_component<T: Component>(&self) -> ReadStorage<'_, T>;
 
     /// Fetches a component storage for writing.
     ///
@@ -174,7 +174,7 @@ pub trait WorldExt {
     ///
     /// Panics if it is already borrowed.
     /// Panics if the component has not been registered.
-    fn write_component<T: Component>(&self) -> WriteStorage<T>;
+    fn write_component<T: Component>(&self) -> WriteStorage<'_, T>;
 
     /// Fetches a component storage for reading.
     ///
@@ -182,7 +182,7 @@ pub trait WorldExt {
     ///
     /// Panics if it is already borrowed mutably.
     /// Panics if the component has not been registered.
-    fn read_storage<T: Component>(&self) -> ReadStorage<T> {
+    fn read_storage<T: Component>(&self) -> ReadStorage<'_, T> {
         self.read_component()
     }
 
@@ -192,7 +192,7 @@ pub trait WorldExt {
     ///
     /// Panics if it is already borrowed.
     /// Panics if the component has not been registered.
-    fn write_storage<T: Component>(&self) -> WriteStorage<T> {
+    fn write_storage<T: Component>(&self) -> WriteStorage<'_, T> {
         self.write_component()
     }
 
@@ -202,7 +202,7 @@ pub trait WorldExt {
     ///
     /// Panics if it is already borrowed mutably.
     /// Panics if the resource has not been added.
-    fn read_resource<T: Resource>(&self) -> Fetch<T>;
+    fn read_resource<T: Resource>(&self) -> Fetch<'_, T>;
 
     /// Fetches a resource for writing.
     ///
@@ -210,17 +210,17 @@ pub trait WorldExt {
     ///
     /// Panics if it is already borrowed.
     /// Panics if the resource has not been added.
-    fn write_resource<T: Resource>(&self) -> FetchMut<T>;
+    fn write_resource<T: Resource>(&self) -> FetchMut<'_, T>;
 
     /// Convenience method for fetching entities.
     ///
     /// Creation and deletion of entities with the `Entities` struct
     /// are atomically, so the actual changes will be applied
     /// with the next call to `maintain()`.
-    fn entities(&self) -> Read<EntitiesRes>;
+    fn entities(&self) -> Read<'_, EntitiesRes>;
 
     /// Convenience method for fetching entities.
-    fn entities_mut(&self) -> FetchMut<EntitiesRes>;
+    fn entities_mut(&self) -> FetchMut<'_, EntitiesRes>;
 
     /// Allows building an entity with its components.
     ///
@@ -228,7 +228,7 @@ pub trait WorldExt {
     /// component storage this builder accesses may be borrowed.
     /// If it's necessary that you borrow a resource from the `World`
     /// while this builder is alive, you can use `create_entity_unchecked`.
-    fn create_entity(&mut self) -> EntityBuilder;
+    fn create_entity(&mut self) -> EntityBuilder<'_>;
 
     /// Allows building an entity with its components.
     ///
@@ -237,7 +237,7 @@ pub trait WorldExt {
     ///
     /// This variant is only recommended if you need to borrow a resource
     /// during the entity building. If possible, try to use `create_entity`.
-    fn create_entity_unchecked(&self) -> EntityBuilder;
+    fn create_entity_unchecked(&self) -> EntityBuilder<'_>;
 
     /// Returns an iterator for entity creation.
     /// This makes it easy to create a whole collection
@@ -253,7 +253,7 @@ pub trait WorldExt {
     /// #
     /// # assert_eq!(five_entities.len(), 5);
     /// ```
-    fn create_iter(&mut self) -> CreateIter;
+    fn create_iter(&mut self) -> CreateIter<'_>;
 
     /// Deletes an entity and its components.
     fn delete_entity(&mut self, entity: Entity) -> Result<(), WrongGeneration>;
@@ -327,35 +327,35 @@ impl WorldExt for World {
         self.insert(res);
     }
 
-    fn read_component<T: Component>(&self) -> ReadStorage<T> {
+    fn read_component<T: Component>(&self) -> ReadStorage<'_, T> {
         self.system_data()
     }
 
-    fn write_component<T: Component>(&self) -> WriteStorage<T> {
+    fn write_component<T: Component>(&self) -> WriteStorage<'_, T> {
         self.system_data()
     }
 
-    fn read_resource<T: Resource>(&self) -> Fetch<T> {
+    fn read_resource<T: Resource>(&self) -> Fetch<'_, T> {
         self.fetch()
     }
 
-    fn write_resource<T: Resource>(&self) -> FetchMut<T> {
+    fn write_resource<T: Resource>(&self) -> FetchMut<'_, T> {
         self.fetch_mut()
     }
 
-    fn entities(&self) -> Read<EntitiesRes> {
+    fn entities(&self) -> Read<'_, EntitiesRes> {
         Read::fetch(self)
     }
 
-    fn entities_mut(&self) -> FetchMut<EntitiesRes> {
+    fn entities_mut(&self) -> FetchMut<'_, EntitiesRes> {
         self.write_resource()
     }
 
-    fn create_entity(&mut self) -> EntityBuilder {
+    fn create_entity(&mut self) -> EntityBuilder<'_> {
         self.create_entity_unchecked()
     }
 
-    fn create_entity_unchecked(&self) -> EntityBuilder {
+    fn create_entity_unchecked(&self) -> EntityBuilder<'_> {
         let entity = self.entities_mut().alloc.allocate();
 
         EntityBuilder {
@@ -365,7 +365,7 @@ impl WorldExt for World {
         }
     }
 
-    fn create_iter(&mut self) -> CreateIter {
+    fn create_iter(&mut self) -> CreateIter<'_> {
         CreateIter(self.entities_mut())
     }
 

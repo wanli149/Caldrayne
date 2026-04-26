@@ -34,6 +34,10 @@ pub enum AuditAction {
     ObservabilityRuntimeFailure,
     WebRuntimeFailure,
     StartupFailure,
+    #[cfg(feature = "worldgen")]
+    WorldCompatStartupReject,
+    #[cfg(feature = "worldgen")]
+    WorldCompatFallback,
     AdminAdd,
     AdminRemove,
     DisconnectAllClients,
@@ -52,6 +56,10 @@ impl AuditAction {
             Self::ObservabilityRuntimeFailure => "observability-runtime-failure",
             Self::WebRuntimeFailure => "web-runtime-failure",
             Self::StartupFailure => "startup-failure",
+            #[cfg(feature = "worldgen")]
+            Self::WorldCompatStartupReject => "world-compat-startup-reject",
+            #[cfg(feature = "worldgen")]
+            Self::WorldCompatFallback => "world-compat-fallback",
             Self::AdminAdd => "admin-add",
             Self::AdminRemove => "admin-remove",
             Self::DisconnectAllClients => "disconnect-all-clients",
@@ -305,6 +313,55 @@ mod tests {
 
         assert!(line.contains("source:\"runtime\""));
         assert!(line.contains("action:\"startup-failure\""));
+        assert!(line.contains("outcome:\"failed\""));
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[test]
+    fn append_event_writes_world_compat_fallback_action() {
+        let path = unique_temp_path();
+
+        append_event(
+            &path,
+            AuditSource::Runtime,
+            AuditAction::WorldCompatFallback,
+            AuditOutcome::Accepted,
+            "dedicated startup continued after strict world load contract fallback: world compat \
+             audit: entry=load, decision=fallback_generate, failure=missing_input",
+        )
+        .expect("audit append should succeed");
+
+        let line = fs::read_to_string(&path).expect("audit log should be readable");
+
+        let _ = fs::remove_dir_all(path.parent().expect("audit path should have parent"));
+
+        assert!(line.contains("source:\"runtime\""));
+        assert!(line.contains("action:\"world-compat-fallback\""));
+        assert!(line.contains("outcome:\"accepted\""));
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[test]
+    fn append_event_writes_world_compat_startup_reject_action() {
+        let path = unique_temp_path();
+
+        append_event(
+            &path,
+            AuditSource::Runtime,
+            AuditAction::WorldCompatStartupReject,
+            AuditOutcome::Failed,
+            "failed to create server instance: World Error: compat enforce rejected load: \
+             entry=load, decision=fallback_generate, failure=parse_error; world compat audit: \
+             entry=load, decision=fallback_generate, failure=parse_error",
+        )
+        .expect("audit append should succeed");
+
+        let line = fs::read_to_string(&path).expect("audit log should be readable");
+
+        let _ = fs::remove_dir_all(path.parent().expect("audit path should have parent"));
+
+        assert!(line.contains("source:\"runtime\""));
+        assert!(line.contains("action:\"world-compat-startup-reject\""));
         assert!(line.contains("outcome:\"failed\""));
     }
 

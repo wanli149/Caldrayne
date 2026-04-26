@@ -15,7 +15,19 @@ fn unique_temp_dir() -> std::path::PathBuf {
 }
 
 fn test_runtime_observability_inventory() -> RuntimeObservabilityInventory {
-    default_runtime_observability_inventory()
+    let inventory = default_runtime_observability_inventory();
+    #[cfg(feature = "worldgen")]
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::Load),
+        &server::RecipeManifestV1::record_only(
+            server::DEFAULT_WORLD_SEED,
+            &server::GenOpts::default(),
+            true,
+        ),
+    );
+    inventory
 }
 
 fn seed_identity_file(identity_file: &Path) {
@@ -924,6 +936,15 @@ fn health_contract_distinguishes_liveness_and_readiness_endpoints() {
                 && endpoint.signal == "observability-runtime"
                 && endpoint.failure_status.is_none()
                 && endpoint.semantics.contains("log-only"))
+    );
+    assert!(
+        contract
+            .endpoints
+            .iter()
+            .any(|endpoint| endpoint.path == "/health/world-compat"
+                && endpoint.signal == "world-compat"
+                && endpoint.failure_status.is_none()
+                && endpoint.semantics.contains("strict load fallback"))
     );
     assert!(
         contract
@@ -4406,6 +4427,123 @@ fn runtime_observability_report_exposes_metrics_export_failures() {
     }));
 }
 
+#[cfg(feature = "worldgen")]
+#[test]
+fn world_compat_report_exposes_structured_runtime_contract_status() {
+    let inventory = test_runtime_observability_inventory();
+    let manifest = server::RecipeManifestV1::record_only(
+        server::DEFAULT_WORLD_SEED,
+        &server::GenOpts::default(),
+        true,
+    );
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        server::CompatAuditV1::fallback_generate(
+            server::CompatEntryKindV1::Load,
+            server::CompatFailureKindV1::MissingInput,
+        ),
+        &manifest,
+    );
+
+    let report = HealthState {
+        environment: "production",
+        auth_server_configured: true,
+        authoritative_auth_provider: test_auth_provider(true),
+        server_state: server::ServerStatePaths::new(Path::new("test-root").join("live")),
+        recovery_staging_state: server::ServerStatePaths::new(
+            Path::new("test-root").join("recovery-staging"),
+        ),
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .world_compat_report();
+
+    assert_eq!(report.status, "world-compat-review-required");
+    assert!(report.requires_operator_review);
+    assert_eq!(report.configured_mode.as_deref(), Some("record"));
+    assert_eq!(report.compat_entry, Some("load"));
+    assert_eq!(report.compat_decision, Some("fallback_generate"));
+    assert_eq!(report.compat_failure, Some("missing_input"));
+    assert_eq!(report.strict_load_contract_gap, Some(true));
+    assert_eq!(
+        report.world_recipe_hash.as_deref(),
+        Some(manifest.world_recipe_hash.as_str())
+    );
+    assert_eq!(
+        report.chunk_recipe_hash.as_deref(),
+        Some(manifest.chunk_recipe_hash.as_str())
+    );
+    assert_eq!(
+        report.topology_id.as_deref(),
+        Some(manifest.world_recipe.topology_id.as_str())
+    );
+    assert_eq!(
+        report.preset_id.as_deref(),
+        Some(manifest.world_recipe.preset_id.as_str())
+    );
+    assert_eq!(report.source_surface, "world-compat");
+}
+
+#[cfg(feature = "worldgen")]
+#[test]
+fn runtime_observability_report_exposes_world_compat_surface_as_structured_status() {
+    let inventory = test_runtime_observability_inventory();
+    let manifest = server::RecipeManifestV1::record_only(
+        server::DEFAULT_WORLD_SEED,
+        &server::GenOpts::default(),
+        true,
+    );
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        server::CompatAuditV1::fallback_generate(
+            server::CompatEntryKindV1::Load,
+            server::CompatFailureKindV1::MissingInput,
+        ),
+        &manifest,
+    );
+
+    let report = HealthState {
+        environment: "production",
+        auth_server_configured: true,
+        authoritative_auth_provider: test_auth_provider(true),
+        server_state: server::ServerStatePaths::new(Path::new("test-root").join("live")),
+        recovery_staging_state: server::ServerStatePaths::new(
+            Path::new("test-root").join("recovery-staging"),
+        ),
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .runtime_observability_report();
+
+    assert_eq!(report.status, "operator_review_required");
+    assert!(report.requires_operator_review);
+    assert!(report.entries.iter().any(|entry| {
+        entry.surface == "world-compat"
+            && entry.state == "failing"
+            && entry.configured_mode.as_deref() == Some("record")
+            && entry.compat_entry == Some("load")
+            && entry.compat_decision == Some("fallback_generate")
+            && entry.compat_failure == Some("missing_input")
+            && entry.strict_load_contract_gap == Some(true)
+            && entry.world_recipe_hash.as_deref() == Some(manifest.world_recipe_hash.as_str())
+            && entry.chunk_recipe_hash.as_deref() == Some(manifest.chunk_recipe_hash.as_str())
+            && entry.topology_id.as_deref() == Some(manifest.world_recipe.topology_id.as_str())
+            && entry.preset_id.as_deref() == Some(manifest.world_recipe.preset_id.as_str())
+    }));
+}
+
 #[test]
 fn preflight_report_blocks_when_required_runtime_checks_fail() {
     let report = test_health_state(Path::new("test-root")).preflight_report();
@@ -4486,6 +4624,73 @@ fn preflight_report_blocks_when_required_runtime_checks_fail() {
             .iter()
             .any(|field| *field == "approval_decision")
     );
+}
+
+#[cfg(feature = "worldgen")]
+#[test]
+fn preflight_report_routes_world_compat_surface_to_operator_review() {
+    let root = unique_temp_dir();
+    let state = server::ServerStatePaths::new(root.join("live"));
+    let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
+    seed_live_runtime_state(&state);
+    seed_recovery_staging_restore_state(&recovery_staging_state);
+
+    let inventory = test_runtime_observability_inventory();
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        server::CompatAuditV1::fallback_generate(
+            server::CompatEntryKindV1::Load,
+            server::CompatFailureKindV1::OptionMismatch,
+        ),
+        &server::RecipeManifestV1::record_only(
+            server::DEFAULT_WORLD_SEED,
+            &server::GenOpts::default(),
+            true,
+        ),
+    );
+
+    let report = HealthState {
+        environment: "local",
+        auth_server_configured: false,
+        authoritative_auth_provider: test_auth_provider(false),
+        server_state: state,
+        recovery_staging_state,
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .preflight_report();
+
+    let _ = fs::remove_dir_all(root);
+
+    assert_eq!(report.status, "operator_review_required");
+    assert!(!report.release_blocked);
+    assert!(report.requires_operator_review);
+    assert_eq!(report.review_signals, vec!["world-compat"]);
+    assert!(report.components.iter().any(|component| {
+        component.signal == "world-compat"
+            && component.endpoint == "/health/world-compat"
+            && component.status == "world-compat-review-required"
+            && !component.blocking
+            && component.requires_operator_review
+    }));
+    assert!(report.follow_up_endpoints.iter().any(|follow_up| {
+        follow_up.signal == "world-compat"
+            && follow_up.endpoint == "/health/world-compat"
+            && !follow_up.blocking
+            && follow_up.owner == "release-operator"
+    }));
+    assert!(report.operator_review_items.iter().any(|item| {
+        item.kind == "world-compat-review"
+            && !item.blocking
+            && item.detail.contains("option_mismatch")
+            && item.detail.contains("/health/world-compat")
+    }));
 }
 
 #[test]

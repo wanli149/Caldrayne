@@ -717,10 +717,12 @@ fn main() {
             seed_elements: true,
             world_file: FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into()),
             calendar: None,
+            compat_mode: Default::default(),
         },
         &pool,
         &|_| {},
-    );
+    )
+    .expect("chunk compression benchmark world should load");
     println!("Loaded world");
     const HISTOGRAMS: bool = false;
     let mut histogram: HashMap<Vec<u8>, usize> = HashMap::new();

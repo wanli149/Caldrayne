@@ -362,7 +362,7 @@ impl LazyUpdate {
     /// # let entities = world.entities();
     /// let my_entity = lazy.create_entity(&entities).with(Pos(1.0, 3.0)).build();
     /// ```
-    pub fn create_entity(&self, ent: &EntitiesRes) -> LazyBuilder {
+    pub fn create_entity(&self, ent: &EntitiesRes) -> LazyBuilder<'_> {
         let entity = ent.create();
 
         LazyBuilder { entity, lazy: self }

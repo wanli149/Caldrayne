@@ -41,7 +41,7 @@ impl Structure for PirateHideout {
     fn render_inner(&self, _site: &Site, land: &Land, painter: &Painter) {
         let center = self.bounds.center();
         let base = land.get_alt_approx(center) as i32;
-        let mut rng = rand::rng();
+        let mut rng = seeded_rng_from_aabr(0x5048_4944, self.bounds);
         let model_pos = center.with_z(base - 2);
         // model
         lazy_static! {

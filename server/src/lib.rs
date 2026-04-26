@@ -10,6 +10,7 @@ pub mod automod;
 mod character_creator;
 pub mod chat;
 pub mod chunk_generator;
+mod chunk_lifecycle;
 mod chunk_serialize;
 pub mod client;
 pub mod cmd;
@@ -55,6 +56,7 @@ use crate::terrain_persistence::TerrainPersistence;
 use crate::{
     automod::AutoMod,
     chunk_generator::ChunkGenerator,
+    chunk_lifecycle::new_chunk_lifecycle_handle,
     client::Client,
     cmd::ChatCommandExt,
     connection_handler::ConnectionHandler,
@@ -150,6 +152,10 @@ use common::comp::Anchor;
 #[cfg(feature = "worldgen")]
 pub use world::{
     IndexOwned, World,
+    recipe::{
+        CompatAuditV1, CompatDecisionV1, CompatEntryKindV1, CompatFailureKindV1, RecipeManifestV1,
+        TopologyId,
+    },
     sim::{DEFAULT_WORLD_MAP, DEFAULT_WORLD_SEED, FileOpts, GenOpts, WorldOpts},
 };
 
@@ -412,6 +418,7 @@ impl Server {
         let physics_metrics = PhysicsMetrics::new(&registry).unwrap();
         let server_event_metrics = metrics::ServerEventMetrics::new(&registry).unwrap();
         let query_server_metrics = metrics::QueryServerMetrics::new(&registry).unwrap();
+        let chunk_lifecycle_metrics = metrics::ChunkLifecycleMetrics::new(&registry).unwrap();
 
         let battlemode_buffer = BattleModeBuffer::default();
 
@@ -434,12 +441,13 @@ impl Server {
                     FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into())
                 },
                 calendar: Some(settings.calendar_mode.calendar_now()),
+                compat_mode: settings.world_compat_mode,
             },
             &pools,
             &|stage| {
                 report_stage(ServerInitStage::WorldGen(stage));
             },
-        );
+        )?;
         #[cfg(not(feature = "worldgen"))]
         let (world, index) = World::generate(settings.world_seed);
 
@@ -498,6 +506,7 @@ impl Server {
         state
             .ecs_mut()
             .insert(EventBus::<chunk_serialize::ChunkSendEntry>::default());
+        state.ecs_mut().insert(new_chunk_lifecycle_handle());
         state.ecs_mut().insert(Locations::default());
         state.ecs_mut().insert(LoginProvider::new(
             settings.auth_server_address.clone(),
@@ -520,6 +529,7 @@ impl Server {
         state.ecs_mut().insert(physics_metrics);
         state.ecs_mut().insert(server_event_metrics);
         state.ecs_mut().insert(query_server_metrics);
+        state.ecs_mut().insert(chunk_lifecycle_metrics);
         if settings.experimental_terrain_persistence {
             #[cfg(feature = "persistent_world")]
             {
@@ -547,9 +557,15 @@ impl Server {
             pool.configure("RTSIM_SAVE", |_| 1);
             pool.configure("WEATHER", |_| 1);
         }
+        let chunk_lifecycle = {
+            let handle = state
+                .ecs()
+                .read_resource::<crate::chunk_lifecycle::ChunkLifecycleHandle>();
+            Arc::clone(&handle)
+        };
         state
             .ecs_mut()
-            .insert(ChunkGenerator::new(chunk_gen_metrics));
+            .insert(ChunkGenerator::new(chunk_gen_metrics, chunk_lifecycle));
         {
             let (sender, receiver) =
                 crossbeam_channel::bounded::<chunk_serialize::SerializedChunk>(10_000);
@@ -1340,7 +1356,8 @@ impl Server {
                 let rtsim = ();
 
                 // Cancel all pending chunks.
-                chunk_generator.cancel_all();
+                let tick = ecs.read_resource::<Tick>().0;
+                chunk_generator.cancel_all(tick);
 
                 if client.is_empty() {
                     // No clients, so just clear all terrain.
@@ -1359,6 +1376,7 @@ impl Server {
                                 *ecs.read_resource::<TimeOfDay>(),
                                 (*ecs.read_resource::<Calendar>()).clone(),
                             ),
+                            tick,
                         );
                     });
                 }

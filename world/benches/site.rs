@@ -81,7 +81,8 @@ fn dungeon(c: &mut Criterion) {
         },
         &pool,
         &|_| {},
-    );
+    )
+    .expect("site benchmark world should load");
     let wpos = Vec2::zero();
     let seed = [1; 32];
     c.bench_function("generate_gnarling", |b| {

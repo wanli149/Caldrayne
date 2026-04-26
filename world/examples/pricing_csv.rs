@@ -169,10 +169,12 @@ fn main() {
             seed_elements: true,
             world_file: FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into()),
             calendar: None,
+            compat_mode: Default::default(),
         },
         &pool,
         &|_| {},
-    );
+    )
+    .expect("pricing csv world should load");
     println!("Loaded world");
 
     if let Err(e) = good_pricing_csv(&world, &index) {

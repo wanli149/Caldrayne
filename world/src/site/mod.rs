@@ -18,7 +18,7 @@ use crate::{
     Canvas, IndexRef, Land,
     config::CONFIG,
     sim::Path,
-    util::{CARDINALS, DHashSet, Grid, SQUARE_4, SQUARE_9, attempt},
+    util::{CARDINALS, DHashSet, Grid, SQUARE_4, SQUARE_9, attempt, seed_expan},
 };
 use common::{
     astar::Astar,
@@ -52,6 +52,31 @@ use vek::*;
 /// easier to maintain and less liable to breaking changes.
 fn reseed<R: Rng>(rng: &mut R) -> impl Rng + use<R> {
     ChaChaRng::from_seed(rng.random::<[u8; 32]>())
+}
+
+pub fn seeded_rng(tag: u32, values: &[u32]) -> ChaChaRng {
+    let mut seed_values = Vec::with_capacity(values.len() + 1);
+    seed_values.push(tag);
+    seed_values.extend_from_slice(values);
+    let seed = seed_expan::diffuse_mult(&seed_values);
+    ChaChaRng::from_seed(seed_expan::rng_state(seed))
+}
+
+pub fn seeded_rng_from_wpos(tag: u32, wpos: Vec3<i32>) -> ChaChaRng {
+    seeded_rng(tag, &[wpos.x as u32, wpos.y as u32, wpos.z as u32])
+}
+
+pub fn seeded_rng_from_wpos2(tag: u32, wpos: Vec2<i32>) -> ChaChaRng {
+    seeded_rng(tag, &[wpos.x as u32, wpos.y as u32])
+}
+
+pub fn seeded_rng_from_aabr(tag: u32, aabr: Aabr<i32>) -> ChaChaRng {
+    seeded_rng(tag, &[
+        aabr.min.x as u32,
+        aabr.min.y as u32,
+        aabr.max.x as u32,
+        aabr.max.y as u32,
+    ])
 }
 
 pub struct SpawnRules {
@@ -3181,7 +3206,8 @@ impl Site {
 
                                     if let Some(spec) = entity_path {
                                         let entity = EntityInfo::at(pos.as_());
-                                        let mut loadout_rng = rand::rng();
+                                        let mut loadout_rng =
+                                            seeded_rng_from_wpos(0x4C4F_4144, pos);
                                         entities_from_structure_blocks.push(
                                             entity.with_asset_expect(&spec, &mut loadout_rng, None),
                                         );

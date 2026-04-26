@@ -56,7 +56,7 @@ impl Structure for TerracottaPalace {
     fn render_inner(&self, _site: &Site, _land: &Land, painter: &Painter) {
         let base = self.alt + 1;
         let center = self.bounds.center();
-        let mut rng = rand::rng();
+        let mut rng = seeded_rng_from_aabr(0x5450_414C, self.bounds);
         let clay_broken = Fill::Sampling(Arc::new(|center| {
             Some(match (RandomField::new(0).get(center)) % 42 {
                 0..=8 => Block::new(BlockKind::Rock, Rgb::new(242, 161, 53)),
@@ -1086,7 +1086,6 @@ impl Structure for TerracottaPalace {
 }
 
 pub fn spawn_random_entity(pos: Vec3<i32>, painter: &Painter, amount: RangeInclusive<i32>) {
-    let mut rng = rand::rng();
     let entities = [
         "common.entity.dungeon.terracotta.besieger",
         "common.entity.dungeon.terracotta.demolisher",
@@ -1096,9 +1095,10 @@ pub fn spawn_random_entity(pos: Vec3<i32>, painter: &Painter, amount: RangeInclu
         "common.entity.dungeon.terracotta.jiangshi",
     ];
     for n in amount {
+        let position = Vec3::new(pos.x + n, pos.y + n, pos.z);
+        let mut rng = seeded_rng_from_wpos(0x5450_454E, position);
         let random_entity_index = rng.random_range(0..entities.len());
         let random_entity = entities[random_entity_index];
-        let position = Vec3::new(pos.x + n, pos.y + n, pos.z);
         painter.spawn(EntityInfo::at(position.as_()).with_asset_expect(
             random_entity,
             &mut rng,

@@ -1,0 +1,283 @@
+{
+  "seed": 424242,
+  "gen_opts": {
+    "x_lg": 10,
+    "y_lg": 9,
+    "scale": 1.5,
+    "map_kind": "Square",
+    "erosion_quality": 0.25
+  },
+  "recipe": {
+    "world_recipe_hash": "8f9a066089d1025a1e7a3e150234c8fdc27ea74f763e48d6119d0eecf50173c4",
+    "chunk_recipe_hash": "d6a12f45c3446e02368855edbcbe0ad6f229f2fc7c33dc9ba1390764430be354",
+    "topology_id": "bounded_plane_v1",
+    "preset_id": "custom_gen_opts_v1",
+    "world_alg_version": "world-sim-v1-record-only",
+    "chunk_pass_version": "chunk-static-v1-record-only",
+    "seed_elements": false
+  },
+  "sample_chunks": 9,
+  "chunk_audit_mode": "sampled_static_chunk_snapshot_v1",
+  "strict_determinism": true,
+  "sampled_chunks": [
+    {
+      "chunk_pos": [
+        1,
+        1
+      ],
+      "min_z": 79,
+      "max_z": 143,
+      "sub_chunks": 4,
+      "name": "Astumanda Deep",
+      "biome": "Ocean",
+      "alt": 102.4834,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": true,
+      "temp": 0.4749062,
+      "humidity": 0.082045905,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 65536,
+      "non_air_blocks": 62464,
+      "sprite_total": 28404,
+      "block_kind_counts": {
+        "Air": 3072,
+        "Earth": 3414,
+        "Rock": 29960,
+        "Sand": 3758,
+        "Water": 25332
+      },
+      "sprite_kind_counts": {
+        "Empty": 28397,
+        "SeaweedTropical": 7
+      }
+    },
+    {
+      "chunk_pos": [
+        1,
+        255
+      ],
+      "min_z": 72,
+      "max_z": 152,
+      "sub_chunks": 5,
+      "name": "Astumanda Deep",
+      "biome": "Ocean",
+      "alt": 94.68003,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": true,
+      "temp": 0.26130688,
+      "humidity": 0.09375,
+      "rockiness": 0.095289506,
+      "cliff_height": 0.0,
+      "block_total": 81920,
+      "non_air_blocks": 69632,
+      "sprite_total": 54380,
+      "block_kind_counts": {
+        "Air": 12288,
+        "Earth": 3408,
+        "Rock": 22059,
+        "Sand": 2073,
+        "Water": 42092
+      },
+      "sprite_kind_counts": {
+        "BullKelp": 9,
+        "Empty": 54365,
+        "SeaweedTemperate": 2,
+        "SoftCoral": 4
+      }
+    },
+    {
+      "chunk_pos": [
+        1,
+        510
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "chunk_pos": [
+        511,
+        1
+      ],
+      "min_z": 85,
+      "max_z": 149,
+      "sub_chunks": 4,
+      "name": "Astumanda Deep",
+      "biome": "Ocean",
+      "alt": 98.17808,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": true,
+      "temp": -0.31813848,
+      "humidity": 0.09375,
+      "rockiness": 0.17196855,
+      "cliff_height": 0.0,
+      "block_total": 65536,
+      "non_air_blocks": 56320,
+      "sprite_total": 47199,
+      "block_kind_counts": {
+        "Air": 9216,
+        "Earth": 3411,
+        "Rock": 12835,
+        "Sand": 2091,
+        "Water": 37983
+      },
+      "sprite_kind_counts": {
+        "Empty": 47174,
+        "GiantKelp": 20,
+        "SeaweedTemperate": 5
+      }
+    },
+    {
+      "chunk_pos": [
+        511,
+        255
+      ],
+      "min_z": 182,
+      "max_z": 214,
+      "sub_chunks": 2,
+      "name": "Niwara Savannah",
+      "biome": "Savannah",
+      "alt": 209.0893,
+      "tree_density": 0.1835584,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.31388414,
+      "humidity": 0.50740355,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 32768,
+      "non_air_blocks": 25866,
+      "sprite_total": 6902,
+      "block_kind_counts": {
+        "Air": 6902,
+        "Earth": 4553,
+        "Grass": 1184,
+        "Rock": 20129
+      },
+      "sprite_kind_counts": {
+        "Empty": 6786,
+        "JungleFern": 8,
+        "JungleLeafyPlant": 4,
+        "LeafyPlant": 4,
+        "LongGrass": 9,
+        "MediumGrass": 28,
+        "ShortGrass": 63
+      }
+    },
+    {
+      "chunk_pos": [
+        511,
+        510
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "chunk_pos": [
+        1022,
+        1
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "chunk_pos": [
+        1022,
+        255
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "chunk_pos": [
+        1022,
+        510
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    }
+  ]
+}

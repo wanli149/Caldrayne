@@ -69,7 +69,7 @@ where
     /// This is returned as a `ParallelRestriction` version since you can only
     /// get immutable components with this which is safe for parallel by
     /// default.
-    pub fn restrict<'rf>(&'rf self) -> RestrictedStorage<'rf, T, &T::Storage> {
+    pub fn restrict<'rf>(&'rf self) -> RestrictedStorage<'rf, T, &'rf T::Storage> {
         RestrictedStorage {
             bitset: &self.data.mask,
             data: &self.data.inner,
@@ -87,7 +87,7 @@ where
     /// Builds a mutable `RestrictedStorage` out of a `Storage`. Allows
     /// restricted access to the inner components without allowing
     /// invalidating the bitset for iteration in `Join`.
-    pub fn restrict_mut<'rf>(&'rf mut self) -> RestrictedStorage<'rf, T, &mut T::Storage> {
+    pub fn restrict_mut<'rf>(&'rf mut self) -> RestrictedStorage<'rf, T, &'rf mut T::Storage> {
         let (mask, data) = self.data.open_mut();
         RestrictedStorage {
             bitset: mask,

@@ -1,0 +1,280 @@
+{
+  "seed": 424242,
+  "gen_opts": {
+    "x_lg": 9,
+    "y_lg": 9,
+    "scale": 1.5,
+    "map_kind": "Circle",
+    "erosion_quality": 0.25
+  },
+  "recipe": {
+    "world_recipe_hash": "054d8abfed5d382ae5efd2e51b6e93c35a60e26a0cc4a3db8f095784a8090570",
+    "chunk_recipe_hash": "52df105536d80eb208a35c9f54eea0f21bc7cf00513907d2c5ec454bfbd1aae6",
+    "topology_id": "bounded_plane_v1",
+    "preset_id": "custom_gen_opts_v1",
+    "world_alg_version": "world-sim-v1-record-only",
+    "chunk_pass_version": "chunk-static-v1-record-only",
+    "seed_elements": false
+  },
+  "sample_chunks": 9,
+  "chunk_audit_mode": "sampled_static_chunk_snapshot_v1",
+  "strict_determinism": true,
+  "sampled_chunks": [
+    {
+      "chunk_pos": [
+        1,
+        1
+      ],
+      "min_z": 79,
+      "max_z": 143,
+      "sub_chunks": 4,
+      "name": "Voidtear Sea",
+      "biome": "Ocean",
+      "alt": 98.6742,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": true,
+      "temp": 0.4749062,
+      "humidity": 0.082045905,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 65536,
+      "non_air_blocks": 62464,
+      "sprite_total": 35508,
+      "block_kind_counts": {
+        "Air": 3072,
+        "Earth": 3414,
+        "Rock": 22854,
+        "Sand": 3760,
+        "Water": 32436
+      },
+      "sprite_kind_counts": {
+        "Empty": 35501,
+        "SeaweedTropical": 7
+      }
+    },
+    {
+      "chunk_pos": [
+        1,
+        255
+      ],
+      "min_z": 47,
+      "max_z": 143,
+      "sub_chunks": 6,
+      "name": "Voidtear Sea",
+      "biome": "Ocean",
+      "alt": 74.771164,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": true,
+      "temp": 0.26130688,
+      "humidity": 0.09375,
+      "rockiness": 0.095289506,
+      "cliff_height": 0.0,
+      "block_total": 98304,
+      "non_air_blocks": 95232,
+      "sprite_total": 74936,
+      "block_kind_counts": {
+        "Air": 3072,
+        "Earth": 3415,
+        "Rock": 17880,
+        "Sand": 2073,
+        "Water": 71864
+      },
+      "sprite_kind_counts": {
+        "BullKelp": 9,
+        "Empty": 74921,
+        "SeaweedTemperate": 2,
+        "SoftCoral": 4
+      }
+    },
+    {
+      "chunk_pos": [
+        1,
+        510
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "chunk_pos": [
+        255,
+        1
+      ],
+      "min_z": 61,
+      "max_z": 141,
+      "sub_chunks": 5,
+      "name": "Voidtear Sea",
+      "biome": "Ocean",
+      "alt": 79.89362,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": true,
+      "temp": 0.09772301,
+      "humidity": 0.09375,
+      "rockiness": 0.022177482,
+      "cliff_height": 0.0,
+      "block_total": 81920,
+      "non_air_blocks": 80896,
+      "sprite_total": 65153,
+      "block_kind_counts": {
+        "Air": 1024,
+        "Earth": 3420,
+        "Rock": 11380,
+        "Sand": 1967,
+        "Water": 64129
+      },
+      "sprite_kind_counts": {
+        "Empty": 65110,
+        "GiantKelp": 25,
+        "Seagrass": 9,
+        "SeaweedTemperate": 4,
+        "SeaweedTropical": 5
+      }
+    },
+    {
+      "chunk_pos": [
+        255,
+        255
+      ],
+      "min_z": 558,
+      "max_z": 606,
+      "sub_chunks": 3,
+      "name": "Morla Tundra",
+      "biome": "Snowland",
+      "alt": 591.6592,
+      "tree_density": 0.09758939,
+      "contains_river": false,
+      "near_water": false,
+      "temp": -0.9722203,
+      "humidity": 0.648217,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 49152,
+      "non_air_blocks": 31645,
+      "sprite_total": 17507,
+      "block_kind_counts": {
+        "Air": 17507,
+        "Earth": 4602,
+        "Rock": 25761,
+        "Snow": 1282
+      },
+      "sprite_kind_counts": {
+        "Empty": 17505,
+        "ShortGrass": 2
+      }
+    },
+    {
+      "chunk_pos": [
+        255,
+        510
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "chunk_pos": [
+        510,
+        1
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "chunk_pos": [
+        510,
+        255
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "chunk_pos": [
+        510,
+        510
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    }
+  ]
+}

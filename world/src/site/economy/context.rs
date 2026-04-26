@@ -311,10 +311,12 @@ mod tests {
                 world_file: sim::FileOpts::LoadAsset(sim::DEFAULT_WORLD_MAP.into()),
                 //sim::FileOpts::LoadAsset("world.map.economy_8x8".into()),
                 calendar: None,
+                compat_mode: Default::default(),
             };
             let mut index = crate::index::Index::new(seed);
             info!("Index created");
-            let mut sim = sim::WorldSim::generate(seed, opts, &threadpool, &|_| {});
+            let mut sim = sim::WorldSim::generate(seed, opts, &threadpool, &|_| {})
+                .expect("economy world load should succeed");
             info!("World loaded");
             let _civs = crate::civ::Civs::generate(seed, &mut sim, &mut index, None, &|_| {});
             info!("Civs created");
@@ -337,10 +339,12 @@ mod tests {
                 world_file: sim::FileOpts::LoadAsset(sim::DEFAULT_WORLD_MAP.into()),
                 //sim::FileOpts::LoadAsset("world.map.economy_8x8".into()),
                 calendar: None,
+                compat_mode: Default::default(),
             };
             let mut index = crate::index::Index::new(seed);
             info!("Index created");
-            let mut sim = sim::WorldSim::generate(seed, opts, &threadpool, &|_| {});
+            let mut sim = sim::WorldSim::generate(seed, opts, &threadpool, &|_| {})
+                .expect("economy world load should succeed");
             info!("World loaded");
             let mut names = None;
             let regenerate_input = false;
@@ -500,10 +504,12 @@ mod tests {
                 seed_elements: true,
                 world_file: sim::FileOpts::LoadAsset(sim::DEFAULT_WORLD_MAP.into()),
                 calendar: Default::default(),
+                compat_mode: Default::default(),
             };
             let index = crate::index::Index::new(seed);
             info!("Index created");
-            let sim = sim::WorldSim::generate(seed, opts, &threadpool, &|_| {});
+            let sim = sim::WorldSim::generate(seed, opts, &threadpool, &|_| {})
+                .expect("economy world load should succeed");
             info!("World loaded");
             let rng = ChaChaRng::from_seed(seed_expan::rng_state(seed));
             let mut env = Simenv {

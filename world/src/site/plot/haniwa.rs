@@ -110,7 +110,7 @@ impl Structure for Haniwa {
         let base = self.base;
         let diameter = self.diameter;
         let entrance = self.entrance_pos;
-        let mut rng = rand::rng();
+        let mut rng = seeded_rng_from_wpos(0x4841_4E57, center.with_z(base));
         let rock = Fill::Brick(BlockKind::Rock, Rgb::new(96, 123, 131), 24);
         let key_door = Fill::Block(Block::air(SpriteKind::HaniwaKeyDoor));
         let key_hole = Fill::Block(Block::air(SpriteKind::HaniwaKeyhole));

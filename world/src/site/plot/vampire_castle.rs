@@ -106,7 +106,7 @@ impl Structure for VampireCastle {
 
     #[cfg_attr(feature = "be-dyn-lib", unsafe(export_name = "render_vampire_castle"))]
     fn render_inner(&self, _site: &Site, _land: &Land, painter: &Painter) {
-        let mut rng = rand::rng();
+        let mut rng = seeded_rng_from_aabr(0x5643_4153, self.bounds);
         let brick = Fill::Brick(BlockKind::Rock, Rgb::new(80, 75, 85), 24);
         let roof_color = Fill::Block(Block::new(BlockKind::GlowingRock, Rgb::new(30, 37, 55)));
         let wood = Fill::Brick(BlockKind::Rock, Rgb::new(71, 33, 11), 12);
@@ -2207,7 +2207,7 @@ impl Structure for VampireCastle {
 }
 
 pub fn spawn_random_entity(pos: Vec3<i32>, painter: &Painter) {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng_from_wpos(0x5643_454E, pos);
     let entities = [
         "common.entity.dungeon.vampire.strigoi",
         "common.entity.dungeon.vampire.executioner",

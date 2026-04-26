@@ -1,0 +1,5 @@
+record-only recipe hashes are audit metadata and are not enforce keys yet
+chunk_stats.json records deterministic static chunk facts for the current audit path; run_id and sampled_chunks[*].generate_ms remain volatile
+chunk_stats.json is produced through the explicit static chunk snapshot entry; runtime supplement and rtsim thinning remain outside this contract
+runtime/runtime_matrix.json records raw_worldgen, empty_overlay, and fixed_overlay variants from the runtime chunk return path while preview metrics remain raw
+chunk_recipe_hash is still partial until static_feature_profile is wired

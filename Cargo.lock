@@ -9678,6 +9678,7 @@ dependencies = [
  "rstar",
  "rusqlite",
  "serde",
+ "serde_json",
  "sha2",
  "signal-hook 0.4.3",
  "strum 0.28.0",

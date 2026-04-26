@@ -1,0 +1,128 @@
+{
+  "seed": 424242,
+  "gen_opts": {
+    "x_lg": 8,
+    "y_lg": 8,
+    "scale": 1.5,
+    "map_kind": "Square",
+    "erosion_quality": 0.25
+  },
+  "recipe": {
+    "world_recipe_hash": "091f2ee9b1fad345daf46d375b5063d3f511032a0960ccbc2e3cd8fde1724cb3",
+    "chunk_recipe_hash": "70d67ea75a25cc45206e06cdbfe8283ec521b74d07804751c780e2ecc7e23c46",
+    "topology_id": "bounded_plane_v1",
+    "preset_id": "custom_gen_opts_v1",
+    "world_alg_version": "world-sim-v1-record-only",
+    "chunk_pass_version": "chunk-static-v1-record-only",
+    "seed_elements": false
+  },
+  "sample_chunks": 4,
+  "chunk_audit_mode": "sampled_static_chunk_snapshot_v1",
+  "strict_determinism": true,
+  "sampled_chunks": [
+    {
+      "chunk_pos": [
+        1,
+        1
+      ],
+      "min_z": 112,
+      "max_z": 144,
+      "sub_chunks": 2,
+      "name": "Chrazan Deep",
+      "biome": "Ocean",
+      "alt": 136.79417,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": true,
+      "temp": 0.79166734,
+      "humidity": 0.03843641,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 32768,
+      "non_air_blocks": 28672,
+      "sprite_total": 5136,
+      "block_kind_counts": {
+        "Air": 4096,
+        "Earth": 3545,
+        "Rock": 20247,
+        "Sand": 3840,
+        "Water": 1040
+      },
+      "sprite_kind_counts": {
+        "Empty": 5136
+      }
+    },
+    {
+      "chunk_pos": [
+        1,
+        254
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "chunk_pos": [
+        254,
+        1
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "chunk_pos": [
+        254,
+        254
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "sub_chunks": 0,
+      "name": null,
+      "biome": "Void",
+      "alt": 0.0,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "temp": 0.0,
+      "humidity": 0.0,
+      "rockiness": 0.0,
+      "cliff_height": 0.0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    }
+  ]
+}

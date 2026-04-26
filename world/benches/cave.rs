@@ -18,7 +18,8 @@ fn cave(c: &mut Criterion) {
         },
         &pool,
         &|_| {},
-    );
+    )
+    .expect("cave benchmark world should load");
     let land = Land::from_sim(world.sim());
     let mut group = c.benchmark_group("cave");
     group.sample_size(10);

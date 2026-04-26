@@ -1,5 +1,9 @@
 use crate::{
-    ChunkRequest, chunk_serialize::ChunkSendEntry, client::Client, lod::Lod,
+    ChunkRequest, Tick,
+    chunk_lifecycle::{ChunkLifecycleHandle, ChunkLifecycleSource},
+    chunk_serialize::ChunkSendEntry,
+    client::Client,
+    lod::Lod,
     metrics::NetworkRequestMetrics,
 };
 use common::{
@@ -21,8 +25,10 @@ pub struct Sys;
 impl<'a> System<'a> for Sys {
     type SystemData = (
         Entities<'a>,
+        Read<'a, Tick>,
         Read<'a, EventBus<ClientDisconnectEvent>>,
         Read<'a, EventBus<ChunkSendEntry>>,
+        ReadExpect<'a, ChunkLifecycleHandle>,
         ReadExpect<'a, TerrainGrid>,
         ReadExpect<'a, Lod>,
         ReadExpect<'a, NetworkRequestMetrics>,
@@ -40,8 +46,10 @@ impl<'a> System<'a> for Sys {
         job: &mut Job<Self>,
         (
             entities,
+            tick,
             client_disconnect_events,
             chunk_send_bus,
+            chunk_lifecycle,
             terrain,
             lod,
             network_metrics,
@@ -52,13 +60,20 @@ impl<'a> System<'a> for Sys {
         ): Self::SystemData,
     ) {
         job.cpu_stats.measure(ParMode::Rayon);
+        let tick = tick.0;
         let mut new_chunk_requests = (&entities, &mut clients, (&presences).maybe())
             .join()
             // NOTE: Required because Specs has very poor work splitting for sparse joins.
             .par_bridge()
             .map_init(
-                || (chunk_send_bus.emitter(), client_disconnect_events.emitter()),
-                |(chunk_send_emitter, client_disconnect_emitter), (entity, client, maybe_presence)| {
+                || {
+                    (
+                        chunk_send_bus.emitter(),
+                        client_disconnect_events.emitter(),
+                        chunk_lifecycle.clone(),
+                    )
+                },
+                |(chunk_send_emitter, client_disconnect_emitter, chunk_lifecycle), (entity, client, maybe_presence)| {
                     let mut chunk_requests = Vec::new();
                     let _ = super::try_recv_all(client, 5, |client, msg| {
                         // SPECIAL CASE: LOD zone requests can be sent by non-present players
@@ -93,6 +108,14 @@ impl<'a> System<'a> for Sys {
                                         true
                                     };
                                     if in_vd {
+                                        chunk_lifecycle
+                                            .lock()
+                                            .expect("Poisoned")
+                                            .record_request(
+                                                key,
+                                                ChunkLifecycleSource::ClientExplicit,
+                                                tick,
+                                            );
                                         if terrain.get_key_arc(key).is_some() {
                                             network_metrics.chunks_served_from_memory.inc();
                                             chunk_send_emitter.emit(ChunkSendEntry {
@@ -135,6 +158,14 @@ impl<'a> System<'a> for Sys {
                         for rpos in Spiral2d::new().take((crate::MIN_VD as usize + 1).pow(2)) {
                             let key = player_chunk + rpos;
                             if terrain.get_key(key).is_none() {
+                                chunk_lifecycle
+                                    .lock()
+                                    .expect("Poisoned")
+                                    .record_request(
+                                        key,
+                                        ChunkLifecycleSource::MinVdWarmup,
+                                        tick,
+                                    );
                                 // TODO: @zesterer do we want to be sending these chunk to the
                                 // client even if they aren't
                                 // requested? If we don't we could replace the

@@ -56,6 +56,7 @@ rand_chacha = { workspace = true }
 arr_macro = "0.2.1"
 rayon = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 ron = { workspace = true }
 sha2 = { workspace = true }
 # inline_tweak = { workspace = true, features = ["derive"] }

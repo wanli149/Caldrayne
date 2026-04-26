@@ -1,8 +1,11 @@
-use crate::metrics::ChunkGenMetrics;
 #[cfg(feature = "worldgen")]
 use crate::rtsim::RtSim;
 #[cfg(not(feature = "worldgen"))]
 use crate::test_world::{IndexOwned, World};
+use crate::{
+    chunk_lifecycle::{ChunkLifecycleHandle, ChunkLifecycleTerminal},
+    metrics::ChunkGenMetrics,
+};
 use common::{
     calendar::Calendar, generation::ChunkSupplement, resources::TimeOfDay, slowjob::SlowJobPool,
     terrain::TerrainChunk,
@@ -28,15 +31,17 @@ pub struct ChunkGenerator {
     chunk_rx: crossbeam_channel::Receiver<ChunkGenResult>,
     pending_chunks: HashMap<Vec2<i32>, Arc<AtomicBool>>,
     metrics: Arc<ChunkGenMetrics>,
+    lifecycle: ChunkLifecycleHandle,
 }
 impl ChunkGenerator {
-    pub fn new(metrics: ChunkGenMetrics) -> Self {
+    pub fn new(metrics: ChunkGenMetrics, lifecycle: ChunkLifecycleHandle) -> Self {
         let (chunk_tx, chunk_rx) = crossbeam_channel::unbounded();
         Self {
             chunk_tx,
             chunk_rx,
             pending_chunks: HashMap::new(),
             metrics: Arc::new(metrics),
+            lifecycle,
         }
     }
 
@@ -50,12 +55,17 @@ impl ChunkGenerator {
         #[cfg(not(feature = "worldgen"))] _rtsim: &(),
         index: IndexOwned,
         time: (TimeOfDay, Calendar),
+        tick: u64,
     ) {
         let v = if let Entry::Vacant(v) = self.pending_chunks.entry(key) {
             v
         } else {
             return;
         };
+        self.lifecycle
+            .lock()
+            .expect("Poisoned")
+            .record_generation_queued(key, tick);
         let cancel = Arc::new(AtomicBool::new(false));
         v.insert(Arc::clone(&cancel));
         let chunk_tx = self.chunk_tx.clone();
@@ -84,12 +94,15 @@ impl ChunkGenerator {
         });
     }
 
-    pub fn recv_new_chunk(&mut self) -> Option<ChunkGenResult> {
+    pub fn recv_new_chunk(&mut self, tick: u64) -> Option<ChunkGenResult> {
         // Make sure chunk wasn't cancelled and if it was check to see if there are more
         // chunks to receive
         while let Ok((key, res)) = self.chunk_rx.try_recv() {
             if self.pending_chunks.remove(&key).is_some() {
-                self.metrics.chunks_served.inc();
+                self.lifecycle
+                    .lock()
+                    .expect("Poisoned")
+                    .record_generation_done(key, tick);
                 // TODO: do anything else if res is an Err?
                 return Some((key, res));
             }
@@ -106,17 +119,29 @@ impl ChunkGenerator {
         self.pending_chunks.par_keys().copied()
     }
 
-    pub fn cancel_if_pending(&mut self, key: Vec2<i32>) {
+    pub fn record_chunk_generated(&self) { self.metrics.chunks_served.inc(); }
+
+    pub fn record_chunk_failed(&self) { self.metrics.chunks_failed.inc(); }
+
+    pub fn cancel_if_pending(&mut self, key: Vec2<i32>, tick: u64) {
         if let Some(cancel) = self.pending_chunks.remove(&key) {
             cancel.store(true, Ordering::Relaxed);
+            let _ = self.lifecycle.lock().expect("Poisoned").complete(
+                key,
+                Some(tick),
+                ChunkLifecycleTerminal::Canceled,
+                None,
+            );
             self.metrics.chunks_canceled.inc();
         }
     }
 
-    pub fn cancel_all(&mut self) {
+    pub fn cancel_all(&mut self, tick: u64) {
         let metrics = Arc::clone(&self.metrics);
-        self.pending_chunks.drain().for_each(|(_, cancel)| {
+        let mut lifecycle = self.lifecycle.lock().expect("Poisoned");
+        self.pending_chunks.drain().for_each(|(key, cancel)| {
             cancel.store(true, Ordering::Relaxed);
+            let _ = lifecycle.complete(key, Some(tick), ChunkLifecycleTerminal::Canceled, None);
             metrics.chunks_canceled.inc();
         });
     }

@@ -15,10 +15,12 @@ fn main() {
             // Load default map from assets.
             world_file: FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into()),
             calendar: None,
+            compat_mode: Default::default(),
         },
         &threadpool,
         &|_| {},
-    );
+    )
+    .expect("world generation benchmark world should load");
     core::hint::black_box((world, index));
     println!("{} ms", start.elapsed().as_nanos() / 1_000_000);
 }

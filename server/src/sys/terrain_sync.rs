@@ -1,6 +1,11 @@
 #[cfg(not(feature = "worldgen"))]
 use crate::test_world::World;
-use crate::{Settings, chunk_serialize::ChunkSendEntry, client::Client};
+use crate::{
+    Settings, Tick,
+    chunk_lifecycle::{ChunkLifecycleHandle, ChunkLifecycleSource},
+    chunk_serialize::ChunkSendEntry,
+    client::Client,
+};
 use common::{
     comp::{Pos, Presence},
     event::EventBus,
@@ -20,10 +25,12 @@ pub struct Sys;
 impl<'a> System<'a> for Sys {
     type SystemData = (
         Entities<'a>,
+        Read<'a, Tick>,
         ReadExpect<'a, Arc<World>>,
         Read<'a, Settings>,
         Read<'a, TerrainChanges>,
         ReadExpect<'a, EventBus<ChunkSendEntry>>,
+        ReadExpect<'a, ChunkLifecycleHandle>,
         ReadStorage<'a, Pos>,
         ReadStorage<'a, Presence>,
         ReadStorage<'a, Client>,
@@ -37,15 +44,18 @@ impl<'a> System<'a> for Sys {
         _job: &mut Job<Self>,
         (
             entities,
+            tick,
             world,
             server_settings,
             terrain_changes,
             chunk_send_bus,
+            chunk_lifecycle,
             positions,
             presences,
             clients,
         ): Self::SystemData,
     ) {
+        let tick = tick.0;
         let max_view_distance = server_settings.max_view_distance.unwrap_or(u32::MAX);
         #[cfg(feature = "worldgen")]
         let world_size = world.sim().get_size();
@@ -64,8 +74,8 @@ impl<'a> System<'a> for Sys {
 
         // Sync changed chunks
         terrain_changes.modified_chunks.par_iter().for_each_init(
-            || chunk_send_bus.emitter(),
-            |chunk_send_emitter, &chunk_key| {
+            || (chunk_send_bus.emitter(), chunk_lifecycle.clone()),
+            |(chunk_send_emitter, chunk_lifecycle), &chunk_key| {
                 // We only have to check players inside the maximum view distance of the server
                 // of our own position.
                 //
@@ -97,6 +107,11 @@ impl<'a> System<'a> for Sys {
                         super::terrain::chunk_in_vd(*player_chunk_pos, *player_vd_sqr, chunk_key)
                     })
                     .for_each(|(_, entity)| {
+                        chunk_lifecycle.lock().expect("Poisoned").record_source(
+                            chunk_key,
+                            ChunkLifecycleSource::TerrainSync,
+                            tick,
+                        );
                         chunk_send_emitter.emit(ChunkSendEntry {
                             entity: *entity,
                             chunk_key,

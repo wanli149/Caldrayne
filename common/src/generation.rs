@@ -19,6 +19,7 @@ use crate::{
 use common_base::dev_panic;
 use common_i18n::Content;
 use enum_map::EnumMap;
+use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 use tracing::error;
 use vek::*;
@@ -327,11 +328,11 @@ impl EntityInfo {
 
         match body {
             BodyBuilder::RandomWith(string) => {
-                let npc::NpcBody(_body_kind, mut body_creator) =
-                    string.parse::<npc::NpcBody>().unwrap_or_else(|err| {
+                let mut body_rng = StdRng::from_seed(loadout_rng.random::<[u8; 32]>());
+                let (_body_kind, body) = npc::NpcBody::resolve_with_rng(&string, &mut body_rng)
+                    .unwrap_or_else(|err| {
                         panic!("failed to parse body {:?}. Err: {:?}", &string, err)
                     });
-                let body = body_creator();
                 self = self.with_body(body);
             },
             BodyBuilder::Exact(body) => {
@@ -632,14 +633,13 @@ pub mod tests {
     fn validate_body(body: &BodyBuilder, config_asset: &str) {
         match body {
             BodyBuilder::RandomWith(string) => {
-                let npc::NpcBody(_body_kind, mut body_creator) =
-                    string.parse::<npc::NpcBody>().unwrap_or_else(|err| {
-                        panic!(
-                            "failed to parse body {:?} in {}. Err: {:?}",
-                            &string, config_asset, err
-                        )
-                    });
-                let _ = body_creator();
+                let mut rng = rand::rng();
+                let _ = npc::NpcBody::resolve_with_rng(&string, &mut rng).unwrap_or_else(|err| {
+                    panic!(
+                        "failed to parse body {:?} in {}. Err: {:?}",
+                        &string, config_asset, err
+                    )
+                });
             },
             BodyBuilder::Uninit | BodyBuilder::Exact { .. } => {},
         }

@@ -1,3 +1,4 @@
+mod compat;
 mod diffusion;
 mod erosion;
 mod location;
@@ -8,6 +9,7 @@ mod way;
 // Reexports
 use self::erosion::Compute;
 pub use self::{
+    compat::CompatMode,
     diffusion::diffusion,
     location::Location,
     map::{sample_pos, sample_wpos},
@@ -32,7 +34,8 @@ use crate::{
     civ::{Place, PointOfInterest},
     column::ColumnGen,
     recipe::{
-        CompatAuditV1, CompatEntryKindV1, CompatFailureKindV1, RecipeManifestV1,
+        CompatAuditV1, CompatFailureDetailV1, CompatFailureKindV1, CompatFailureSubjectV1,
+        RecipeManifestV1,
     },
     site::Site,
     util::{
@@ -80,7 +83,7 @@ use std::{
     sync::Arc,
 };
 use strum::IntoEnumIterator;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use vek::*;
 
 /// Default base two logarithm of the world size, in chunks, per dimension.
@@ -212,31 +215,17 @@ struct FileLoadContent {
 }
 
 impl FileOpts {
-    fn compat_entry_kind(&self) -> CompatEntryKindV1 {
-        match self {
-            Self::Generate(_) => CompatEntryKindV1::Generate,
-            Self::Save(_, _) => CompatEntryKindV1::Save,
-            Self::LoadOrGenerate { .. } => CompatEntryKindV1::LoadOrGenerate,
-            Self::LoadLegacy(_) => CompatEntryKindV1::LoadLegacy,
-            Self::Load(_) => CompatEntryKindV1::Load,
-            Self::LoadAsset(_) => CompatEntryKindV1::LoadAsset,
-        }
-    }
-
-    fn compat_generate_requested(&self) -> CompatAuditV1 {
-        CompatAuditV1::generate_requested(self.compat_entry_kind())
-    }
-
-    fn compat_loaded_existing(&self) -> CompatAuditV1 {
-        CompatAuditV1::loaded_existing(self.compat_entry_kind())
-    }
-
-    fn compat_fallback_generate(&self, failure_kind: CompatFailureKindV1) -> CompatAuditV1 {
-        CompatAuditV1::fallback_generate(self.compat_entry_kind(), failure_kind)
-    }
-
-    fn load_content(&self) -> FileLoadContent {
-        let (parsed_world_file, compat_audit) = self.try_load_map();
+    fn load_content(
+        &self,
+        compat_mode: CompatMode,
+    ) -> Result<FileLoadContent, compat::CompatResolveError> {
+        let compat_resolution = compat::resolve(
+            compat_mode,
+            compat::entry_kind(self),
+            self.try_load_map_raw(),
+        )?;
+        let parsed_world_file = compat_resolution.parsed_world_file;
+        let compat_audit = compat_resolution.compat_audit;
 
         let mut gen_opts = self.gen_opts().unwrap_or_default();
 
@@ -259,12 +248,12 @@ impl FileOpts {
             gen_opts.scale = map.continent_scale_hack;
         };
 
-        FileLoadContent {
+        Ok(FileLoadContent {
             parsed_world_file,
             map_size_lg,
             gen_opts,
             compat_audit,
-        }
+        })
     }
 
     fn gen_opts(&self) -> Option<GenOpts> {
@@ -293,19 +282,41 @@ impl FileOpts {
         }
     }
 
+    fn basic_load_failure(kind: CompatFailureKindV1) -> compat::RawCompatFailure {
+        compat::RawCompatFailure::new(kind)
+    }
+
+    fn structured_load_failure(
+        kind: CompatFailureKindV1,
+        subject: CompatFailureSubjectV1,
+        detail: CompatFailureDetailV1,
+    ) -> compat::RawCompatFailure {
+        compat::RawCompatFailure::structured(kind, subject, detail)
+    }
+
+    fn load_or_generate_contract_outcome(
+        overwrite: bool,
+        failure: compat::RawCompatFailure,
+    ) -> compat::RawLoadOutcome<ModernMap> {
+        if overwrite {
+            compat::RawLoadOutcome::Failed(failure)
+        } else {
+            compat::RawLoadOutcome::Rejected(failure)
+        }
+    }
+
     // TODO: This should probably return a Result, so that caller can choose
     // whether to log error
-    fn try_load_map(&self) -> (Option<ModernMap>, CompatAuditV1) {
+    fn try_load_map_raw(&self) -> compat::RawLoadOutcome<ModernMap> {
         let map = match self {
             Self::LoadLegacy(path) => {
                 let file = match File::open(path) {
                     Ok(file) => file,
                     Err(e) => {
                         warn!(?e, ?path, "Couldn't read path for maps");
-                        return (
-                            None,
-                            self.compat_fallback_generate(CompatFailureKindV1::MissingInput),
-                        );
+                        return compat::RawLoadOutcome::Failed(Self::basic_load_failure(
+                            CompatFailureKindV1::MissingInput,
+                        ));
                     },
                 };
 
@@ -317,10 +328,9 @@ impl FileOpts {
                             ?e,
                             "Couldn't parse legacy map.  Maybe you meant to try a regular load?"
                         );
-                        return (
-                            None,
-                            self.compat_fallback_generate(CompatFailureKindV1::ParseError),
-                        );
+                        return compat::RawLoadOutcome::Failed(Self::basic_load_failure(
+                            CompatFailureKindV1::ParseError,
+                        ));
                     },
                 };
 
@@ -331,10 +341,9 @@ impl FileOpts {
                     Ok(file) => file,
                     Err(e) => {
                         warn!(?e, ?path, "Couldn't read path for maps");
-                        return (
-                            None,
-                            self.compat_fallback_generate(CompatFailureKindV1::MissingInput),
-                        );
+                        return compat::RawLoadOutcome::Failed(Self::basic_load_failure(
+                            CompatFailureKindV1::MissingInput,
+                        ));
                     },
                 };
 
@@ -346,10 +355,9 @@ impl FileOpts {
                             ?e,
                             "Couldn't parse modern map.  Maybe you meant to try a legacy load?"
                         );
-                        return (
-                            None,
-                            self.compat_fallback_generate(CompatFailureKindV1::ParseError),
-                        );
+                        return compat::RawLoadOutcome::Failed(Self::basic_load_failure(
+                            CompatFailureKindV1::ParseError,
+                        ));
                     },
                 };
 
@@ -369,10 +377,9 @@ impl FileOpts {
                             );
                         },
                     }
-                    return (
-                        None,
-                        self.compat_fallback_generate(CompatFailureKindV1::ParseError),
-                    );
+                    return compat::RawLoadOutcome::Failed(Self::basic_load_failure(
+                        CompatFailureKindV1::ParseError,
+                    ));
                 },
             },
             Self::LoadOrGenerate {
@@ -386,10 +393,9 @@ impl FileOpts {
                     Ok(file) => file,
                     Err(e) => {
                         warn!(?e, ?path, "Couldn't find needed map. Generating...");
-                        return (
-                            None,
-                            self.compat_fallback_generate(CompatFailureKindV1::MissingInput),
-                        );
+                        return compat::RawLoadOutcome::Failed(Self::basic_load_failure(
+                            CompatFailureKindV1::MissingInput,
+                        ));
                     },
                 };
 
@@ -401,10 +407,9 @@ impl FileOpts {
                             ?e,
                             "Couldn't parse modern map.  Maybe you meant to try a legacy load?"
                         );
-                        return (
-                            None,
-                            self.compat_fallback_generate(CompatFailureKindV1::ParseError),
-                        );
+                        return compat::RawLoadOutcome::Failed(Self::basic_load_failure(
+                            CompatFailureKindV1::ParseError,
+                        ));
                     },
                 };
 
@@ -426,51 +431,75 @@ impl FileOpts {
                 let map = match map {
                     WorldFile::Veloren0_7_0(map) => map,
                     WorldFile::Veloren0_5_0(_) => {
-                        panic!("World file v0.5.0 isn't supported with LoadOrGenerate.")
+                        let failure = Self::structured_load_failure(
+                            CompatFailureKindV1::InvalidWorld,
+                            CompatFailureSubjectV1::World,
+                            CompatFailureDetailV1::legacy_world_version(),
+                        );
+                        warn!(
+                            ?path,
+                            overwrite = *overwrite,
+                            compat_failure = %CompatFailureKindV1::InvalidWorld.as_str(),
+                            compat_subject = %CompatFailureSubjectV1::World.as_str(),
+                            "LoadOrGenerate found a legacy world file version; refusing to reuse it silently"
+                        );
+                        return Self::load_or_generate_contract_outcome(*overwrite, failure);
                     },
                 };
 
-                if map.continent_scale_hack != *scale || map.map_size_lg != Vec2::new(*x_lg, *y_lg)
-                {
+                let requested_size = Vec2::new(*x_lg, *y_lg);
+                let world_scale_mismatch = map.continent_scale_hack != *scale;
+                let world_size_mismatch = map.map_size_lg != requested_size;
+                if world_scale_mismatch || world_size_mismatch {
+                    let failure = Self::structured_load_failure(
+                        CompatFailureKindV1::OptionMismatch,
+                        CompatFailureSubjectV1::Options,
+                        CompatFailureDetailV1::option_mismatch(
+                            world_size_mismatch,
+                            world_scale_mismatch,
+                        ),
+                    );
                     if *overwrite {
                         warn!(
-                            "{}\n{}",
-                            "Specified options don't correspond to these in loaded map.",
-                            "Map will be regenerated and overwritten."
+                            ?path,
+                            requested_size = ?requested_size,
+                            stored_size = ?map.map_size_lg,
+                            requested_scale = *scale,
+                            stored_scale = map.continent_scale_hack,
+                            "Specified options don't correspond to the loaded map; regenerating because overwrite=true"
                         );
                     } else {
-                        panic!(
-                            "{}\n{}",
-                            "Specified options don't correspond to these in loaded map.",
-                            "Use 'ovewrite' option, if you wish to regenerate map."
+                        warn!(
+                            ?path,
+                            requested_size = ?requested_size,
+                            stored_size = ?map.map_size_lg,
+                            requested_scale = *scale,
+                            stored_scale = map.continent_scale_hack,
+                            "Specified options don't correspond to the loaded map; rejecting because overwrite=false"
                         );
                     }
 
-                    return (
-                        None,
-                        self.compat_fallback_generate(CompatFailureKindV1::OptionMismatch),
-                    );
+                    return Self::load_or_generate_contract_outcome(*overwrite, failure);
                 }
 
                 map.into_modern()
             },
-            Self::Generate { .. } | Self::Save { .. } => {
-                return (None, self.compat_generate_requested());
+            Self::Generate(_) | Self::Save(_, _) => {
+                return compat::RawLoadOutcome::GenerateRequested;
             },
         };
 
         match map {
-            Ok(map) => (Some(map), self.compat_loaded_existing()),
+            Ok(map) => compat::RawLoadOutcome::Loaded(map),
             Err(e) => {
                 match e {
                     WorldFileError::WorldSizeInvalid => {
                         warn!("World size of map is invalid.");
                     },
                 }
-                (
-                    None,
-                    self.compat_fallback_generate(CompatFailureKindV1::InvalidWorld),
-                )
+                compat::RawLoadOutcome::Failed(Self::basic_load_failure(
+                    CompatFailureKindV1::InvalidWorld,
+                ))
             },
         }
     }
@@ -527,6 +556,7 @@ pub struct WorldOpts {
     pub seed_elements: bool,
     pub world_file: FileOpts,
     pub calendar: Option<Calendar>,
+    pub compat_mode: CompatMode,
 }
 
 impl Default for WorldOpts {
@@ -535,6 +565,7 @@ impl Default for WorldOpts {
             seed_elements: true,
             world_file: Default::default(),
             calendar: None,
+            compat_mode: CompatMode::Record,
         }
     }
 }
@@ -758,6 +789,8 @@ pub struct WorldSim {
     pub rng: ChaChaRng,
 
     pub(crate) calendar: Option<Calendar>,
+    pub(crate) compat_mode: CompatMode,
+    pub(crate) compat_audit: CompatAuditV1,
     pub(crate) recipe_manifest: RecipeManifestV1,
 }
 
@@ -821,6 +854,8 @@ impl WorldSim {
             gen_ctx,
             rng: rand_chacha::ChaCha20Rng::from_seed([0; 32]),
             calendar: None,
+            compat_mode: CompatMode::Record,
+            compat_audit: CompatAuditV1::default(),
             recipe_manifest: RecipeManifestV1::default(),
         }
     }
@@ -830,11 +865,12 @@ impl WorldSim {
         opts: WorldOpts,
         threadpool: &rayon::ThreadPool,
         stage_report: &dyn Fn(WorldSimStage),
-    ) -> Self {
+    ) -> Result<Self, crate::Error> {
         prof_span!("WorldSim::generate");
         let seed_elements = opts.seed_elements;
         let calendar = opts.calendar; // separate lifetime of elements
         let world_file = opts.world_file;
+        let compat_mode = opts.compat_mode;
 
         // Parse out the contents of various map formats into the values we need.
         let FileLoadContent {
@@ -842,7 +878,24 @@ impl WorldSim {
             map_size_lg,
             gen_opts,
             compat_audit,
-        } = world_file.load_content();
+        } = match world_file.load_content(compat_mode) {
+            Ok(content) => content,
+            Err(err) => {
+                error!(
+                    compat_mode = %compat_mode.as_str(),
+                    compat_entry = %err.audit.entry.as_str(),
+                    compat_decision = %err.audit.decision.as_str(),
+                    compat_failure = %err.audit.failure_kind.as_str(),
+                    compat_resolution = %err.audit.resolution.as_str(),
+                    compat_subject = %err.audit.failure_subject.as_str(),
+                    compat_legacy_world_version = err.audit.failure_detail.legacy_world_version,
+                    compat_world_size_mismatch = err.audit.failure_detail.world_size_mismatch,
+                    compat_world_scale_mismatch = err.audit.failure_detail.world_scale_mismatch,
+                    "compat contract rejected world load"
+                );
+                return Err(crate::Error::CompatEnforce { audit: err.audit });
+            },
+        };
         // Currently only used with LoadOrGenerate to know if we need to
         // overwrite world file
         let fresh = parsed_world_file.is_none();
@@ -850,6 +903,11 @@ impl WorldSim {
             compat_entry = %compat_audit.entry.as_str(),
             compat_decision = %compat_audit.decision.as_str(),
             compat_failure = %compat_audit.failure_kind.as_str(),
+            compat_resolution = %compat_audit.resolution.as_str(),
+            compat_subject = %compat_audit.failure_subject.as_str(),
+            compat_legacy_world_version = compat_audit.failure_detail.legacy_world_version,
+            compat_world_size_mismatch = compat_audit.failure_detail.world_size_mismatch,
+            compat_world_scale_mismatch = compat_audit.failure_detail.world_scale_mismatch,
             fresh,
             "recorded world file compatibility audit"
         );
@@ -1802,6 +1860,8 @@ impl WorldSim {
             gen_ctx,
             rng,
             calendar,
+            compat_mode,
+            compat_audit,
             recipe_manifest,
         };
 
@@ -1811,11 +1871,15 @@ impl WorldSim {
             this.seed_elements();
         }
 
-        this
+        Ok(this)
     }
 
     #[inline(always)]
     pub const fn map_size_lg(&self) -> MapSizeLg { self.map_size_lg }
+
+    pub const fn compat_mode(&self) -> CompatMode { self.compat_mode }
+
+    pub const fn compat_audit(&self) -> CompatAuditV1 { self.compat_audit }
 
     pub fn recipe_manifest(&self) -> &RecipeManifestV1 { &self.recipe_manifest }
 
@@ -2939,5 +3003,146 @@ impl SimChunk {
             .min_by_key(|id| index_sites[**id].origin.distance_squared(wpos2d))
             .and_then(|id| Some(index_sites[*id].name()?.to_string()))
             .or_else(|| self.poi.map(|poi| civs_pois[poi].name.clone()))
+    }
+}
+
+#[cfg(test)]
+mod compat_tests {
+    use super::{CompatMode, FileOpts, GenOpts, WorldFile, WorldMap_0_5_0, WorldMap_0_7_0};
+    use crate::recipe::{CompatDecisionV1, CompatFailureKindV1, CompatFailureSubjectV1};
+    use bincode::{config::legacy, serde::encode_into_std_write};
+    use std::{
+        fs::{self, File},
+        io::BufWriter,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    use vek::Vec2;
+
+    struct TempLoadOrGenerateTarget {
+        file_path: PathBuf,
+    }
+
+    impl TempLoadOrGenerateTarget {
+        fn new(tag: &str) -> (String, Self) {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos();
+            let base = std::env::temp_dir().join(format!("caldrayne-world-{tag}-{unique}"));
+            let file_path = base.with_extension("bin");
+
+            (base.to_string_lossy().into_owned(), Self { file_path })
+        }
+
+        fn write_world_file(&self, world_file: &WorldFile) {
+            if let Some(parent) = self.file_path.parent() {
+                fs::create_dir_all(parent).expect("temp world parent should be creatable");
+            }
+            let file = File::create(&self.file_path).expect("temp world file should be writable");
+            let mut writer = BufWriter::new(file);
+            encode_into_std_write(world_file, &mut writer, legacy())
+                .expect("temp world file should serialize");
+        }
+    }
+
+    impl Drop for TempLoadOrGenerateTarget {
+        fn drop(&mut self) { let _ = fs::remove_file(&self.file_path); }
+    }
+
+    fn load_or_generate_opts(name: String, overwrite: bool) -> FileOpts {
+        FileOpts::LoadOrGenerate {
+            name,
+            opts: GenOpts::default(),
+            overwrite,
+        }
+    }
+
+    fn legacy_world_file() -> WorldFile {
+        WorldFile::Veloren0_5_0(WorldMap_0_5_0 {
+            alt: vec![0.0].into_boxed_slice(),
+            basement: vec![0.0].into_boxed_slice(),
+        })
+    }
+
+    fn mismatched_world_file() -> WorldFile {
+        WorldFile::Veloren0_7_0(WorldMap_0_7_0 {
+            map_size_lg: Vec2::new(9, 9),
+            continent_scale_hack: 3.0,
+            alt: vec![0.0].into_boxed_slice(),
+            basement: vec![0.0].into_boxed_slice(),
+        })
+    }
+
+    fn assert_same_path(lhs: &Path, rhs: &Path) {
+        assert_eq!(
+            lhs, rhs,
+            "expected temp load_or_generate path to stay stable during the test"
+        );
+    }
+
+    #[test]
+    fn load_or_generate_legacy_world_rejects_without_overwrite() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("legacy-reject");
+        let expected_path = temp_target.file_path.clone();
+        temp_target.write_world_file(&legacy_world_file());
+
+        let file_opts = load_or_generate_opts(name, false);
+        assert_same_path(
+            &expected_path,
+            &file_opts
+                .map_path()
+                .expect("load_or_generate path should always exist"),
+        );
+
+        let err = match file_opts.load_content(CompatMode::Record) {
+            Ok(_) => panic!("legacy load_or_generate world should reject without overwrite"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::InvalidWorld);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::World);
+        assert!(err.audit.failure_detail.legacy_world_version);
+    }
+
+    #[test]
+    fn load_or_generate_option_mismatch_rejects_without_overwrite() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("mismatch-reject");
+        temp_target.write_world_file(&mismatched_world_file());
+
+        let err = match load_or_generate_opts(name, false).load_content(CompatMode::Record) {
+            Ok(_) => panic!("existing world mismatch should reject when overwrite=false"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::OptionMismatch);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Options);
+        assert!(err.audit.failure_detail.world_size_mismatch);
+        assert!(err.audit.failure_detail.world_scale_mismatch);
+    }
+
+    #[test]
+    fn load_or_generate_option_mismatch_recovers_with_overwrite() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("mismatch-overwrite");
+        temp_target.write_world_file(&mismatched_world_file());
+
+        let content = load_or_generate_opts(name, true)
+            .load_content(CompatMode::Record)
+            .expect("overwrite=true mismatch should stay recoverable");
+
+        assert!(content.parsed_world_file.is_none());
+        assert_eq!(
+            content.compat_audit.decision,
+            CompatDecisionV1::FallbackGenerate
+        );
+        assert!(!content.compat_audit.is_rejected());
+        assert_eq!(
+            content.compat_audit.failure_subject,
+            CompatFailureSubjectV1::Options
+        );
+        assert!(content.compat_audit.failure_detail.world_size_mismatch);
+        assert!(content.compat_audit.failure_detail.world_scale_mismatch);
     }
 }

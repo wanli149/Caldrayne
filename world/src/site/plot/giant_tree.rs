@@ -105,7 +105,6 @@ impl Structure for GiantTree {
     #[cfg_attr(feature = "be-dyn-lib", unsafe(export_name = "render_gianttree"))]
     fn render_inner(&self, _site: &Site, _land: &Land, painter: &Painter) {
         let leaf_col = self.leaf_color();
-        let mut rng = rand::rng();
         self.tree.walk(|branch, parent| {
             let aabr = Aabr {
                 min: self.wpos.xy() + branch.get_aabb().min.xy().as_(),
@@ -141,8 +140,9 @@ impl Structure for GiantTree {
                     let displacement =
                         (branch_direction * branch.get_leaf_radius()).map(|e| e.round() as i32);
                     let pos = self.wpos + branch_end.as_() + displacement;
-                    if rng.random_bool(0.07) {
-                        let ori = rng.random_range(0..=3) * 2;
+                    let mut sprite_rng = crate::site::seeded_rng_from_wpos(0x4754_5245, pos);
+                    if sprite_rng.random_bool(0.07) {
+                        let ori = sprite_rng.random_range(0..=3) * 2;
                         painter.resource_sprite(pos, SpriteKind::Ironwood, ori);
                     }
                 }

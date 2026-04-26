@@ -314,6 +314,15 @@ pub(in crate::web) struct RuntimeObservabilityEntryReport {
     pub(in crate::web) surface: &'static str,
     pub(in crate::web) state: &'static str,
     pub(in crate::web) detail: String,
+    pub(in crate::web) configured_mode: Option<String>,
+    pub(in crate::web) compat_entry: Option<&'static str>,
+    pub(in crate::web) compat_decision: Option<&'static str>,
+    pub(in crate::web) compat_failure: Option<&'static str>,
+    pub(in crate::web) strict_load_contract_gap: Option<bool>,
+    pub(in crate::web) world_recipe_hash: Option<String>,
+    pub(in crate::web) chunk_recipe_hash: Option<String>,
+    pub(in crate::web) topology_id: Option<String>,
+    pub(in crate::web) preset_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -322,6 +331,24 @@ pub(in crate::web) struct RuntimeObservabilityReport {
     pub(in crate::web) environment: &'static str,
     pub(in crate::web) requires_operator_review: bool,
     pub(in crate::web) entries: Vec<RuntimeObservabilityEntryReport>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub(in crate::web) struct WorldCompatReport {
+    pub(in crate::web) status: &'static str,
+    pub(in crate::web) environment: &'static str,
+    pub(in crate::web) requires_operator_review: bool,
+    pub(in crate::web) detail: String,
+    pub(in crate::web) configured_mode: Option<String>,
+    pub(in crate::web) compat_entry: Option<&'static str>,
+    pub(in crate::web) compat_decision: Option<&'static str>,
+    pub(in crate::web) compat_failure: Option<&'static str>,
+    pub(in crate::web) strict_load_contract_gap: Option<bool>,
+    pub(in crate::web) world_recipe_hash: Option<String>,
+    pub(in crate::web) chunk_recipe_hash: Option<String>,
+    pub(in crate::web) topology_id: Option<String>,
+    pub(in crate::web) preset_id: Option<String>,
+    pub(in crate::web) source_surface: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]

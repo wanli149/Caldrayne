@@ -75,10 +75,82 @@ impl CompatFailureKindV1 {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CompatResolutionV1 {
+    #[default]
+    Continue,
+    Reject,
+}
+
+impl CompatResolutionV1 {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Continue => "continue",
+            Self::Reject => "reject",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CompatFailureSubjectV1 {
+    #[default]
+    None,
+    World,
+    Recipe,
+    Topology,
+    Options,
+}
+
+impl CompatFailureSubjectV1 {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::World => "world",
+            Self::Recipe => "recipe",
+            Self::Topology => "topology",
+            Self::Options => "options",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct CompatFailureDetailV1 {
+    pub legacy_world_version: bool,
+    pub world_size_mismatch: bool,
+    pub world_scale_mismatch: bool,
+}
+
+impl CompatFailureDetailV1 {
+    pub const fn legacy_world_version() -> Self {
+        Self {
+            legacy_world_version: true,
+            world_size_mismatch: false,
+            world_scale_mismatch: false,
+        }
+    }
+
+    pub const fn option_mismatch(world_size_mismatch: bool, world_scale_mismatch: bool) -> Self {
+        Self {
+            legacy_world_version: false,
+            world_size_mismatch,
+            world_scale_mismatch,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CompatAuditV1 {
     pub entry: CompatEntryKindV1,
     pub decision: CompatDecisionV1,
     pub failure_kind: CompatFailureKindV1,
+    #[serde(default)]
+    pub resolution: CompatResolutionV1,
+    #[serde(default)]
+    pub failure_subject: CompatFailureSubjectV1,
+    #[serde(default)]
+    pub failure_detail: CompatFailureDetailV1,
 }
 
 impl CompatAuditV1 {
@@ -87,6 +159,13 @@ impl CompatAuditV1 {
             entry,
             decision: CompatDecisionV1::GenerateRequested,
             failure_kind: CompatFailureKindV1::None,
+            resolution: CompatResolutionV1::Continue,
+            failure_subject: CompatFailureSubjectV1::None,
+            failure_detail: CompatFailureDetailV1 {
+                legacy_world_version: false,
+                world_size_mismatch: false,
+                world_scale_mismatch: false,
+            },
         }
     }
 
@@ -95,6 +174,13 @@ impl CompatAuditV1 {
             entry,
             decision: CompatDecisionV1::LoadedExisting,
             failure_kind: CompatFailureKindV1::None,
+            resolution: CompatResolutionV1::Continue,
+            failure_subject: CompatFailureSubjectV1::None,
+            failure_detail: CompatFailureDetailV1 {
+                legacy_world_version: false,
+                world_size_mismatch: false,
+                world_scale_mismatch: false,
+            },
         }
     }
 
@@ -102,16 +188,58 @@ impl CompatAuditV1 {
         entry: CompatEntryKindV1,
         failure_kind: CompatFailureKindV1,
     ) -> Self {
+        Self::fallback_generate_with_detail(
+            entry,
+            failure_kind,
+            CompatFailureSubjectV1::None,
+            CompatFailureDetailV1 {
+                legacy_world_version: false,
+                world_size_mismatch: false,
+                world_scale_mismatch: false,
+            },
+        )
+    }
+
+    pub const fn fallback_generate_with_detail(
+        entry: CompatEntryKindV1,
+        failure_kind: CompatFailureKindV1,
+        failure_subject: CompatFailureSubjectV1,
+        failure_detail: CompatFailureDetailV1,
+    ) -> Self {
         Self {
             entry,
             decision: CompatDecisionV1::FallbackGenerate,
             failure_kind,
+            resolution: CompatResolutionV1::Continue,
+            failure_subject,
+            failure_detail,
         }
     }
 
+    pub const fn reject(
+        entry: CompatEntryKindV1,
+        failure_kind: CompatFailureKindV1,
+        failure_subject: CompatFailureSubjectV1,
+        failure_detail: CompatFailureDetailV1,
+    ) -> Self {
+        Self {
+            entry,
+            decision: CompatDecisionV1::FallbackGenerate,
+            failure_kind,
+            resolution: CompatResolutionV1::Reject,
+            failure_subject,
+            failure_detail,
+        }
+    }
+
+    pub const fn is_rejected(self) -> bool { matches!(self.resolution, CompatResolutionV1::Reject) }
+
     pub const fn is_strict_load_contract_gap(self) -> bool {
-        matches!(self.entry, CompatEntryKindV1::LoadLegacy | CompatEntryKindV1::Load | CompatEntryKindV1::LoadAsset)
-            && matches!(self.decision, CompatDecisionV1::FallbackGenerate)
+        matches!(
+            self.entry,
+            CompatEntryKindV1::LoadLegacy | CompatEntryKindV1::Load | CompatEntryKindV1::LoadAsset
+        ) && matches!(self.decision, CompatDecisionV1::FallbackGenerate)
+            && matches!(self.resolution, CompatResolutionV1::Continue)
     }
 }
 
@@ -247,8 +375,9 @@ fn stable_hash<T: Serialize>(value: &T) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChunkRecipeV1, CompatAuditV1, CompatDecisionV1, CompatEntryKindV1, CompatFailureKindV1,
-        RecipeManifestV1, TopologyId, WorldRecipeV1, stable_hash,
+        ChunkRecipeV1, CompatAuditV1, CompatDecisionV1, CompatEntryKindV1, CompatFailureDetailV1,
+        CompatFailureKindV1, CompatFailureSubjectV1, CompatResolutionV1, RecipeManifestV1,
+        TopologyId, WorldRecipeV1, stable_hash,
     };
     use crate::sim::GenOpts;
 
@@ -283,10 +412,13 @@ mod tests {
 
     #[test]
     fn strict_load_fallback_is_reported_as_contract_gap() {
-        let audit =
-            CompatAuditV1::fallback_generate(CompatEntryKindV1::Load, CompatFailureKindV1::ParseError);
+        let audit = CompatAuditV1::fallback_generate(
+            CompatEntryKindV1::Load,
+            CompatFailureKindV1::ParseError,
+        );
 
         assert_eq!(audit.decision, CompatDecisionV1::FallbackGenerate);
+        assert_eq!(audit.resolution, CompatResolutionV1::Continue);
         assert!(audit.is_strict_load_contract_gap());
     }
 
@@ -298,5 +430,22 @@ mod tests {
         );
 
         assert!(!audit.is_strict_load_contract_gap());
+    }
+
+    #[test]
+    fn reject_preserves_structured_failure_contract() {
+        let audit = CompatAuditV1::reject(
+            CompatEntryKindV1::LoadOrGenerate,
+            CompatFailureKindV1::OptionMismatch,
+            CompatFailureSubjectV1::Options,
+            CompatFailureDetailV1::option_mismatch(true, false),
+        );
+
+        assert_eq!(audit.decision, CompatDecisionV1::FallbackGenerate);
+        assert_eq!(audit.resolution, CompatResolutionV1::Reject);
+        assert!(audit.is_rejected());
+        assert_eq!(audit.failure_subject, CompatFailureSubjectV1::Options);
+        assert!(audit.failure_detail.world_size_mismatch);
+        assert!(!audit.failure_detail.world_scale_mismatch);
     }
 }

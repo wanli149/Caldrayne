@@ -3,7 +3,7 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 use i18n::LocalizationHandle;
 use rand::seq::IteratorRandom;
 use server::{
-    Error as ServerError, Event, Input, Server, ServerInitStage,
+    CompatAuditV1, Error as ServerError, Event, Input, Server, ServerInitStage,
     persistence::{DatabaseSettings, SqlLogMode},
     settings::server_description::ServerDescription,
 };
@@ -29,10 +29,15 @@ const TPS: u64 = 30;
 pub struct Singleplayer {
     _server_thread: JoinHandle<()>,
     stop_server_s: Sender<()>,
-    pub receiver: Receiver<Result<(), ServerError>>,
+    pub receiver: Receiver<Result<SingleplayerInitOutcome, ServerError>>,
     pub init_stage_receiver: Receiver<ServerInitStage>,
     // Wether the server is stopped or not
     paused: Arc<AtomicBool>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SingleplayerInitOutcome {
+    pub compat_audit: CompatAuditV1,
 }
 
 impl Singleplayer {
@@ -77,6 +82,7 @@ impl SingleplayerState {
                 error!("Failed to get the current world.");
                 return;
             };
+            let mut runtime_world_meta = world.clone();
             let server_data_dir = world.path.clone();
 
             let mut settings = server::Settings::singleplayer(&server_data_dir);
@@ -152,8 +158,21 @@ impl SingleplayerState {
                         },
                         runtime,
                     ) {
-                        Ok(server) => (Some(server), Ok(())),
-                        Err(err) => (None, Err(err)),
+                        Ok(server) => {
+                            let compat_audit = server.world().sim().compat_audit();
+                            runtime_world_meta.sync_runtime_source_contract(
+                                compat_audit,
+                                server.world().sim().recipe_manifest(),
+                            );
+                            runtime_world_meta.persist_meta();
+                            (Some(server), Ok(SingleplayerInitOutcome { compat_audit }))
+                        },
+                        Err(err) => {
+                            runtime_world_meta
+                                .sync_runtime_failure_source_contract(err.compat_audit());
+                            runtime_world_meta.persist_meta();
+                            (None, Err(err))
+                        },
                     };
 
                     match (result_sender.send(init_result), server) {

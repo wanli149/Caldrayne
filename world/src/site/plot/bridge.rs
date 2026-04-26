@@ -529,7 +529,7 @@ fn render_heightened_viaduct(bridge: &Bridge, painter: &Painter, data: &Heighten
     */
 
     // Small chance to spawn a troll.
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng_from_wpos(0x4252_4944, c.with_z(vault_top - 2));
     if rng.random_bool(0.1) {
         painter.spawn(
             EntityInfo::at(c.with_z(vault_top - 2).as_()).with_asset_expect(

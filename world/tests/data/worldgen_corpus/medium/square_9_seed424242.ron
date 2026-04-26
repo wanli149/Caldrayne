@@ -1,0 +1,13 @@
+(
+    seed: 424242,
+    gen_opts: (
+        x_lg: 9,
+        y_lg: 9,
+        scale: 1.5,
+        map_kind: Square,
+        erosion_quality: 0.25,
+    ),
+    audit: (
+        sample_chunks: 9,
+    ),
+)

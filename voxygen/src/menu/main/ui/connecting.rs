@@ -79,6 +79,7 @@ impl Screen {
         imgs: &Imgs,
         connection_state: &ConnectionState,
         init_stage: &DetailedInitializationStage,
+        notice: Option<&str>,
         time: f64,
         i18n: &Localization,
         button_style: style::button::Style,
@@ -301,10 +302,30 @@ impl Screen {
                 .height(Length::Units(90))
                 .style(style::container::Style::image(imgs.loading_art));
 
-                vec![
-                    Space::new(Length::Fill, Length::Fill).into(),
-                    bottom_bar.into(),
-                ]
+                let mut children = vec![Space::new(Length::Fill, Length::Fill).into()];
+
+                if let Some(notice) = notice {
+                    children.push(
+                        Container::new(
+                            Text::new(notice)
+                                .horizontal_alignment(iced::HorizontalAlignment::Center)
+                                .size(fonts.cyri.scale(20)),
+                        )
+                        .width(Length::Fill)
+                        .padding(12)
+                        .style(
+                            style::container::Style::color_with_double_cornerless_border(
+                                (28, 24, 20, 235).into(),
+                                (11, 11, 11, 255).into(),
+                                (196, 150, 64, 255).into(),
+                            ),
+                        )
+                        .into(),
+                    );
+                }
+
+                children.push(bottom_bar.into());
+                children
             },
             ConnectionState::AuthTrustPrompt { msg, .. } => {
                 let text = Text::new(msg).size(fonts.cyri.scale(25));

@@ -491,7 +491,15 @@ impl Structure for AdletStronghold {
                 _ => Block::new(BlockKind::Air, Rgb::new(0, 0, 0)),
             })
         }));
-        let mut rng = rand::rng();
+        let mut rng = seeded_rng(0x4144_4C54, &[
+            self.entrance.x as u32,
+            self.entrance.y as u32,
+            self.cavern_center.x as u32,
+            self.cavern_center.y as u32,
+            self.cavern_alt.to_bits(),
+            self.surface_radius as u32,
+            self.cavern_radius as u32,
+        ]);
 
         // Tunnel
         let dist: f32 = self.cavern_center.as_().distance(self.entrance.as_());

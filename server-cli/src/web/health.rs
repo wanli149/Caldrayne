@@ -27,12 +27,14 @@ pub(super) struct MetricsState {
 }
 
 mod observability;
+#[cfg(feature = "worldgen")]
+pub(crate) use observability::set_world_compat_observability_status;
+pub(in crate::web) use observability::{
+    RuntimeObservabilityContext, RuntimeObservabilitySurface, set_runtime_observability_status,
+};
 pub use observability::{
     RuntimeObservabilityInventory, RuntimeObservabilityState, RuntimeObservabilityStatus,
     default_runtime_observability_inventory, snapshot_runtime_observability_inventory,
-};
-pub(in crate::web) use observability::{
-    RuntimeObservabilitySurface, set_runtime_observability_status,
 };
 fn repo_bundled_official_entry_snapshot_review_items(
     snapshot: &RepoBundledOfficialEntrySnapshotReport,
@@ -531,6 +533,43 @@ impl HealthState {
         )
     }
 
+    fn world_compat_preflight_component(&self) -> (PreflightComponentReport, Option<String>) {
+        let report = self.world_compat_report();
+
+        match report.status {
+            "world-compat-clear" => (
+                PreflightComponentReport {
+                    signal: "world-compat",
+                    endpoint: "/health/world-compat",
+                    status: report.status,
+                    blocking: false,
+                    requires_operator_review: false,
+                },
+                None,
+            ),
+            "world-compat-not-applicable" => (
+                PreflightComponentReport {
+                    signal: "world-compat",
+                    endpoint: "/health/world-compat",
+                    status: report.status,
+                    blocking: false,
+                    requires_operator_review: false,
+                },
+                None,
+            ),
+            _ => (
+                PreflightComponentReport {
+                    signal: "world-compat",
+                    endpoint: "/health/world-compat",
+                    status: report.status,
+                    blocking: false,
+                    requires_operator_review: true,
+                },
+                Some(report.detail),
+            ),
+        }
+    }
+
     pub(super) fn liveness_report(&self) -> LiveReport {
         LiveReport {
             status: "live",
@@ -651,13 +690,23 @@ impl HealthState {
                                 as metrics export so anomalies do not stay log-only",
                 },
                 HealthEndpointContract {
+                    path: "/health/world-compat",
+                    signal: "world-compat",
+                    success_status: StatusCode::OK.as_u16(),
+                    failure_status: None,
+                    semantics: "machine-readable runtime world file compatibility audit and \
+                                recipe contract status, including strict load fallback review \
+                                signals for dedicated startup",
+                },
+                HealthEndpointContract {
                     path: "/health/preflight",
                     signal: "operational-preflight",
                     success_status: StatusCode::OK.as_u16(),
                     failure_status: Some(StatusCode::SERVICE_UNAVAILABLE.as_u16()),
                     semantics: "aggregated release-facing preflight summary for readiness, backup \
-                                scope, recovery drill posture, runtime listener truth, management \
-                                auth review, and governance findings",
+                                scope, recovery drill posture, runtime listener truth, dedicated \
+                                world compatibility review, management auth review, and \
+                                governance findings",
                 },
                 HealthEndpointContract {
                     path: "/health/governance",
@@ -848,12 +897,145 @@ impl HealthState {
             requires_operator_review,
             entries: entries
                 .into_iter()
-                .map(|entry| RuntimeObservabilityEntryReport {
-                    surface: entry.surface.as_str(),
-                    state: entry.state.as_str(),
-                    detail: entry.detail,
+                .map(|entry| {
+                    let (
+                        configured_mode,
+                        compat_entry,
+                        compat_decision,
+                        compat_failure,
+                        strict_load_contract_gap,
+                        world_recipe_hash,
+                        chunk_recipe_hash,
+                        topology_id,
+                        preset_id,
+                    ) = match entry.context {
+                        RuntimeObservabilityContext::None => {
+                            (None, None, None, None, None, None, None, None, None)
+                        },
+                        #[cfg(feature = "worldgen")]
+                        RuntimeObservabilityContext::WorldCompat(context) => (
+                            Some(context.configured_mode),
+                            Some(context.audit.entry.as_str()),
+                            Some(context.audit.decision.as_str()),
+                            Some(context.audit.failure_kind.as_str()),
+                            Some(context.strict_load_contract_gap),
+                            Some(context.world_recipe_hash),
+                            Some(context.chunk_recipe_hash),
+                            Some(context.topology_id),
+                            Some(context.preset_id),
+                        ),
+                    };
+
+                    RuntimeObservabilityEntryReport {
+                        surface: entry.surface.as_str(),
+                        state: entry.state.as_str(),
+                        detail: entry.detail,
+                        configured_mode,
+                        compat_entry,
+                        compat_decision,
+                        compat_failure,
+                        strict_load_contract_gap,
+                        world_recipe_hash,
+                        chunk_recipe_hash,
+                        topology_id,
+                        preset_id,
+                    }
                 })
                 .collect(),
+        }
+    }
+
+    pub(super) fn world_compat_report(&self) -> WorldCompatReport {
+        #[cfg(not(feature = "worldgen"))]
+        {
+            WorldCompatReport {
+                status: "world-compat-not-applicable",
+                environment: self.environment,
+                requires_operator_review: false,
+                detail: "world generation is disabled for this build, so no world file \
+                         compatibility contract applies"
+                    .to_owned(),
+                configured_mode: None,
+                compat_entry: None,
+                compat_decision: None,
+                compat_failure: None,
+                strict_load_contract_gap: None,
+                world_recipe_hash: None,
+                chunk_recipe_hash: None,
+                topology_id: None,
+                preset_id: None,
+                source_surface: "world-compat",
+            }
+        }
+
+        #[cfg(feature = "worldgen")]
+        {
+            let entries =
+                snapshot_runtime_observability_inventory(&self.runtime_observability_inventory);
+            let world_compat_entry = entries
+                .into_iter()
+                .find(|entry| entry.surface == RuntimeObservabilitySurface::WorldCompat);
+
+            match world_compat_entry {
+                Some(entry) => match entry.context {
+                    RuntimeObservabilityContext::WorldCompat(context) => WorldCompatReport {
+                        status: if context.strict_load_contract_gap {
+                            "world-compat-review-required"
+                        } else {
+                            "world-compat-clear"
+                        },
+                        environment: self.environment,
+                        requires_operator_review: context.strict_load_contract_gap,
+                        detail: entry.detail,
+                        configured_mode: Some(context.configured_mode),
+                        compat_entry: Some(context.audit.entry.as_str()),
+                        compat_decision: Some(context.audit.decision.as_str()),
+                        compat_failure: Some(context.audit.failure_kind.as_str()),
+                        strict_load_contract_gap: Some(context.strict_load_contract_gap),
+                        world_recipe_hash: Some(context.world_recipe_hash),
+                        chunk_recipe_hash: Some(context.chunk_recipe_hash),
+                        topology_id: Some(context.topology_id),
+                        preset_id: Some(context.preset_id),
+                        source_surface: "world-compat",
+                    },
+                    RuntimeObservabilityContext::None => WorldCompatReport {
+                        status: "world-compat-unrecorded",
+                        environment: self.environment,
+                        requires_operator_review: true,
+                        detail: "world compatibility runtime surface is present but did not \
+                                 publish structured compatibility context"
+                            .to_owned(),
+                        configured_mode: None,
+                        compat_entry: None,
+                        compat_decision: None,
+                        compat_failure: None,
+                        strict_load_contract_gap: None,
+                        world_recipe_hash: None,
+                        chunk_recipe_hash: None,
+                        topology_id: None,
+                        preset_id: None,
+                        source_surface: "world-compat",
+                    },
+                },
+                None => WorldCompatReport {
+                    status: "world-compat-unrecorded",
+                    environment: self.environment,
+                    requires_operator_review: true,
+                    detail: "dedicated startup did not publish a world compatibility status \
+                             surface"
+                        .to_owned(),
+                    configured_mode: None,
+                    compat_entry: None,
+                    compat_decision: None,
+                    compat_failure: None,
+                    strict_load_contract_gap: None,
+                    world_recipe_hash: None,
+                    chunk_recipe_hash: None,
+                    topology_id: None,
+                    preset_id: None,
+                    source_surface: "world-compat",
+                },
+            }
         }
     }
 
@@ -869,6 +1051,7 @@ impl HealthState {
         let backup = self.backup_report();
         let recovery_drill = self.recovery_drill_report();
         let public_entry_handoff = compatibility_contract.public_entry_handoff.clone();
+        let (world_compat, world_compat_review_detail) = self.world_compat_preflight_component();
         let (runtime_listeners, runtime_listener_failures) =
             self.runtime_listener_preflight_component();
         let management_auth = self.management_auth_report();
@@ -909,6 +1092,7 @@ impl HealthState {
                 blocking: public_entry_handoff.release_blocked,
                 requires_operator_review: public_entry_handoff.requires_operator_review,
             },
+            world_compat,
             runtime_listeners,
             PreflightComponentReport {
                 signal: "management-auth",
@@ -952,12 +1136,19 @@ impl HealthState {
                                  preflight failures before rollout",
                     })
                 } else if component.requires_operator_review {
-                    let reason = if component.signal == "public-entry-handoff" {
-                        "inspect the Public entry handoff contract and record cutover / rollback \
-                         review fields before rollout"
-                    } else {
-                        "inspect advisory governance findings and record explicit review before \
-                         rollout"
+                    let reason = match component.signal {
+                        "public-entry-handoff" => {
+                            "inspect the Public entry handoff contract and record cutover / \
+                             rollback review fields before rollout"
+                        },
+                        "world-compat" => {
+                            "inspect the dedicated world compatibility surface and record explicit \
+                             review before rollout"
+                        },
+                        _ => {
+                            "inspect advisory governance findings and record explicit review \
+                             before rollout"
+                        },
                     };
                     Some(PreflightFollowUpEndpoint {
                         signal: component.signal,
@@ -1029,6 +1220,17 @@ impl HealthState {
             review_decision_contracts.push(
                 public_entry_handoff_preflight_review_decision_contract(&public_entry_handoff),
             );
+        }
+
+        if let Some(detail) = world_compat_review_detail {
+            operator_review_items.push(PreflightReviewItem {
+                kind: "world-compat-review",
+                blocking: false,
+                detail: format!(
+                    "review dedicated world compatibility status in /health/world-compat before \
+                     rollout: {detail}"
+                ),
+            });
         }
 
         operator_review_items.extend(governance.findings.iter().map(|finding| {

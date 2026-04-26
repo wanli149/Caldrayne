@@ -40,7 +40,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use tracing::{error, warn};
-use world::sim::{DEFAULT_WORLD_SEED, FileOpts};
+use world::sim::{CompatMode, DEFAULT_WORLD_SEED, FileOpts};
 
 use self::server_physics::ServerPhysicsForceList;
 use crate::data_dir;
@@ -442,6 +442,9 @@ pub struct Settings {
     /// When set to None, loads the default map file (if available); otherwise,
     /// uses the value of the file options to decide how to proceed.
     pub map_file: Option<FileOpts>,
+    /// Controls whether strict world load fallback remains advisory (`record`)
+    /// or becomes a fail-fast startup contract (`enforce`).
+    pub world_compat_mode: CompatMode,
     pub max_view_distance: Option<u32>,
     pub max_player_group_size: u32,
     pub client_timeout: Duration,
@@ -481,6 +484,7 @@ impl Default for Settings {
             max_players: 100,
             day_length: DAY_LENGTH_DEFAULT,
             map_file: None,
+            world_compat_mode: CompatMode::Record,
             max_view_distance: Some(65),
             max_player_group_size: 6,
             calendar_mode: CalendarMode::Auto,
@@ -491,6 +495,21 @@ impl Default for Settings {
             moderation: ModerationSettings::default(),
             world: WorldSettings::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Settings;
+    use world::sim::CompatMode;
+
+    #[test]
+    fn legacy_settings_without_world_compat_mode_default_to_record() {
+        let ron = "(world_seed: 1337)";
+
+        let settings: Settings = ron::from_str(ron).expect("legacy settings should deserialize");
+
+        assert_eq!(settings.world_compat_mode, CompatMode::Record);
     }
 }
 

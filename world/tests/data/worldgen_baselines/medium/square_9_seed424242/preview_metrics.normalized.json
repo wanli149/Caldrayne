@@ -1,0 +1,46 @@
+{
+  "seed": 424242,
+  "gen_opts": {
+    "x_lg": 9,
+    "y_lg": 9,
+    "scale": 1.5,
+    "map_kind": "Square",
+    "erosion_quality": 0.25
+  },
+  "recipe": {
+    "world_recipe_hash": "fecd1a8f622568622e72eb61456850a2fd3e04f60413ef03c2943fa2da5567fd",
+    "chunk_recipe_hash": "8940414ba9eb70d2abd06ac5b9dec8b54784ece2cac0ad1478526b883a2b2a45",
+    "topology_id": "bounded_plane_v1",
+    "preset_id": "custom_gen_opts_v1",
+    "world_alg_version": "world-sim-v1-record-only",
+    "chunk_pass_version": "chunk-static-v1-record-only",
+    "seed_elements": false
+  },
+  "dimensions_lg": [
+    9,
+    9
+  ],
+  "chunk_dimensions": [
+    512,
+    512
+  ],
+  "max_height": 590.8167,
+  "site_markers": 0,
+  "possible_starting_sites": 0,
+  "poi_markers": 0,
+  "sim": {
+    "chunk_count": 262144,
+    "alt_min": 87.24789,
+    "alt_max": 734.7692,
+    "alt_mean": 296.01572,
+    "water_alt_min": 140.0,
+    "water_alt_max": 727.07947,
+    "water_alt_mean": 242.28679,
+    "river_chunks": 1959,
+    "near_water_chunks": 29983,
+    "site_chunks": 6933,
+    "poi_chunks": 224735,
+    "mean_temp": -0.2016388,
+    "mean_humidity": 0.61513007
+  }
+}

@@ -144,7 +144,7 @@ impl Structure for Plaza {
             }
         }
 
-        let rng = &mut rand::rng();
+        let rng = &mut seeded_rng_from_aabr(0x504C_415A, self.aabr);
         if rng.random_bool(0.05) {
             let spec = [
                 "common.entity.wild.peaceful.cat",

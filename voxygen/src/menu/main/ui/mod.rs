@@ -136,17 +136,23 @@ pub enum WorldChange {
 impl WorldChange {
     pub fn apply(self, world: &mut crate::singleplayer::SingleplayerWorld) {
         let mut def = Default::default();
-        let gen_opts = world.gen_opts.as_mut().unwrap_or(&mut def);
-        match self {
-            WorldChange::Name(name) => world.name = name,
-            WorldChange::Seed(seed) => world.seed = seed,
-            WorldChange::DayLength(d) => world.day_length = d,
-            WorldChange::SizeX(s) => gen_opts.x_lg = s,
-            WorldChange::SizeY(s) => gen_opts.y_lg = s,
-            WorldChange::Scale(scale) => gen_opts.scale = scale,
-            WorldChange::MapKind(kind) => gen_opts.map_kind = kind,
-            WorldChange::ErosionQuality(q) => gen_opts.erosion_quality = q,
-            WorldChange::DefaultGenOps => world.gen_opts = Some(Default::default()),
+        {
+            let gen_opts = world.gen_opts.as_mut().unwrap_or(&mut def);
+            match self {
+                WorldChange::Name(name) => world.name = name,
+                WorldChange::Seed(seed) => world.seed = seed,
+                WorldChange::DayLength(d) => world.day_length = d,
+                WorldChange::SizeX(s) => gen_opts.x_lg = s,
+                WorldChange::SizeY(s) => gen_opts.y_lg = s,
+                WorldChange::Scale(scale) => gen_opts.scale = scale,
+                WorldChange::MapKind(kind) => gen_opts.map_kind = kind,
+                WorldChange::ErosionQuality(q) => gen_opts.erosion_quality = q,
+                WorldChange::DefaultGenOps => world.gen_opts = Some(Default::default()),
+            }
+        }
+
+        if !world.is_generated {
+            world.refresh_pending_source_contract();
         }
     }
 }
@@ -233,6 +239,7 @@ enum Screen {
         screen: connecting::Screen,
         connection_state: ConnectionState,
         init_stage: DetailedInitializationStage,
+        notice: Option<String>,
     },
     #[cfg(feature = "singleplayer")]
     WorldSelector {
@@ -511,11 +518,13 @@ impl Controls {
                 screen,
                 connection_state,
                 init_stage,
+                notice,
             } => screen.view(
                 &self.fonts,
                 &self.imgs,
                 connection_state,
                 init_stage,
+                notice.as_deref(),
                 self.time,
                 &self.i18n.read(),
                 button_style,
@@ -605,6 +614,7 @@ impl Controls {
                         init_stage: DetailedInitializationStage::PreparingHost(
                             HostKind::DevSingleplayer,
                         ),
+                        notice: None,
                     };
                     events.push(Event::StartSingleplayer);
                 }
@@ -650,6 +660,7 @@ impl Controls {
                         init_stage: DetailedInitializationStage::PreparingHost(
                             self.multiplayer_host_kind,
                         ),
+                        notice: None,
                     };
 
                     events.push(Event::LoginAttempt {
@@ -964,6 +975,14 @@ impl Controls {
         }
     }
 
+    fn connection_notice(&mut self, notice: String) {
+        if let Screen::Connecting { notice: slot, .. } = &mut self.screen {
+            *slot = Some(notice);
+        } else {
+            warn!("connection_notice invoked on unhandled screen!");
+        }
+    }
+
     fn update_init_stage(&mut self, stage: DetailedInitializationStage) {
         if let Screen::Connecting { init_stage, .. } = &mut self.screen {
             *init_stage = stage
@@ -1106,6 +1125,8 @@ impl MainMenuUi {
     }
 
     pub fn show_info(&mut self, msg: String) { self.controls.connection_error(msg); }
+
+    pub fn show_connection_notice(&mut self, msg: String) { self.controls.connection_notice(msg); }
 
     pub fn update_stage(&mut self, stage: DetailedInitializationStage) {
         tracing::trace!(?stage, "Updating stage");

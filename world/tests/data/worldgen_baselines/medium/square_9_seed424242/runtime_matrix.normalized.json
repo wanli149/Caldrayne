@@ -1,0 +1,623 @@
+{
+  "seed": 424242,
+  "gen_opts": {
+    "x_lg": 9,
+    "y_lg": 9,
+    "scale": 1.5,
+    "map_kind": "Square",
+    "erosion_quality": 0.25
+  },
+  "recipe": {
+    "world_recipe_hash": "fecd1a8f622568622e72eb61456850a2fd3e04f60413ef03c2943fa2da5567fd",
+    "chunk_recipe_hash": "8940414ba9eb70d2abd06ac5b9dec8b54784ece2cac0ad1478526b883a2b2a45",
+    "topology_id": "bounded_plane_v1",
+    "preset_id": "custom_gen_opts_v1",
+    "world_alg_version": "world-sim-v1-record-only",
+    "chunk_pass_version": "chunk-static-v1-record-only",
+    "seed_elements": false
+  },
+  "sample_chunks": 9,
+  "runtime_audit_mode": "sampled_runtime_overlay_matrix_v1",
+  "strict_determinism": true,
+  "fixed_overlay_fixture": {
+    "fixture_id": "fixed_overlay_fixture_v1",
+    "contract_path": "server/tests/data/terrain_overlay/fixed_overlay_fixture_v1.ron",
+    "operation_count": 3
+  },
+  "sampled_chunks": [
+    {
+      "chunk_pos": [
+        1,
+        1
+      ],
+      "raw_worldgen": {
+        "overlay_mode": "raw_worldgen",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 79,
+        "max_z": 143,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 62464,
+        "sprite_total": 23084,
+        "block_kind_counts": {
+          "Air": 3072,
+          "Earth": 3425,
+          "Rock": 35280,
+          "Sand": 3747,
+          "Water": 20012
+        },
+        "sprite_kind_counts": {
+          "Empty": 23077,
+          "SeaweedTropical": 7
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "empty_overlay": {
+        "overlay_mode": "empty_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 79,
+        "max_z": 143,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 62464,
+        "sprite_total": 23084,
+        "block_kind_counts": {
+          "Air": 3072,
+          "Earth": 3425,
+          "Rock": 35280,
+          "Sand": 3747,
+          "Water": 20012
+        },
+        "sprite_kind_counts": {
+          "Empty": 23077,
+          "SeaweedTropical": 7
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "fixed_overlay": {
+        "overlay_mode": "fixed_overlay_server_chunk",
+        "overlay_blocks_applied": 3,
+        "overlay_operations_skipped": 0,
+        "min_z": 79,
+        "max_z": 143,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 62464,
+        "sprite_total": 23081,
+        "block_kind_counts": {
+          "Air": 3072,
+          "Earth": 3425,
+          "GlowingRock": 1,
+          "Misc": 1,
+          "Rock": 35280,
+          "Sand": 3747,
+          "Water": 20009,
+          "WeakRock": 1
+        },
+        "sprite_kind_counts": {
+          "Empty": 23074,
+          "SeaweedTropical": 7
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        1,
+        255
+      ],
+      "raw_worldgen": {
+        "overlay_mode": "raw_worldgen",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 88,
+        "max_z": 152,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 53248,
+        "sprite_total": 43214,
+        "block_kind_counts": {
+          "Air": 12288,
+          "Earth": 3429,
+          "Rock": 16822,
+          "Sand": 2071,
+          "Water": 30926
+        },
+        "sprite_kind_counts": {
+          "BullKelp": 9,
+          "Empty": 43199,
+          "SeaweedTemperate": 2,
+          "SoftCoral": 4
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "empty_overlay": {
+        "overlay_mode": "empty_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 88,
+        "max_z": 152,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 53248,
+        "sprite_total": 43214,
+        "block_kind_counts": {
+          "Air": 12288,
+          "Earth": 3429,
+          "Rock": 16822,
+          "Sand": 2071,
+          "Water": 30926
+        },
+        "sprite_kind_counts": {
+          "BullKelp": 9,
+          "Empty": 43199,
+          "SeaweedTemperate": 2,
+          "SoftCoral": 4
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "fixed_overlay": {
+        "overlay_mode": "fixed_overlay_server_chunk",
+        "overlay_blocks_applied": 3,
+        "overlay_operations_skipped": 0,
+        "min_z": 88,
+        "max_z": 152,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 53248,
+        "sprite_total": 43211,
+        "block_kind_counts": {
+          "Air": 12288,
+          "Earth": 3429,
+          "GlowingRock": 1,
+          "Misc": 1,
+          "Rock": 16822,
+          "Sand": 2071,
+          "Water": 30923,
+          "WeakRock": 1
+        },
+        "sprite_kind_counts": {
+          "BullKelp": 9,
+          "Empty": 43196,
+          "SeaweedTemperate": 2,
+          "SoftCoral": 4
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        1,
+        510
+      ],
+      "raw_worldgen": {
+        "overlay_mode": "raw_worldgen",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "empty_overlay": {
+        "overlay_mode": "empty_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "fixed_overlay": {
+        "overlay_mode": "fixed_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 3,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        255,
+        1
+      ],
+      "raw_worldgen": {
+        "overlay_mode": "raw_worldgen",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 76,
+        "max_z": 140,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 65536,
+        "sprite_total": 38653,
+        "block_kind_counts": {
+          "Earth": 3417,
+          "Rock": 21496,
+          "Sand": 1970,
+          "Water": 38653
+        },
+        "sprite_kind_counts": {
+          "Empty": 38610,
+          "GiantKelp": 25,
+          "Seagrass": 9,
+          "SeaweedTemperate": 4,
+          "SeaweedTropical": 5
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "empty_overlay": {
+        "overlay_mode": "empty_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 76,
+        "max_z": 140,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 65536,
+        "sprite_total": 38653,
+        "block_kind_counts": {
+          "Earth": 3417,
+          "Rock": 21496,
+          "Sand": 1970,
+          "Water": 38653
+        },
+        "sprite_kind_counts": {
+          "Empty": 38610,
+          "GiantKelp": 25,
+          "Seagrass": 9,
+          "SeaweedTemperate": 4,
+          "SeaweedTropical": 5
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "fixed_overlay": {
+        "overlay_mode": "fixed_overlay_server_chunk",
+        "overlay_blocks_applied": 3,
+        "overlay_operations_skipped": 0,
+        "min_z": 76,
+        "max_z": 140,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 65536,
+        "sprite_total": 38650,
+        "block_kind_counts": {
+          "Earth": 3417,
+          "GlowingRock": 1,
+          "Misc": 1,
+          "Rock": 21496,
+          "Sand": 1970,
+          "Water": 38650,
+          "WeakRock": 1
+        },
+        "sprite_kind_counts": {
+          "Empty": 38607,
+          "GiantKelp": 25,
+          "Seagrass": 9,
+          "SeaweedTemperate": 4,
+          "SeaweedTropical": 5
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        255,
+        255
+      ],
+      "raw_worldgen": {
+        "overlay_mode": "raw_worldgen",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 423,
+        "max_z": 487,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 19532,
+        "sprite_total": 46004,
+        "block_kind_counts": {
+          "Air": 46004,
+          "Earth": 4590,
+          "Leaves": 174,
+          "Rock": 13397,
+          "Snow": 1336,
+          "Wood": 35
+        },
+        "sprite_kind_counts": {
+          "Empty": 46002,
+          "ShortGrass": 2
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "empty_overlay": {
+        "overlay_mode": "empty_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 423,
+        "max_z": 487,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 19532,
+        "sprite_total": 46004,
+        "block_kind_counts": {
+          "Air": 46004,
+          "Earth": 4590,
+          "Leaves": 174,
+          "Rock": 13397,
+          "Snow": 1336,
+          "Wood": 35
+        },
+        "sprite_kind_counts": {
+          "Empty": 46002,
+          "ShortGrass": 2
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "fixed_overlay": {
+        "overlay_mode": "fixed_overlay_server_chunk",
+        "overlay_blocks_applied": 3,
+        "overlay_operations_skipped": 0,
+        "min_z": 423,
+        "max_z": 487,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 19532,
+        "sprite_total": 46004,
+        "block_kind_counts": {
+          "Air": 46004,
+          "Earth": 4590,
+          "GlowingRock": 1,
+          "Leaves": 174,
+          "Misc": 1,
+          "Rock": 13397,
+          "Snow": 1333,
+          "WeakRock": 1,
+          "Wood": 35
+        },
+        "sprite_kind_counts": {
+          "Empty": 46002,
+          "ShortGrass": 2
+        },
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        255,
+        510
+      ],
+      "raw_worldgen": {
+        "overlay_mode": "raw_worldgen",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "empty_overlay": {
+        "overlay_mode": "empty_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "fixed_overlay": {
+        "overlay_mode": "fixed_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 3,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        510,
+        1
+      ],
+      "raw_worldgen": {
+        "overlay_mode": "raw_worldgen",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "empty_overlay": {
+        "overlay_mode": "empty_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "fixed_overlay": {
+        "overlay_mode": "fixed_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 3,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        510,
+        255
+      ],
+      "raw_worldgen": {
+        "overlay_mode": "raw_worldgen",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "empty_overlay": {
+        "overlay_mode": "empty_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "fixed_overlay": {
+        "overlay_mode": "fixed_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 3,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        510,
+        510
+      ],
+      "raw_worldgen": {
+        "overlay_mode": "raw_worldgen",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "empty_overlay": {
+        "overlay_mode": "empty_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "fixed_overlay": {
+        "overlay_mode": "fixed_overlay_server_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 3,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {},
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    }
+  ]
+}
