@@ -47,6 +47,7 @@ use bincode::{
     config::legacy,
     serde::{decode_from_std_read, encode_into_std_write},
 };
+use bitvec::prelude::BitBox;
 use common::{
     assets::{AssetExt, BoxedError, FileAsset, load_bincode_legacy},
     calendar::Calendar,
@@ -115,6 +116,383 @@ struct GenCdf {
     pure_flux: InverseCdf<Compute>,
     alt_no_water: InverseCdf,
     rivers: Box<[RiverData]>,
+}
+
+struct PostErosionHydrologyCore {
+    water_alt: Box<[f32]>,
+    dh: Box<[isize]>,
+    flux: Box<[Compute]>,
+    rivers: Box<[RiverData]>,
+    max_height: f32,
+}
+
+struct PostErosionDrainageState {
+    is_ocean: BitBox,
+    dh: Box<[isize]>,
+    indirection: Box<[i32]>,
+    water_alt_pos: Box<[u32]>,
+    flux: Box<[Compute]>,
+    max_height: f32,
+}
+
+struct PreErosionFields {
+    chaos: InverseCdf,
+    alt_old: InverseCdf,
+    is_ocean: BitBox,
+    uplift_uniform: InverseCdf<f64>,
+}
+
+struct GenerationTunables {
+    continent_scale: f64,
+    rock_lacunarity: f64,
+    uplift_scale: f64,
+}
+
+impl GenerationTunables {
+    fn new(gen_opts: &GenOpts) -> Self {
+        Self {
+            continent_scale: gen_opts.scale
+                * 5_000.0f64
+                    .div(32.0)
+                    .mul(TerrainChunkSize::RECT_SIZE.x as f64),
+            rock_lacunarity: 2.0,
+            uplift_scale: 128.0,
+        }
+    }
+}
+
+struct PreErosionParams {
+    grid_scale: f64,
+    continent_scale: f64,
+    uplift_turb_scale: f64,
+    turb_wposf_div: f64,
+    min_epsilon: f64,
+    max_epsilon: f64,
+    max_erosion_per_delta_t: f64,
+    n_steps: usize,
+    n_small_steps: usize,
+    n_post_load_steps: usize,
+    rock_strength_div_factor: f64,
+}
+
+impl PreErosionParams {
+    fn new(
+        map_size_lg: MapSizeLg,
+        gen_opts: &GenOpts,
+        continent_scale: f64,
+        uplift_scale: f64,
+    ) -> Self {
+        // Suppose the old world has grid spacing Δx' = Δy', new Δx = Δy.
+        // We define grid_scale such that Δx = height_scale * Δx' ⇒
+        //  grid_scale = Δx / Δx'.
+        let grid_scale = 1.0f64 / (4.0 / gen_opts.scale)/*1.0*/;
+
+        let n_approx = 1.0;
+        let max_erosion_per_delta_t = 64.0 * grid_scale.powf(n_approx);
+        let map_size_chunks_len_f64 = map_size_lg.chunks().map(f64::from).product();
+        let min_epsilon = 1.0 / map_size_chunks_len_f64.max(f64::EPSILON * 0.5);
+        let max_epsilon = (1.0 - 1.0 / map_size_chunks_len_f64).min(1.0 - f64::EPSILON * 0.5);
+
+        Self {
+            grid_scale,
+            continent_scale,
+            uplift_turb_scale: uplift_scale / 4.0,
+            turb_wposf_div: 8.0,
+            min_epsilon,
+            max_epsilon,
+            max_erosion_per_delta_t,
+            n_steps: (100.0 * gen_opts.erosion_quality) as usize,
+            n_small_steps: 0,
+            n_post_load_steps: 0,
+            rock_strength_div_factor: (2.0 * TerrainChunkSize::RECT_SIZE.x as f64) / 8.0,
+        }
+    }
+
+    fn k_fs_scale(&self, theta: f32, n: f32) -> f64 {
+        self.grid_scale.powf(-2.0 * (theta * n) as f64)
+    }
+
+    fn k_da_scale(&self, q: f64) -> f64 { self.grid_scale.powf(-2.0 * q) }
+
+    fn height_scale(&self, n: f32) -> Alt { self.grid_scale.powf(n as f64) as Alt }
+
+    fn time_scale(&self, n: f32) -> f64 { self.grid_scale.powf(n as f64) }
+
+    fn alpha_scale(&self, n: f32) -> f32 { self.height_scale(n).recip() as f32 }
+
+    fn k_d_scale(&self, n: f32) -> f64 { self.grid_scale.powi(2) / self.time_scale(n) }
+
+    fn epsilon_0_scale(&self, n: f32) -> f32 {
+        (self.height_scale(n) / self.time_scale(n) as Alt) as f32
+    }
+
+    fn erosion_factor(&self, x: f64) -> f64 {
+        (x - self.min_epsilon) / (self.max_epsilon - self.min_epsilon)
+    }
+
+    fn remap_uplift_uniform(&self, x: f64) -> f64 {
+        self.erosion_factor(
+            x.mul(self.max_epsilon - self.min_epsilon)
+                .add(self.min_epsilon),
+        )
+    }
+}
+
+struct UpliftRockSample {
+    uheight: f64,
+    rock_strength: f64,
+}
+
+struct PreErosionSetup {
+    params: PreErosionParams,
+    fields: PreErosionFields,
+}
+
+impl PreErosionSetup {
+    fn model<'a>(&'a self, map_size_lg: MapSizeLg, gen_ctx: &'a GenCtx) -> PreErosionModel<'a> {
+        PreErosionModel {
+            map_size_lg,
+            pre_erosion_params: &self.params,
+            gen_ctx,
+            alt_old: &self.fields.alt_old,
+            is_ocean: &self.fields.is_ocean,
+            uplift_uniform: &self.fields.uplift_uniform,
+        }
+    }
+
+    fn into_chaos(self) -> InverseCdf { self.fields.chaos }
+}
+
+struct PreErosionModel<'a> {
+    map_size_lg: MapSizeLg,
+    pre_erosion_params: &'a PreErosionParams,
+    gen_ctx: &'a GenCtx,
+    alt_old: &'a InverseCdf,
+    is_ocean: &'a BitBox,
+    uplift_uniform: &'a InverseCdf<f64>,
+}
+
+impl<'a> PreErosionModel<'a> {
+    fn terrain_n(_posi: usize) -> f32 { 1.0 }
+
+    fn theta(&self, _posi: usize) -> f32 { 0.4 }
+
+    fn is_ocean(&self, posi: usize) -> bool { self.is_ocean[posi] }
+
+    fn old_height(&self, posi: usize) -> f32 {
+        self.alt_old[posi].1
+            * CONFIG.mountain_scale
+            * self.pre_erosion_params.height_scale(Self::terrain_n(posi)) as f32
+    }
+
+    fn kf(&self, posi: usize) -> f64 {
+        let kf_scale_i = self
+            .pre_erosion_params
+            .k_fs_scale(self.theta(posi), Self::terrain_n(posi));
+        if self.is_ocean(posi) {
+            return 1.0e-4 * kf_scale_i;
+        }
+
+        let kf_i = 1.0e-6;
+        kf_i * kf_scale_i
+    }
+
+    fn kd(&self, posi: usize) -> f64 {
+        let kd_scale_i = self.pre_erosion_params.k_d_scale(Self::terrain_n(posi));
+        if self.is_ocean(posi) {
+            let kd_i = 1.0e-2 / 4.0;
+            return kd_i * kd_scale_i;
+        }
+
+        let kd_i = 1.0e-2 / 4.0;
+        kd_i * kd_scale_i
+    }
+
+    fn g(&self, posi: usize) -> f32 {
+        if map_edge_factor(self.map_size_lg, posi) == 0.0 {
+            return 0.0;
+        }
+
+        1.0
+    }
+
+    fn weathering_logit(x: f64) -> f64 { x.ln() - (-x).ln_1p() }
+
+    fn weathering_log_odds(x: f64, center: f64) -> f64 {
+        Self::weathering_logit(x) - Self::weathering_logit(center)
+    }
+
+    fn weathering_logistic_cdf(x: f64) -> f64 {
+        let logistic_2_base = 3.0f64.sqrt() * std::f64::consts::FRAC_2_PI;
+        (x / logistic_2_base).tanh() * 0.5 + 0.5
+    }
+
+    fn weathering_strength(&self, posi: usize) -> f64 {
+        let UpliftRockSample {
+            uheight,
+            rock_strength,
+        } = self.sample_uplift_rock_sample(posi);
+        let center = 0.4;
+        let dmin = center - 0.05;
+        let dmax = center + 0.05;
+        Self::weathering_logistic_cdf(
+            1.0 * Self::weathering_logit(rock_strength.clamp(1e-7, 1.0f64 - 1e-7))
+                + 1.0 * Self::weathering_log_odds(uheight.clamp(dmin, dmax), center),
+        )
+    }
+
+    fn epsilon_0(&self, posi: usize) -> f32 {
+        let epsilon_0_scale_i = self
+            .pre_erosion_params
+            .epsilon_0_scale(Self::terrain_n(posi));
+        if self.is_ocean(posi) {
+            let epsilon_0_i = 2.078e-3 / 4.0;
+            return epsilon_0_i * epsilon_0_scale_i;
+        }
+
+        let ustrength = self.weathering_strength(posi);
+        let epsilon_0_i = ((1.0 - ustrength) * (2.078e-3 - 5.3e-5) + 5.3e-5) as f32 / 4.0;
+        epsilon_0_i * epsilon_0_scale_i
+    }
+
+    fn alpha(&self, posi: usize) -> f32 {
+        let alpha_scale_i = self.pre_erosion_params.alpha_scale(Self::terrain_n(posi));
+        if self.is_ocean(posi) {
+            return 3.7e-2 * alpha_scale_i;
+        }
+
+        let ustrength = self.weathering_strength(posi);
+        let alpha_i = (ustrength * (4.2e-2 - 1.6e-2) + 1.6e-2) as f32;
+        alpha_i * alpha_scale_i
+    }
+
+    fn uplift(&self, posi: usize) -> f64 {
+        if self.is_ocean(posi) {
+            return 0.0;
+        }
+        let height = self
+            .pre_erosion_params
+            .remap_uplift_uniform(self.uplift_uniform[posi].1);
+        assert!(height >= 0.0);
+        assert!(height <= 1.0);
+        height * self.pre_erosion_params.max_erosion_per_delta_t
+    }
+
+    fn alt(&self, posi: usize) -> f32 {
+        if self.is_ocean(posi) {
+            self.old_height(posi)
+        } else {
+            (self.old_height(posi) as f64 / CONFIG.mountain_scale as f64) as f32 - 0.5
+        }
+    }
+
+    fn sample_uplift_rock_sample(&self, posi: usize) -> UpliftRockSample {
+        let wposf = (uniform_idx_as_vec2(self.map_size_lg, posi)
+            * TerrainChunkSize::RECT_SIZE.map(|e| e as i32))
+        .map(|e| e as f64);
+        let turb_wposf = wposf
+            .mul(5_000.0 / self.pre_erosion_params.continent_scale)
+            .div(TerrainChunkSize::RECT_SIZE.map(|e| e as f64))
+            .div(self.pre_erosion_params.turb_wposf_div);
+        let turb = Vec2::new(
+            self.gen_ctx.turb_x_nz.get(turb_wposf.into_array()),
+            self.gen_ctx.turb_y_nz.get(turb_wposf.into_array()),
+        ) * self.pre_erosion_params.uplift_turb_scale
+            * TerrainChunkSize::RECT_SIZE.map(|e| e as f64);
+        let turb_wposf = wposf + turb;
+        let uheight = self
+            .gen_ctx
+            .uplift_nz
+            .get(turb_wposf.into_array())
+            .clamp(-1.0, 1.0)
+            .mul(0.5)
+            .add(0.5);
+        let wposf3 = Vec3::new(
+            wposf.x,
+            wposf.y,
+            uheight
+                * CONFIG.mountain_scale as f64
+                * self.pre_erosion_params.rock_strength_div_factor,
+        );
+        let rock_strength = self
+            .gen_ctx
+            .rock_strength_nz
+            .get(wposf3.into_array())
+            .clamp(-1.0, 1.0)
+            .mul(0.5)
+            .add(0.5);
+
+        UpliftRockSample {
+            uheight,
+            rock_strength,
+        }
+    }
+}
+
+struct PostWaterCdfFields {
+    pure_flux: InverseCdf<Compute>,
+    alt_no_water: InverseCdf,
+    temp_base: InverseCdf,
+    humid_base: InverseCdf,
+}
+
+struct GeneratedWorldParts {
+    seed: u32,
+    map_size_lg: MapSizeLg,
+    max_height: f32,
+    chunks: Vec<SimChunk>,
+    gen_ctx: GenCtx,
+    rng: ChaChaRng,
+    calendar: Option<Calendar>,
+    compat_mode: CompatMode,
+    compat_audit: CompatAuditV1,
+    recipe_manifest: RecipeManifestV1,
+}
+
+struct PostErosionChunkInputs {
+    max_height: f32,
+    gen_cdf: GenCdf,
+}
+
+struct ErosionProgressReporter<'a> {
+    last: Option<(std::time::Instant, f64)>,
+    all_samples: std::time::Duration,
+    sample_count: u32,
+    stage_report: &'a dyn Fn(WorldSimStage),
+}
+
+impl<'a> ErosionProgressReporter<'a> {
+    fn new(stage_report: &'a dyn Fn(WorldSimStage)) -> Self {
+        Self {
+            last: None,
+            all_samples: std::time::Duration::default(),
+            sample_count: 0,
+            stage_report,
+        }
+    }
+
+    fn report(&mut self, progress: f64) {
+        let now = std::time::Instant::now();
+        let estimate = if let Some((last_instant, last_progress)) = self.last {
+            if last_progress > progress {
+                None
+            } else {
+                if last_progress < progress {
+                    let sample = now
+                        .duration_since(last_instant)
+                        .div_f64(progress - last_progress);
+                    self.all_samples += sample;
+                    self.sample_count += 1;
+                }
+
+                Some((self.all_samples / self.sample_count).mul_f64(100.0 - progress))
+            }
+        } else {
+            None
+        };
+        self.last = Some((now, progress));
+        (self.stage_report)(WorldSimStage::Erosion { progress, estimate });
+    }
 }
 
 pub(crate) struct GenCtx {
@@ -927,137 +1305,167 @@ impl WorldSim {
             "recorded world recipe manifest"
         );
 
-        let mut rng = ChaChaRng::from_seed(seed_expan::rng_state(seed));
-        let continent_scale = gen_opts.scale
-            * 5_000.0f64
-                .div(32.0)
-                .mul(TerrainChunkSize::RECT_SIZE.x as f64);
-        let rock_lacunarity = 2.0;
-        let uplift_scale = 128.0;
-        let uplift_turb_scale = uplift_scale / 4.0;
+        let generation_tunables = GenerationTunables::new(&gen_opts);
 
         info!("Starting world generation");
 
-        // NOTE: Changing order will significantly change WorldGen, so try not to!
-        let gen_ctx = GenCtx {
-            turb_x_nz: SuperSimplex::new(rng.random()),
-            turb_y_nz: SuperSimplex::new(rng.random()),
-            chaos_nz: RidgedMulti::new(rng.random()).set_octaves(7).set_frequency(
-                RidgedMulti::<Perlin>::DEFAULT_FREQUENCY * (5_000.0 / continent_scale),
-            ),
-            hill_nz: SuperSimplex::new(rng.random()),
-            alt_nz: util::HybridMulti::new(rng.random())
-                .set_octaves(8)
-                .set_frequency(10_000.0 / continent_scale)
-                // persistence = lacunarity^(-(1.0 - fractal increment))
-                .set_lacunarity(util::HybridMulti::<Perlin>::DEFAULT_LACUNARITY)
-                .set_persistence(util::HybridMulti::<Perlin>::DEFAULT_LACUNARITY.powi(-1))
-                .set_offset(0.0),
-            temp_nz: Fbm::new(rng.random())
-                .set_octaves(6)
-                .set_persistence(0.5)
-                .set_frequency(1.0 / (((1 << 6) * 64) as f64))
-                .set_lacunarity(2.0),
+        let (rng, gen_ctx) = Self::init_gen_ctx(
+            seed,
+            generation_tunables.continent_scale,
+            generation_tunables.rock_lacunarity,
+            generation_tunables.uplift_scale,
+        );
+        let pre_erosion_setup = Self::prepare_pre_erosion_setup(
+            map_size_lg,
+            &gen_opts,
+            &gen_ctx,
+            &generation_tunables,
+            threadpool,
+        );
 
-            small_nz: BasicMulti::new(rng.random()).set_octaves(2),
-            rock_nz: HybridMulti::new(rng.random()).set_persistence(0.3),
-            tree_nz: BasicMulti::new(rng.random())
-                .set_octaves(12)
-                .set_persistence(0.75),
-            _cave_0_nz: SuperSimplex::new(rng.random()),
-            _cave_1_nz: SuperSimplex::new(rng.random()),
+        // Perform some erosion.
 
-            structure_gen: StructureGen2d::new(rng.random(), 24, 10),
-            _big_structure_gen: StructureGen2d::new(rng.random(), 768, 512),
-            _region_gen: StructureGen2d::new(rng.random(), 400, 96),
-            humid_nz: Billow::new(rng.random())
-                .set_octaves(9)
-                .set_persistence(0.4)
-                .set_frequency(0.2),
+        let mut erosion_reporter = ErosionProgressReporter::new(stage_report);
+        let report_erosion: &mut dyn FnMut(f64) =
+            &mut |progress: f64| erosion_reporter.report(progress);
+        let pre_erosion_model = pre_erosion_setup.model(map_size_lg, &gen_ctx);
 
-            _fast_turb_x_nz: FastNoise::new(rng.random()),
-            _fast_turb_y_nz: FastNoise::new(rng.random()),
+        let (alt, basement) = Self::materialize_heightfields(
+            parsed_world_file,
+            &gen_opts,
+            world_file,
+            fresh,
+            &pre_erosion_model,
+            threadpool,
+            report_erosion,
+        );
+        let chaos = pre_erosion_setup.into_chaos();
 
-            _town_gen: StructureGen2d::new(rng.random(), 2048, 1024),
-            river_seed: RandomField::new(rng.random()),
-            rock_strength_nz: Fbm::new(rng.random())
-                .set_octaves(10)
-                .set_lacunarity(rock_lacunarity)
-                // persistence = lacunarity^(-(1.0 - fractal increment))
-                // NOTE: In paper, fractal increment is roughly 0.25.
-                .set_persistence(rock_lacunarity.powf(-0.75))
-                .set_frequency(
-                    1.0 * (5_000.0 / continent_scale)
-                        / (2.0 * TerrainChunkSize::RECT_SIZE.x as f64 * 2.0.powi(10 - 1)),
-                ),
-            uplift_nz: util::Worley::new(rng.random())
-                .set_frequency(1.0 / (TerrainChunkSize::RECT_SIZE.x as f64 * uplift_scale))
-                .set_distance_function(distance_functions::euclidean),
+        let post_erosion_chunk_inputs = Self::prepare_post_erosion_chunk_inputs(
+            map_size_lg,
+            gen_opts.scale,
+            &gen_ctx,
+            chaos,
+            alt,
+            basement,
+            threadpool,
+        );
+        Ok(Self::finalize_world_from_chunk_inputs(
+            seed,
+            map_size_lg,
+            gen_ctx,
+            post_erosion_chunk_inputs,
+            rng,
+            calendar,
+            compat_mode,
+            compat_audit,
+            recipe_manifest,
+            seed_elements,
+        ))
+    }
+
+    fn prepare_pre_erosion_setup(
+        map_size_lg: MapSizeLg,
+        gen_opts: &GenOpts,
+        gen_ctx: &GenCtx,
+        generation_tunables: &GenerationTunables,
+        threadpool: &rayon::ThreadPool,
+    ) -> PreErosionSetup {
+        let params = PreErosionParams::new(
+            map_size_lg,
+            gen_opts,
+            generation_tunables.continent_scale,
+            generation_tunables.uplift_scale,
+        );
+        let fields =
+            Self::build_pre_erosion_fields(map_size_lg, gen_opts, gen_ctx, &params, threadpool);
+
+        PreErosionSetup { params, fields }
+    }
+
+    fn prepare_post_erosion_chunk_inputs(
+        map_size_lg: MapSizeLg,
+        continent_scale_hack: f64,
+        gen_ctx: &GenCtx,
+        chaos: InverseCdf,
+        alt: Box<[Alt]>,
+        basement: Box<[Alt]>,
+        threadpool: &rayon::ThreadPool,
+    ) -> PostErosionChunkInputs {
+        let post_erosion_hydrology = Self::build_post_erosion_hydrology_core(
+            map_size_lg,
+            continent_scale_hack,
+            &alt,
+            threadpool,
+        );
+        let post_water_cdf_fields = Self::build_post_water_cdf_fields(
+            map_size_lg,
+            gen_ctx,
+            &alt,
+            &post_erosion_hydrology.flux,
+            &post_erosion_hydrology.rivers,
+            threadpool,
+        );
+        let PostErosionHydrologyCore {
+            water_alt,
+            dh,
+            flux,
+            rivers,
+            max_height,
+        } = post_erosion_hydrology;
+        let PostWaterCdfFields {
+            pure_flux,
+            alt_no_water,
+            temp_base,
+            humid_base,
+        } = post_water_cdf_fields;
+        let gen_cdf = GenCdf {
+            humid_base,
+            temp_base,
+            chaos,
+            alt,
+            basement,
+            water_alt,
+            dh,
+            flux,
+            pure_flux,
+            alt_no_water,
+            rivers,
         };
 
-        let river_seed = &gen_ctx.river_seed;
-        let rock_strength_nz = &gen_ctx.rock_strength_nz;
+        PostErosionChunkInputs {
+            max_height,
+            gen_cdf,
+        }
+    }
 
-        // Suppose the old world has grid spacing Δx' = Δy', new Δx = Δy.
-        // We define grid_scale such that Δx = height_scale * Δx' ⇒
-        //  grid_scale = Δx / Δx'.
-        let grid_scale = 1.0f64 / (4.0 / gen_opts.scale)/*1.0*/;
+    fn build_pre_erosion_fields(
+        map_size_lg: MapSizeLg,
+        gen_opts: &GenOpts,
+        gen_ctx: &GenCtx,
+        pre_erosion_params: &PreErosionParams,
+        threadpool: &rayon::ThreadPool,
+    ) -> PreErosionFields {
+        let (alt_base, chaos) =
+            Self::build_base_alt_and_chaos_fields(map_size_lg, gen_opts, gen_ctx, threadpool);
+        let alt_old = Self::build_alt_old_field(map_size_lg, gen_ctx, &alt_base, &chaos);
+        let (is_ocean, uplift_uniform) =
+            Self::build_ocean_and_uplift_fields(map_size_lg, pre_erosion_params, &alt_old);
 
-        // Now, suppose we want to generate a world with "similar" topography, defined
-        // in this case as having roughly equal slopes at steady state, with the
-        // simulation taking roughly as many steps to get to the point the
-        // previous world was at when it finished being simulated.
-        //
-        // Some computations with our coupled SPL/debris flow give us (for slope S
-        // constant) the following suggested scaling parameters to make this
-        // work:   k_fs_scale ≡ (K𝑓 / K𝑓') = grid_scale^(-2m) =
-        // grid_scale^(-2θn)
-        let k_fs_scale = |theta, n| grid_scale.powf(-2.0 * (theta * n) as f64);
+        PreErosionFields {
+            chaos,
+            alt_old,
+            is_ocean,
+            uplift_uniform,
+        }
+    }
 
-        //   k_da_scale ≡ (K_da / K_da') = grid_scale^(-2q)
-        let k_da_scale = |q| grid_scale.powf(-2.0 * q);
-        //
-        // Some other estimated parameters are harder to come by and *much* more
-        // dubious, not being accurate for the coupled equation. But for the SPL
-        // only one we roughly find, for h the height at steady state and time τ
-        // = time to steady state, with Hack's Law estimated b = 2.0 and various other
-        // simplifying assumptions, the estimate:
-        //   height_scale ≡ (h / h') = grid_scale^(n)
-        let height_scale = |n: f32| grid_scale.powf(n as f64) as Alt;
-        //   time_scale ≡ (τ / τ') = grid_scale^(n)
-        let time_scale = |n: f32| grid_scale.powf(n as f64);
-        //
-        // Based on this estimate, we have:
-        //   delta_t_scale ≡ (Δt / Δt') = time_scale
-        let delta_t_scale = time_scale;
-        //   alpha_scale ≡ (α / α') = height_scale^(-1)
-        let alpha_scale = |n: f32| height_scale(n).recip() as f32;
-        //
-        // Slightly more dubiously (need to work out the math better) we find:
-        //   k_d_scale ≡ (K_d / K_d') = grid_scale^2 / (/*height_scale * */ time_scale)
-        let k_d_scale = |n: f32| grid_scale.powi(2) / (/* height_scale(n) * */time_scale(n));
-        //   epsilon_0_scale ≡ (ε₀ / ε₀') = height_scale(n) / time_scale(n)
-        let epsilon_0_scale = |n| (height_scale(n) / time_scale(n) as Alt) as f32;
-
-        // Approximate n for purposes of computation of parameters above over the whole
-        // grid (when a chunk isn't available).
-        let n_approx = 1.0;
-        let max_erosion_per_delta_t = 64.0 * delta_t_scale(n_approx);
-        let n_steps = (100.0 * gen_opts.erosion_quality) as usize;
-        let n_small_steps = 0;
-        let n_post_load_steps = 0;
-
-        // Logistic regression.  Make sure x ∈ (0, 1).
-        let logit = |x: f64| x.ln() - (-x).ln_1p();
-        // 0.5 + 0.5 * tanh(ln(1 / (1 - 0.1) - 1) / (2 * (sqrt(3)/pi)))
-        let logistic_2_base = 3.0f64.sqrt() * std::f64::consts::FRAC_2_PI;
-        // Assumes μ = 0, σ = 1
-        let logistic_cdf = |x: f64| (x / logistic_2_base).tanh() * 0.5 + 0.5;
-
-        let map_size_chunks_len_f64 = map_size_lg.chunks().map(f64::from).product();
-        let min_epsilon = 1.0 / map_size_chunks_len_f64.max(f64::EPSILON * 0.5);
-        let max_epsilon = (1.0 - 1.0 / map_size_chunks_len_f64).min(1.0 - f64::EPSILON * 0.5);
-
+    fn build_base_alt_and_chaos_fields(
+        map_size_lg: MapSizeLg,
+        gen_opts: &GenOpts,
+        gen_ctx: &GenCtx,
+        threadpool: &rayon::ThreadPool,
+    ) -> (InverseCdf<f64>, InverseCdf) {
         // No NaNs in these uniform vectors, since the original noise value always
         // returns Some.
         let ((alt_base, _), (chaos, _)) = threadpool.join(
@@ -1162,7 +1570,15 @@ impl WorldSim {
                 })
             },
         );
+        (alt_base, chaos)
+    }
 
+    fn build_alt_old_field(
+        map_size_lg: MapSizeLg,
+        gen_ctx: &GenCtx,
+        alt_base: &InverseCdf<f64>,
+        chaos: &InverseCdf,
+    ) -> InverseCdf {
         // We ignore sea level because we actually want to be relative to sea level here
         // and want things in CONFIG.mountain_scale units, but otherwise this is
         // a correct altitude calculation.  Note that this is using the
@@ -1242,7 +1658,14 @@ impl WorldSim {
                     as f32,
             )
         });
+        alt_old
+    }
 
+    fn build_ocean_and_uplift_fields(
+        map_size_lg: MapSizeLg,
+        pre_erosion_params: &PreErosionParams,
+        alt_old: &InverseCdf,
+    ) -> (BitBox, InverseCdf<f64>) {
         // Calculate oceans.
         let is_ocean = get_oceans(map_size_lg, |posi: usize| alt_old[posi].1);
         // NOTE: Uncomment if you want oceans to exclusively be on the border of the
@@ -1252,16 +1675,10 @@ impl WorldSim {
         .map(|i| map_edge_factor(map_size_lg, i) == 0.0)
         .collect::<Vec<_>>(); */
         let is_ocean_fn = |posi: usize| is_ocean[posi];
-
-        let turb_wposf_div = 8.0;
-        let n_func = |posi| {
-            if is_ocean_fn(posi) {
-                return 1.0;
-            }
-            1.0
-        };
         let old_height = |posi: usize| {
-            alt_old[posi].1 * CONFIG.mountain_scale * height_scale(n_func(posi)) as f32
+            alt_old[posi].1
+                * CONFIG.mountain_scale
+                * pre_erosion_params.height_scale(PreErosionModel::terrain_n(posi)) as f32
         };
 
         // NOTE: Needed if you wish to use the distance to the point defining the Worley
@@ -1287,295 +1704,199 @@ impl WorldSim {
             }
         });
 
-        let alt_old_min_uniform = 0.0;
-        let alt_old_max_uniform = 1.0;
+        (is_ocean, uplift_uniform)
+    }
 
-        let inv_func = |x: f64| x;
-        let alt_exp_min_uniform = inv_func(min_epsilon);
-        let alt_exp_max_uniform = inv_func(max_epsilon);
+    fn init_gen_ctx(
+        seed: u32,
+        continent_scale: f64,
+        rock_lacunarity: f64,
+        uplift_scale: f64,
+    ) -> (ChaChaRng, GenCtx) {
+        let mut rng = ChaChaRng::from_seed(seed_expan::rng_state(seed));
 
-        let erosion_factor = |x: f64| {
-            (inv_func(x) - alt_exp_min_uniform) / (alt_exp_max_uniform - alt_exp_min_uniform)
-        };
-        let rock_strength_div_factor = (2.0 * TerrainChunkSize::RECT_SIZE.x as f64) / 8.0;
-        let theta_func = |_posi| 0.4;
-        let kf_func = {
-            |posi| {
-                let kf_scale_i = k_fs_scale(theta_func(posi), n_func(posi));
-                if is_ocean_fn(posi) {
-                    return 1.0e-4 * kf_scale_i;
-                }
+        // NOTE: Changing order will significantly change WorldGen, so try not to!
+        let gen_ctx = GenCtx {
+            turb_x_nz: SuperSimplex::new(rng.random()),
+            turb_y_nz: SuperSimplex::new(rng.random()),
+            chaos_nz: RidgedMulti::new(rng.random()).set_octaves(7).set_frequency(
+                RidgedMulti::<Perlin>::DEFAULT_FREQUENCY * (5_000.0 / continent_scale),
+            ),
+            hill_nz: SuperSimplex::new(rng.random()),
+            alt_nz: util::HybridMulti::new(rng.random())
+                .set_octaves(8)
+                .set_frequency(10_000.0 / continent_scale)
+                // persistence = lacunarity^(-(1.0 - fractal increment))
+                .set_lacunarity(util::HybridMulti::<Perlin>::DEFAULT_LACUNARITY)
+                .set_persistence(util::HybridMulti::<Perlin>::DEFAULT_LACUNARITY.powi(-1))
+                .set_offset(0.0),
+            temp_nz: Fbm::new(rng.random())
+                .set_octaves(6)
+                .set_persistence(0.5)
+                .set_frequency(1.0 / (((1 << 6) * 64) as f64))
+                .set_lacunarity(2.0),
 
-                let kf_i = // kf = 1.5e-4: high-high (plateau [fan sediment])
-                // kf = 1e-4: high (plateau)
-                // kf = 2e-5: normal (dike [unexposed])
-                // kf = 1e-6: normal-low (dike [exposed])
-                // kf = 2e-6: low (mountain)
-                // --
-                // kf = 2.5e-7 to 8e-7: very low (Cordonnier papers on plate tectonics)
-                // ((1.0 - uheight) * (1.5e-4 - 2.0e-6) + 2.0e-6) as f32
-                //
-                // ACTUAL recorded values worldwide: much lower...
-                1.0e-6
-                ;
-                kf_i * kf_scale_i
-            }
-        };
-        let kd_func = {
-            |posi| {
-                let n = n_func(posi);
-                let kd_scale_i = k_d_scale(n);
-                if is_ocean_fn(posi) {
-                    let kd_i = 1.0e-2 / 4.0;
-                    return kd_i * kd_scale_i;
-                }
-                // kd = 1e-1: high (mountain, dike)
-                // kd = 1.5e-2: normal-high (plateau [fan sediment])
-                // kd = 1e-2: normal (plateau)
-                let kd_i = 1.0e-2 / 4.0;
-                kd_i * kd_scale_i
-            }
-        };
-        let g_func = |posi| {
-            if map_edge_factor(map_size_lg, posi) == 0.0 {
-                return 0.0;
-            }
-            // G = d* v_s / p_0, where
-            //  v_s is the settling velocity of sediment grains
-            //  p_0 is the mean precipitation rate
-            //  d* is the sediment concentration ratio (between concentration near riverbed
-            //  interface, and average concentration over the water column).
-            //  d* varies with Rouse number which defines relative contribution of bed,
-            // suspended,  and washed loads.
-            //
-            // G is typically on the order of 1 or greater.  However, we are only guaranteed
-            // to converge for G ≤ 1, so we keep it in the chaos range of [0.12,
-            // 1.32].
-            1.0
-        };
-        let epsilon_0_func = |posi| {
-            // epsilon_0_scale is roughly [using Hack's Law with b = 2 and SPL without
-            // debris flow or hillslopes] equal to the ratio of the old to new
-            // area, to the power of -n_i.
-            let epsilon_0_scale_i = epsilon_0_scale(n_func(posi));
-            if is_ocean_fn(posi) {
-                // marine: ε₀ = 2.078e-3
-                let epsilon_0_i = 2.078e-3 / 4.0;
-                return epsilon_0_i * epsilon_0_scale_i;
-            }
-            let wposf = (uniform_idx_as_vec2(map_size_lg, posi)
-                * TerrainChunkSize::RECT_SIZE.map(|e| e as i32))
-            .map(|e| e as f64);
-            let turb_wposf = wposf
-                .mul(5_000.0 / continent_scale)
-                .div(TerrainChunkSize::RECT_SIZE.map(|e| e as f64))
-                .div(turb_wposf_div);
-            let turb = Vec2::new(
-                gen_ctx.turb_x_nz.get(turb_wposf.into_array()),
-                gen_ctx.turb_y_nz.get(turb_wposf.into_array()),
-            ) * uplift_turb_scale
-                * TerrainChunkSize::RECT_SIZE.map(|e| e as f64);
-            let turb_wposf = wposf + turb;
-            let uheight = gen_ctx
-                .uplift_nz
-                .get(turb_wposf.into_array())
-                .clamp(-1.0, 1.0)
-                .mul(0.5)
-                .add(0.5);
-            let wposf3 = Vec3::new(
-                wposf.x,
-                wposf.y,
-                uheight * CONFIG.mountain_scale as f64 * rock_strength_div_factor,
-            );
-            let rock_strength = gen_ctx
-                .rock_strength_nz
-                .get(wposf3.into_array())
-                .clamp(-1.0, 1.0)
-                .mul(0.5)
-                .add(0.5);
-            let center = 0.4;
-            let dmin = center - 0.05;
-            let dmax = center + 0.05;
-            let log_odds = |x: f64| logit(x) - logit(center);
-            let ustrength = logistic_cdf(
-                1.0 * logit(rock_strength.clamp(1e-7, 1.0f64 - 1e-7))
-                    + 1.0 * log_odds(uheight.clamp(dmin, dmax)),
-            );
-            // marine: ε₀ = 2.078e-3
-            // San Gabriel Mountains: ε₀ = 3.18e-4
-            // Oregon Coast Range: ε₀ = 2.68e-4
-            // Frogs Hollow (peak production = 0.25): ε₀ = 1.41e-4
-            // Point Reyes: ε₀ = 8.1e-5
-            // Nunnock River (fractured granite, least weathered?): ε₀ = 5.3e-5
-            let epsilon_0_i = ((1.0 - ustrength) * (2.078e-3 - 5.3e-5) + 5.3e-5) as f32 / 4.0;
-            epsilon_0_i * epsilon_0_scale_i
-        };
-        let alpha_func = |posi| {
-            let alpha_scale_i = alpha_scale(n_func(posi));
-            if is_ocean_fn(posi) {
-                // marine: α = 3.7e-2
-                return 3.7e-2 * alpha_scale_i;
-            }
-            let wposf = (uniform_idx_as_vec2(map_size_lg, posi)
-                * TerrainChunkSize::RECT_SIZE.map(|e| e as i32))
-            .map(|e| e as f64);
-            let turb_wposf = wposf
-                .mul(5_000.0 / continent_scale)
-                .div(TerrainChunkSize::RECT_SIZE.map(|e| e as f64))
-                .div(turb_wposf_div);
-            let turb = Vec2::new(
-                gen_ctx.turb_x_nz.get(turb_wposf.into_array()),
-                gen_ctx.turb_y_nz.get(turb_wposf.into_array()),
-            ) * uplift_turb_scale
-                * TerrainChunkSize::RECT_SIZE.map(|e| e as f64);
-            let turb_wposf = wposf + turb;
-            let uheight = gen_ctx
-                .uplift_nz
-                .get(turb_wposf.into_array())
-                .clamp(-1.0, 1.0)
-                .mul(0.5)
-                .add(0.5);
-            let wposf3 = Vec3::new(
-                wposf.x,
-                wposf.y,
-                uheight * CONFIG.mountain_scale as f64 * rock_strength_div_factor,
-            );
-            let rock_strength = gen_ctx
-                .rock_strength_nz
-                .get(wposf3.into_array())
-                .clamp(-1.0, 1.0)
-                .mul(0.5)
-                .add(0.5);
-            let center = 0.4;
-            let dmin = center - 0.05;
-            let dmax = center + 0.05;
-            let log_odds = |x: f64| logit(x) - logit(center);
-            let ustrength = logistic_cdf(
-                1.0 * logit(rock_strength.clamp(1e-7, 1.0f64 - 1e-7))
-                    + 1.0 * log_odds(uheight.clamp(dmin, dmax)),
-            );
-            // Frog Hollow (peak production = 0.25): α = 4.2e-2
-            // San Gabriel Mountains: α = 3.8e-2
-            // marine: α = 3.7e-2
-            // Oregon Coast Range: α = 3e-2
-            // Nunnock river (fractured granite, least weathered?): α = 2e-3
-            // Point Reyes: α = 1.6e-2
-            // The stronger  the rock, the faster the decline in soil production.
-            let alpha_i = (ustrength * (4.2e-2 - 1.6e-2) + 1.6e-2) as f32;
-            alpha_i * alpha_scale_i
-        };
-        let uplift_fn = |posi| {
-            if is_ocean_fn(posi) {
-                return 0.0;
-            }
-            let height = (uplift_uniform[posi].1 - alt_old_min_uniform)
-                / (alt_old_max_uniform - alt_old_min_uniform);
+            small_nz: BasicMulti::new(rng.random()).set_octaves(2),
+            rock_nz: HybridMulti::new(rng.random()).set_persistence(0.3),
+            tree_nz: BasicMulti::new(rng.random())
+                .set_octaves(12)
+                .set_persistence(0.75),
+            _cave_0_nz: SuperSimplex::new(rng.random()),
+            _cave_1_nz: SuperSimplex::new(rng.random()),
 
-            let height = height.mul(max_epsilon - min_epsilon).add(min_epsilon);
-            let height = erosion_factor(height);
-            assert!(height >= 0.0);
-            assert!(height <= 1.0);
+            structure_gen: StructureGen2d::new(rng.random(), 24, 10),
+            _big_structure_gen: StructureGen2d::new(rng.random(), 768, 512),
+            _region_gen: StructureGen2d::new(rng.random(), 400, 96),
+            humid_nz: Billow::new(rng.random())
+                .set_octaves(9)
+                .set_persistence(0.4)
+                .set_frequency(0.2),
 
-            // u = 1e-3: normal-high (dike, mountain)
-            // u = 5e-4: normal (mid example in Yuan, average mountain uplift)
-            // u = 2e-4: low (low example in Yuan; known that lagoons etc. may have u ~
-            // 0.05). u = 0: low (plateau [fan, altitude = 0.0])
+            _fast_turb_x_nz: FastNoise::new(rng.random()),
+            _fast_turb_y_nz: FastNoise::new(rng.random()),
 
-            height.mul(max_erosion_per_delta_t)
-        };
-        let alt_func = |posi| {
-            if is_ocean_fn(posi) {
-                old_height(posi)
-            } else {
-                (old_height(posi) as f64 / CONFIG.mountain_scale as f64) as f32 - 0.5
-            }
+            _town_gen: StructureGen2d::new(rng.random(), 2048, 1024),
+            river_seed: RandomField::new(rng.random()),
+            rock_strength_nz: Fbm::new(rng.random())
+                .set_octaves(10)
+                .set_lacunarity(rock_lacunarity)
+                // persistence = lacunarity^(-(1.0 - fractal increment))
+                // NOTE: In paper, fractal increment is roughly 0.25.
+                .set_persistence(rock_lacunarity.powf(-0.75))
+                .set_frequency(
+                    1.0 * (5_000.0 / continent_scale)
+                        / (2.0 * TerrainChunkSize::RECT_SIZE.x as f64 * 2.0.powi(10 - 1)),
+                ),
+            uplift_nz: util::Worley::new(rng.random())
+                .set_frequency(1.0 / (TerrainChunkSize::RECT_SIZE.x as f64 * uplift_scale))
+                .set_distance_function(distance_functions::euclidean),
         };
 
-        // Perform some erosion.
+        (rng, gen_ctx)
+    }
 
-        let mut last = None;
-        let mut all_samples = std::time::Duration::default();
-        let mut sample_count = 0;
-        let report_erosion: &mut dyn FnMut(f64) = &mut move |progress: f64| {
-            let now = std::time::Instant::now();
-            let estimate = if let Some((last_instant, last_progress)) = last {
-                if last_progress > progress {
-                    None
-                } else {
-                    if last_progress < progress {
-                        let sample = now
-                            .duration_since(last_instant)
-                            .div_f64(progress - last_progress);
-                        all_samples += sample;
-                        sample_count += 1;
-                    }
-
-                    Some((all_samples / sample_count).mul_f64(100.0 - progress))
-                }
-            } else {
-                None
-            };
-            last = Some((now, progress));
-            stage_report(WorldSimStage::Erosion { progress, estimate })
-        };
-
+    #[allow(clippy::too_many_arguments)]
+    fn materialize_heightfields(
+        parsed_world_file: Option<ModernMap>,
+        gen_opts: &GenOpts,
+        world_file: FileOpts,
+        fresh: bool,
+        model: &PreErosionModel<'_>,
+        threadpool: &rayon::ThreadPool,
+        report_erosion: &mut dyn FnMut(f64),
+    ) -> (Box<[Alt]>, Box<[Alt]>) {
+        let map_size_lg = model.map_size_lg;
         let (alt, basement) = if let Some(map) = parsed_world_file {
             (map.alt, map.basement)
         } else {
-            let (alt, basement) = do_erosion(
-                map_size_lg,
-                max_erosion_per_delta_t as f32,
-                n_steps,
-                river_seed,
-                // varying conditions
-                &rock_strength_nz,
-                // initial conditions
-                alt_func,
-                alt_func,
-                is_ocean_fn,
-                // empirical constants
-                uplift_fn,
-                n_func,
-                theta_func,
-                kf_func,
-                kd_func,
-                g_func,
-                epsilon_0_func,
-                alpha_func,
-                // scaling factors
-                height_scale,
-                k_d_scale(n_approx),
-                k_da_scale,
-                threadpool,
-                report_erosion,
-            );
-
-            // Quick "small scale" erosion cycle in order to lower extreme angles.
-            do_erosion(
-                map_size_lg,
-                1.0f32,
-                n_small_steps,
-                river_seed,
-                &rock_strength_nz,
-                |posi| alt[posi] as f32,
-                |posi| basement[posi] as f32,
-                is_ocean_fn,
-                |posi| uplift_fn(posi) * (1.0 / max_erosion_per_delta_t),
-                n_func,
-                theta_func,
-                kf_func,
-                kd_func,
-                g_func,
-                epsilon_0_func,
-                alpha_func,
-                height_scale,
-                k_d_scale(n_approx),
-                k_da_scale,
-                threadpool,
-                report_erosion,
-            )
+            Self::generate_heightfields_from_model(model, threadpool, report_erosion)
         };
 
+        let (alt, basement) = Self::persist_and_normalize_heightfields(
+            map_size_lg,
+            gen_opts,
+            world_file,
+            fresh,
+            alt,
+            basement,
+        );
+
+        Self::apply_post_load_erosion_if_needed(alt, basement, model, threadpool, report_erosion)
+    }
+
+    fn generate_heightfields_from_model(
+        model: &PreErosionModel<'_>,
+        threadpool: &rayon::ThreadPool,
+        report_erosion: &mut dyn FnMut(f64),
+    ) -> (Box<[Alt]>, Box<[Alt]>) {
+        let (alt, basement) = Self::run_primary_erosion_cycle(model, threadpool, report_erosion);
+
+        // Quick "small scale" erosion cycle in order to lower extreme angles.
+        Self::run_followup_erosion_cycle(
+            alt,
+            basement,
+            model.pre_erosion_params.n_small_steps,
+            model,
+            threadpool,
+            report_erosion,
+        )
+    }
+
+    fn run_primary_erosion_cycle(
+        model: &PreErosionModel<'_>,
+        threadpool: &rayon::ThreadPool,
+        report_erosion: &mut dyn FnMut(f64),
+    ) -> (Box<[Alt]>, Box<[Alt]>) {
+        do_erosion(
+            model.map_size_lg,
+            model.pre_erosion_params.max_erosion_per_delta_t as f32,
+            model.pre_erosion_params.n_steps,
+            &model.gen_ctx.river_seed,
+            // varying conditions
+            &model.gen_ctx.rock_strength_nz,
+            // initial conditions
+            &|posi| model.alt(posi),
+            &|posi| model.alt(posi),
+            &|posi| model.is_ocean(posi),
+            // empirical constants
+            &|posi| model.uplift(posi),
+            &|posi| PreErosionModel::terrain_n(posi),
+            &|posi| model.theta(posi),
+            &|posi| model.kf(posi),
+            &|posi| model.kd(posi),
+            &|posi| model.g(posi),
+            &|posi| model.epsilon_0(posi),
+            &|posi| model.alpha(posi),
+            // scaling factors
+            &|n| model.pre_erosion_params.height_scale(n),
+            model.pre_erosion_params.k_d_scale(1.0),
+            &|q| model.pre_erosion_params.k_da_scale(q),
+            threadpool,
+            report_erosion,
+        )
+    }
+
+    fn run_followup_erosion_cycle(
+        alt: Box<[Alt]>,
+        basement: Box<[Alt]>,
+        n_steps: usize,
+        model: &PreErosionModel<'_>,
+        threadpool: &rayon::ThreadPool,
+        report_erosion: &mut dyn FnMut(f64),
+    ) -> (Box<[Alt]>, Box<[Alt]>) {
+        do_erosion(
+            model.map_size_lg,
+            1.0f32,
+            n_steps,
+            &model.gen_ctx.river_seed,
+            &model.gen_ctx.rock_strength_nz,
+            |posi| alt[posi] as f32,
+            |posi| basement[posi] as f32,
+            |posi| model.is_ocean(posi),
+            |posi| model.uplift(posi) * (1.0 / model.pre_erosion_params.max_erosion_per_delta_t),
+            |posi| PreErosionModel::terrain_n(posi),
+            |posi| model.theta(posi),
+            |posi| model.kf(posi),
+            |posi| model.kd(posi),
+            |posi| model.g(posi),
+            |posi| model.epsilon_0(posi),
+            |posi| model.alpha(posi),
+            |n| model.pre_erosion_params.height_scale(n),
+            model.pre_erosion_params.k_d_scale(1.0),
+            |q| model.pre_erosion_params.k_da_scale(q),
+            threadpool,
+            report_erosion,
+        )
+    }
+
+    fn persist_and_normalize_heightfields(
+        map_size_lg: MapSizeLg,
+        gen_opts: &GenOpts,
+        world_file: FileOpts,
+        fresh: bool,
+        alt: Box<[Alt]>,
+        basement: Box<[Alt]>,
+    ) -> (Box<[Alt]>, Box<[Alt]>) {
         // Save map, if necessary.
         // NOTE: We wll always save a map with latest version.
         let map = WorldFile::new(ModernMap {
@@ -1597,35 +1918,50 @@ impl WorldSim {
             basement,
         } = map.into_modern().unwrap();
 
-        // Additional small-scale erosion after map load, only used during testing.
-        let (alt, basement) = if n_post_load_steps == 0 {
+        (alt, basement)
+    }
+
+    fn apply_post_load_erosion_if_needed(
+        alt: Box<[Alt]>,
+        basement: Box<[Alt]>,
+        model: &PreErosionModel<'_>,
+        threadpool: &rayon::ThreadPool,
+        report_erosion: &mut dyn FnMut(f64),
+    ) -> (Box<[Alt]>, Box<[Alt]>) {
+        if model.pre_erosion_params.n_post_load_steps == 0 {
             (alt, basement)
         } else {
-            do_erosion(
-                map_size_lg,
-                1.0f32,
-                n_post_load_steps,
-                river_seed,
-                &rock_strength_nz,
-                |posi| alt[posi] as f32,
-                |posi| basement[posi] as f32,
-                is_ocean_fn,
-                |posi| uplift_fn(posi) * (1.0 / max_erosion_per_delta_t),
-                n_func,
-                theta_func,
-                kf_func,
-                kd_func,
-                g_func,
-                epsilon_0_func,
-                alpha_func,
-                height_scale,
-                k_d_scale(n_approx),
-                k_da_scale,
+            Self::run_followup_erosion_cycle(
+                alt,
+                basement,
+                model.pre_erosion_params.n_post_load_steps,
+                model,
                 threadpool,
                 report_erosion,
             )
-        };
+        }
+    }
 
+    fn build_post_erosion_hydrology_core(
+        map_size_lg: MapSizeLg,
+        continent_scale_hack: f64,
+        alt: &[Alt],
+        threadpool: &rayon::ThreadPool,
+    ) -> PostErosionHydrologyCore {
+        let drainage_state = Self::build_post_erosion_drainage_state(map_size_lg, alt, threadpool);
+        Self::materialize_surface_water_and_rivers(
+            map_size_lg,
+            continent_scale_hack,
+            alt,
+            drainage_state,
+        )
+    }
+
+    fn build_post_erosion_drainage_state(
+        map_size_lg: MapSizeLg,
+        alt: &[Alt],
+        threadpool: &rayon::ThreadPool,
+    ) -> PostErosionDrainageState {
         let is_ocean = get_oceans(map_size_lg, |posi| alt[posi]);
         let is_ocean_fn = |posi: usize| is_ocean[posi];
         let mut dh = downhill(map_size_lg, |posi| alt[posi], is_ocean_fn);
@@ -1649,10 +1985,36 @@ impl WorldSim {
             )
         };
         let flux_old = get_multi_drainage(map_size_lg, &mstack, &mrec, &mwrec, boundary_len);
+
+        PostErosionDrainageState {
+            is_ocean,
+            dh,
+            indirection,
+            water_alt_pos,
+            flux: flux_old,
+            max_height: maxh as f32,
+        }
+    }
+
+    fn materialize_surface_water_and_rivers(
+        map_size_lg: MapSizeLg,
+        continent_scale_hack: f64,
+        alt: &[Alt],
+        drainage_state: PostErosionDrainageState,
+    ) -> PostErosionHydrologyCore {
+        let PostErosionDrainageState {
+            is_ocean,
+            dh,
+            indirection,
+            water_alt_pos,
+            flux,
+            max_height,
+        } = drainage_state;
+        let is_ocean_fn = |posi: usize| is_ocean[posi];
         // let flux_rivers = get_drainage(map_size_lg, &water_alt_pos, &dh,
         // boundary_len); TODO: Make rivers work with multi-direction flux as
         // well.
-        let flux_rivers = flux_old.clone();
+        let flux_rivers = flux.clone();
 
         let water_height_initial = |chunk_idx| {
             let indirection_idx = indirection[chunk_idx];
@@ -1710,7 +2072,7 @@ impl WorldSim {
 
         let rivers = get_rivers(
             map_size_lg,
-            gen_opts.scale,
+            continent_scale_hack,
             &water_alt_pos,
             &water_alt,
             &dh,
@@ -1746,6 +2108,35 @@ impl WorldSim {
             .collect::<Vec<_>>()
             .into_boxed_slice();
 
+        PostErosionHydrologyCore {
+            water_alt,
+            dh,
+            flux,
+            rivers,
+            max_height,
+        }
+    }
+
+    fn build_post_water_cdf_fields(
+        map_size_lg: MapSizeLg,
+        gen_ctx: &GenCtx,
+        alt: &[Alt],
+        flux: &[Compute],
+        rivers: &[RiverData],
+        threadpool: &rayon::ThreadPool,
+    ) -> PostWaterCdfFields {
+        let pure_water = Self::build_pure_water_mask(map_size_lg, rivers);
+        Self::build_masked_post_water_cdf_fields(
+            map_size_lg,
+            gen_ctx,
+            alt,
+            flux,
+            &pure_water,
+            threadpool,
+        )
+    }
+
+    fn build_pure_water_mask(map_size_lg: MapSizeLg, rivers: &[RiverData]) -> Box<[bool]> {
         let is_underwater = |chunk_idx: usize| match rivers[chunk_idx].river_kind {
             Some(RiverKind::Ocean) | Some(RiverKind::Lake { .. }) => true,
             Some(RiverKind::River { .. }) => false, // TODO: inspect width
@@ -1772,7 +2163,21 @@ impl WorldSim {
             }
             true
         };
+        (0..map_size_lg.chunks_len())
+            .into_par_iter()
+            .map(pure_water)
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    }
 
+    fn build_masked_post_water_cdf_fields(
+        map_size_lg: MapSizeLg,
+        gen_ctx: &GenCtx,
+        alt: &[Alt],
+        flux: &[Compute],
+        pure_water: &[bool],
+        threadpool: &rayon::ThreadPool,
+    ) -> PostWaterCdfFields {
         // NaNs in these uniform vectors wherever pure_water() returns true.
         let (((alt_no_water, _), (pure_flux, _)), ((temp_base, _), (humid_base, _))) = threadpool
             .join(
@@ -1780,7 +2185,7 @@ impl WorldSim {
                     threadpool.join(
                         || {
                             uniform_noise(map_size_lg, |posi, _| {
-                                if pure_water(posi) {
+                                if pure_water[posi] {
                                     None
                                 } else {
                                     // A version of alt that is uniform over *non-water* (or
@@ -1791,10 +2196,10 @@ impl WorldSim {
                         },
                         || {
                             uniform_noise(map_size_lg, |posi, _| {
-                                if pure_water(posi) {
+                                if pure_water[posi] {
                                     None
                                 } else {
-                                    Some(flux_old[posi])
+                                    Some(flux[posi])
                                 }
                             })
                         },
@@ -1804,7 +2209,7 @@ impl WorldSim {
                     threadpool.join(
                         || {
                             uniform_noise(map_size_lg, |posi, wposf| {
-                                if pure_water(posi) {
+                                if pure_water[posi] {
                                     None
                                 } else {
                                     // -1 to 1.
@@ -1815,7 +2220,7 @@ impl WorldSim {
                         || {
                             uniform_noise(map_size_lg, |posi, wposf| {
                                 // Check whether any tiles around this tile are water.
-                                if pure_water(posi) {
+                                if pure_water[posi] {
                                     None
                                 } else {
                                     // 0 to 1, hopefully.
@@ -1832,29 +2237,106 @@ impl WorldSim {
                 },
             );
 
-        let gen_cdf = GenCdf {
-            humid_base,
-            temp_base,
-            chaos,
-            alt,
-            basement,
-            water_alt,
-            dh,
-            flux: flux_old,
+        PostWaterCdfFields {
             pure_flux,
             alt_no_water,
-            rivers,
-        };
+            temp_base,
+            humid_base,
+        }
+    }
 
-        let chunks = (0..map_size_lg.chunks_len())
+    fn build_sim_chunks(
+        map_size_lg: MapSizeLg,
+        gen_ctx: &GenCtx,
+        gen_cdf: &GenCdf,
+    ) -> Vec<SimChunk> {
+        (0..map_size_lg.chunks_len())
             .into_par_iter()
-            .map(|i| SimChunk::generate(map_size_lg, i, &gen_ctx, &gen_cdf))
-            .collect::<Vec<_>>();
+            .map(|i| SimChunk::generate(map_size_lg, i, gen_ctx, gen_cdf))
+            .collect::<Vec<_>>()
+    }
 
-        let mut this = Self {
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_generated_world_parts(
+        seed: u32,
+        map_size_lg: MapSizeLg,
+        gen_ctx: GenCtx,
+        max_height: f32,
+        chunks: Vec<SimChunk>,
+        rng: ChaChaRng,
+        calendar: Option<Calendar>,
+        compat_mode: CompatMode,
+        compat_audit: CompatAuditV1,
+        recipe_manifest: RecipeManifestV1,
+    ) -> GeneratedWorldParts {
+        GeneratedWorldParts {
             seed,
             map_size_lg,
-            max_height: maxh as f32,
+            max_height,
+            chunks,
+            gen_ctx,
+            rng,
+            calendar,
+            compat_mode,
+            compat_audit,
+            recipe_manifest,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finalize_world_from_chunk_inputs(
+        seed: u32,
+        map_size_lg: MapSizeLg,
+        gen_ctx: GenCtx,
+        post_erosion_chunk_inputs: PostErosionChunkInputs,
+        rng: ChaChaRng,
+        calendar: Option<Calendar>,
+        compat_mode: CompatMode,
+        compat_audit: CompatAuditV1,
+        recipe_manifest: RecipeManifestV1,
+        seed_elements: bool,
+    ) -> Self {
+        let PostErosionChunkInputs {
+            max_height,
+            gen_cdf,
+        } = post_erosion_chunk_inputs;
+        let chunks = Self::build_sim_chunks(map_size_lg, &gen_ctx, &gen_cdf);
+        let parts = Self::prepare_generated_world_parts(
+            seed,
+            map_size_lg,
+            gen_ctx,
+            max_height,
+            chunks,
+            rng,
+            calendar,
+            compat_mode,
+            compat_audit,
+            recipe_manifest,
+        );
+        let mut this = Self::finalize_world_from_parts(parts);
+        this.run_generation_postprocesses(seed_elements);
+
+        this
+    }
+
+    fn finalize_world_from_parts(parts: GeneratedWorldParts) -> Self {
+        let GeneratedWorldParts {
+            seed,
+            map_size_lg,
+            max_height,
+            chunks,
+            gen_ctx,
+            rng,
+            calendar,
+            compat_mode,
+            compat_audit,
+            recipe_manifest,
+        } = parts;
+
+        Self {
+            seed,
+            map_size_lg,
+            max_height,
             chunks,
             _locations: Vec::new(),
             gen_ctx,
@@ -1863,15 +2345,15 @@ impl WorldSim {
             compat_mode,
             compat_audit,
             recipe_manifest,
-        };
+        }
+    }
 
-        this.generate_cliffs();
+    fn run_generation_postprocesses(&mut self, seed_elements: bool) {
+        self.generate_cliffs();
 
         if seed_elements {
-            this.seed_elements();
+            self.seed_elements();
         }
-
-        Ok(this)
     }
 
     #[inline(always)]

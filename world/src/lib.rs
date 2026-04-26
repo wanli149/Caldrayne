@@ -133,6 +133,20 @@ enum ChunkGenerationMode {
     RuntimeFinalized,
 }
 
+struct ChunkBaseBuild<'a> {
+    chunk_pos: Vec2<i32>,
+    chunk_wpos2d: Vec2<i32>,
+    chunk_center_wpos2d: Vec2<i32>,
+    grid_border: i32,
+    zcache_grid: Grid<Option<block::ZCache<'a>>>,
+    chunk: TerrainChunk,
+}
+
+struct StaticChunkArtifacts {
+    supplement: ChunkSupplement,
+    rtsim_resource_blocks: Vec<Vec3<i32>>,
+}
+
 pub struct World {
     sim: sim::WorldSim,
     civs: civ::Civs,
@@ -423,6 +437,69 @@ impl World {
 
         let mut sampler = self.sample_blocks();
 
+        let (base_z, sim_chunk) = match self
+            .sim
+            /*.get_interpolated(
+                chunk_pos.map2(chunk_size2d, |e, sz: u32| e * sz as i32 + sz as i32 / 2),
+                |chunk| chunk.get_base_z(),
+            )
+            .and_then(|base_z| self.sim.get(chunk_pos).map(|sim_chunk| (base_z, sim_chunk))) */
+            .get_base_z(chunk_pos)
+        {
+            Some(base_z) => (base_z as i32, self.sim.get(chunk_pos).unwrap()),
+            // Some((base_z, sim_chunk)) => (base_z as i32, sim_chunk),
+            None => {
+                // NOTE: This is necessary in order to generate a handful of chunks at the
+                // edges of the map.
+                return Ok((self.sim().generate_oob_chunk(), ChunkSupplement::default()));
+            },
+        };
+        let mut base_build = self.build_base_chunk_volume(
+            index,
+            chunk_pos,
+            base_z,
+            sim_chunk,
+            &mut sampler,
+            calendar,
+            &mut should_continue,
+        )?;
+        let mut static_artifacts = self.apply_static_passes_and_extract_artifacts(
+            &mut base_build,
+            sim_chunk,
+            index,
+            calendar,
+        );
+
+        if generation_mode == ChunkGenerationMode::RuntimeFinalized {
+            self.run_runtime_finalizers(
+                &mut base_build,
+                sim_chunk,
+                &mut static_artifacts,
+                index,
+                rtsim_resources,
+                time.as_ref(),
+            );
+        } else {
+            // Static snapshot callers compare only deterministic chunk facts and stop
+            // before runtime supplement / rtsim finalize mutate the returned
+            // value contract.
+            base_build.chunk.defragment();
+        }
+
+        Ok((base_build.chunk, static_artifacts.supplement))
+    }
+
+    #[expect(clippy::result_unit_err)]
+    fn build_base_chunk_volume<'a>(
+        &self,
+        index: IndexRef<'a>,
+        chunk_pos: Vec2<i32>,
+        base_z: i32,
+        sim_chunk: &sim::SimChunk,
+        sampler: &mut BlockGen<'a>,
+        calendar: Option<&'a Calendar>,
+        should_continue: &mut impl FnMut() -> bool,
+    ) -> Result<ChunkBaseBuild<'a>, ()> {
         let chunk_wpos2d = chunk_pos * TerrainChunkSize::RECT_SIZE.map(|e| e as i32);
         let chunk_center_wpos2d = chunk_wpos2d + TerrainChunkSize::RECT_SIZE.map(|e| e as i32 / 2);
         let grid_border = 4;
@@ -440,24 +517,6 @@ impl World {
                 .map(|zcache| zcache.sample.stone_col)
                 .unwrap_or_else(|| index.colors.deep_stone_color.into()),
         );
-
-        let (base_z, sim_chunk) = match self
-            .sim
-            /*.get_interpolated(
-                chunk_pos.map2(chunk_size2d, |e, sz: u32| e * sz as i32 + sz as i32 / 2),
-                |chunk| chunk.get_base_z(),
-            )
-            .and_then(|base_z| self.sim.get(chunk_pos).map(|sim_chunk| (base_z, sim_chunk))) */
-            .get_base_z(chunk_pos)
-        {
-            Some(base_z) => (base_z as i32, self.sim.get(chunk_pos).unwrap()),
-            // Some((base_z, sim_chunk)) => (base_z as i32, sim_chunk),
-            None => {
-                // NOTE: This is necessary in order to generate a handful of chunks at the edges
-                // of the map.
-                return Ok((self.sim().generate_oob_chunk(), ChunkSupplement::default()));
-            },
-        };
         let meta = TerrainChunkMeta::new(
             sim_chunk.get_location_name(&index.sites, &self.civs.pois, chunk_center_wpos2d),
             sim_chunk.get_biome(),
@@ -522,10 +581,27 @@ impl World {
             }
         }
 
+        Ok(ChunkBaseBuild {
+            chunk_pos,
+            chunk_wpos2d,
+            chunk_center_wpos2d,
+            grid_border,
+            zcache_grid,
+            chunk,
+        })
+    }
+
+    fn apply_static_passes_and_extract_artifacts<'a>(
+        &self,
+        base_build: &mut ChunkBaseBuild<'a>,
+        sim_chunk: &sim::SimChunk,
+        index: IndexRef<'a>,
+        calendar: Option<&'a Calendar>,
+    ) -> StaticChunkArtifacts {
         let static_rng_seed = seed_expan::diffuse_mult(&[
             self.sim.seed,
-            chunk_pos.x as u32,
-            chunk_pos.y as u32,
+            base_build.chunk_pos.x as u32,
+            base_build.chunk_pos.y as u32,
             0x5354_4154,
         ]);
         let mut static_rng = ChaCha8Rng::from_seed(seed_expan::rng_state(static_rng_seed));
@@ -533,22 +609,27 @@ impl World {
         // Apply layers (paths, caves, etc.)
         let mut canvas = Canvas {
             info: CanvasInfo {
-                chunk_pos,
-                wpos: chunk_pos * TerrainChunkSize::RECT_SIZE.map(|e| e as i32),
-                column_grid: &zcache_grid,
-                column_grid_border: grid_border,
+                chunk_pos: base_build.chunk_pos,
+                wpos: base_build.chunk_wpos2d,
+                column_grid: &base_build.zcache_grid,
+                column_grid_border: base_build.grid_border,
                 chunks: &self.sim,
                 index,
                 chunk: sim_chunk,
                 calendar,
             },
-            chunk: &mut chunk,
+            chunk: &mut base_build.chunk,
             entity_spawns: Vec::new(),
             rtsim_resource_blocks: Vec::new(),
         };
 
         if index.features.train_tracks {
-            layer::apply_trains_to(&mut canvas, &self.sim, sim_chunk, chunk_center_wpos2d);
+            layer::apply_trains_to(
+                &mut canvas,
+                &self.sim,
+                sim_chunk,
+                base_build.chunk_center_wpos2d,
+            );
         }
 
         if index.features.caverns {
@@ -583,67 +664,69 @@ impl World {
             .iter()
             .for_each(|site| index.sites[*site].render(&mut canvas, &mut static_rng));
 
-        let mut rtsim_resource_blocks = std::mem::take(&mut canvas.rtsim_resource_blocks);
-        let mut supplement = ChunkSupplement {
-            entity_spawns: std::mem::take(&mut canvas.entity_spawns),
-            rtsim_max_resources: Default::default(),
-        };
-        drop(canvas);
-
-        if generation_mode == ChunkGenerationMode::RuntimeFinalized {
-            let runtime_time_bits = time
-                .as_ref()
-                .map(|(time_of_day, _)| time_of_day.day().to_bits())
-                .unwrap_or_default();
-            let runtime_calendar_mask = time
-                .as_ref()
-                .map(|(_, calendar)| {
-                    calendar
-                        .events()
-                        .fold(0u32, |mask, event| mask | (1u32 << (*event as u32)))
-                })
-                .unwrap_or_default();
-            let runtime_rng_seed = seed_expan::diffuse_mult(&[
-                self.sim.seed,
-                chunk_pos.x as u32,
-                chunk_pos.y as u32,
-                runtime_time_bits as u32,
-                (runtime_time_bits >> 32) as u32,
-                runtime_calendar_mask,
-                0x5255_4E54,
-            ]);
-            let mut runtime_rng = ChaCha8Rng::from_seed(seed_expan::rng_state(runtime_rng_seed));
-            Self::apply_runtime_chunk_supplement(
-                &chunk,
-                &mut supplement,
-                &mut runtime_rng,
-                chunk_wpos2d,
-                &zcache_grid,
-                grid_border,
-                index,
-                sim_chunk,
-                time.as_ref(),
-            );
-
-            // Finally, defragment to minimize space consumption.
-            chunk.defragment();
-
-            Self::finalize_rtsim_resources(
-                &mut chunk,
-                &mut supplement,
-                &mut rtsim_resource_blocks,
-                rtsim_resources,
-                &mut runtime_rng,
-                chunk_wpos2d,
-            );
-        } else {
-            // Static snapshot callers compare only deterministic chunk facts and stop
-            // before runtime supplement / rtsim finalize mutate the returned
-            // value contract.
-            chunk.defragment();
+        StaticChunkArtifacts {
+            rtsim_resource_blocks: std::mem::take(&mut canvas.rtsim_resource_blocks),
+            supplement: ChunkSupplement {
+                entity_spawns: std::mem::take(&mut canvas.entity_spawns),
+                rtsim_max_resources: Default::default(),
+            },
         }
+    }
 
-        Ok((chunk, supplement))
+    fn run_runtime_finalizers<'a>(
+        &self,
+        base_build: &mut ChunkBaseBuild<'a>,
+        sim_chunk: &sim::SimChunk,
+        static_artifacts: &mut StaticChunkArtifacts,
+        index: IndexRef<'a>,
+        rtsim_resources: Option<EnumMap<TerrainResource, f32>>,
+        time: Option<&(TimeOfDay, Calendar)>,
+    ) {
+        let runtime_time_bits = time
+            .as_ref()
+            .map(|(time_of_day, _)| time_of_day.day().to_bits())
+            .unwrap_or_default();
+        let runtime_calendar_mask = time
+            .as_ref()
+            .map(|(_, calendar)| {
+                calendar
+                    .events()
+                    .fold(0u32, |mask, event| mask | (1u32 << (*event as u32)))
+            })
+            .unwrap_or_default();
+        let runtime_rng_seed = seed_expan::diffuse_mult(&[
+            self.sim.seed,
+            base_build.chunk_pos.x as u32,
+            base_build.chunk_pos.y as u32,
+            runtime_time_bits as u32,
+            (runtime_time_bits >> 32) as u32,
+            runtime_calendar_mask,
+            0x5255_4E54,
+        ]);
+        let mut runtime_rng = ChaCha8Rng::from_seed(seed_expan::rng_state(runtime_rng_seed));
+        Self::apply_runtime_chunk_supplement(
+            &base_build.chunk,
+            &mut static_artifacts.supplement,
+            &mut runtime_rng,
+            base_build.chunk_wpos2d,
+            &base_build.zcache_grid,
+            base_build.grid_border,
+            index,
+            sim_chunk,
+            time,
+        );
+
+        // Finally, defragment to minimize space consumption.
+        base_build.chunk.defragment();
+
+        Self::finalize_rtsim_resources(
+            &mut base_build.chunk,
+            &mut static_artifacts.supplement,
+            &mut static_artifacts.rtsim_resource_blocks,
+            rtsim_resources,
+            &mut runtime_rng,
+            base_build.chunk_wpos2d,
+        );
     }
 
     fn apply_runtime_chunk_supplement(
