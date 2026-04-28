@@ -1,6 +1,7 @@
 use crate::{
     Canvas,
-    sim::{SimChunk, WorldSim},
+    all::ForestKind,
+    sim::{AquaticSpawnPotential, SimChunk, WorldSim},
     util::{Sampler, UnitChooser, seed_expan},
 };
 use common::{
@@ -21,9 +22,57 @@ pub trait SpotGenerate {
         spot: Spot,
         world: &mut WorldSim,
         freq: f32,
-        valid: impl FnMut(f32, &SimChunk) -> bool,
+        valid: impl FnMut(f32, &SimChunk, Option<AquaticSpawnPotential>) -> bool,
         spawn: bool,
     );
+}
+
+fn shipwreck_spot_candidate(
+    gradient: f32,
+    is_underwater: bool,
+    sites_empty: bool,
+    water_depth: f32,
+    aquatic_spawn: Option<AquaticSpawnPotential>,
+) -> bool {
+    gradient < 0.25
+        && is_underwater
+        && sites_empty
+        && water_depth > 30.0
+        && aquatic_spawn.is_some_and(|spawn| spawn.submerged_marine)
+}
+
+fn tree_stump_forest_spot_candidate(
+    gradient: f32,
+    near_cliffs: bool,
+    near_water: bool,
+    is_way: bool,
+    sites_empty: bool,
+    biome: BiomeKind,
+    forest_kind: ForestKind,
+) -> bool {
+    gradient < 0.25
+        && !near_cliffs
+        && !near_water
+        && !is_way
+        && sites_empty
+        && matches!(biome, BiomeKind::Forest)
+        && matches!(forest_kind, ForestKind::Oak)
+}
+
+fn jungle_spot_candidate(
+    gradient: f32,
+    near_cliffs: bool,
+    near_water: bool,
+    is_way: bool,
+    sites_empty: bool,
+    biome: BiomeKind,
+) -> bool {
+    gradient < 0.25
+        && !near_cliffs
+        && !near_water
+        && !is_way
+        && sites_empty
+        && matches!(biome, BiomeKind::Jungle)
 }
 
 impl SpotGenerate for Spot {
@@ -36,7 +85,7 @@ impl SpotGenerate for Spot {
                 Spot::RonFile(s),
                 world,
                 s.freq,
-                |g, c| is_valid(&s.condition, g, c),
+                |g, c, _| is_valid(&s.condition, g, c),
                 s.spawn,
             );
         }
@@ -44,7 +93,7 @@ impl SpotGenerate for Spot {
             Spot::WitchHouse,
             world,
             1.0,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -61,7 +110,7 @@ impl SpotGenerate for Spot {
             Spot::Igloo,
             world,
             2.0,
-            |g, c| {
+            |g, c, _| {
                 g < 0.5
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -75,13 +124,15 @@ impl SpotGenerate for Spot {
             Spot::SaurokAltar,
             world,
             1.0,
-            |g, c| {
-                g < 0.25
-                    && !c.near_cliffs()
-                    && !c.river.near_water()
-                    && !c.path.0.is_way()
-                    && c.sites.is_empty()
-                    && matches!(c.get_biome(), Jungle | Forest)
+            |g, c, _| {
+                jungle_spot_candidate(
+                    g,
+                    c.near_cliffs(),
+                    c.river.near_water(),
+                    c.path.0.is_way(),
+                    c.sites.is_empty(),
+                    c.get_biome(),
+                )
             },
             false,
         );
@@ -89,13 +140,15 @@ impl SpotGenerate for Spot {
             Spot::SaurokTotem,
             world,
             1.0,
-            |g, c| {
-                g < 0.25
-                    && !c.near_cliffs()
-                    && !c.river.near_water()
-                    && !c.path.0.is_way()
-                    && c.sites.is_empty()
-                    && matches!(c.get_biome(), Jungle | Forest)
+            |g, c, _| {
+                jungle_spot_candidate(
+                    g,
+                    c.near_cliffs(),
+                    c.river.near_water(),
+                    c.path.0.is_way(),
+                    c.sites.is_empty(),
+                    c.get_biome(),
+                )
             },
             false,
         );
@@ -103,13 +156,15 @@ impl SpotGenerate for Spot {
             Spot::JungleOutpost,
             world,
             1.0,
-            |g, c| {
-                g < 0.25
-                    && !c.near_cliffs()
-                    && !c.river.near_water()
-                    && !c.path.0.is_way()
-                    && c.sites.is_empty()
-                    && matches!(c.get_biome(), Jungle | Forest)
+            |g, c, _| {
+                jungle_spot_candidate(
+                    g,
+                    c.near_cliffs(),
+                    c.river.near_water(),
+                    c.path.0.is_way(),
+                    c.sites.is_empty(),
+                    c.get_biome(),
+                )
             },
             false,
         );
@@ -117,13 +172,15 @@ impl SpotGenerate for Spot {
             Spot::JungleTemple,
             world,
             0.5,
-            |g, c| {
-                g < 0.25
-                    && !c.near_cliffs()
-                    && !c.river.near_water()
-                    && !c.path.0.is_way()
-                    && c.sites.is_empty()
-                    && matches!(c.get_biome(), Jungle | Forest)
+            |g, c, _| {
+                jungle_spot_candidate(
+                    g,
+                    c.near_cliffs(),
+                    c.river.near_water(),
+                    c.path.0.is_way(),
+                    c.sites.is_empty(),
+                    c.get_biome(),
+                )
             },
             false,
         );
@@ -131,7 +188,7 @@ impl SpotGenerate for Spot {
             Spot::MyrmidonTemple,
             world,
             1.0,
-            |g, c| {
+            |g, c, _| {
                 g < 0.1
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -145,7 +202,7 @@ impl SpotGenerate for Spot {
             Spot::GnarlingTotem,
             world,
             1.5,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -159,7 +216,7 @@ impl SpotGenerate for Spot {
             Spot::FallenTree,
             world,
             1.5,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -175,7 +232,7 @@ impl SpotGenerate for Spot {
             Spot::LionRock,
             world,
             1.5,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -189,7 +246,7 @@ impl SpotGenerate for Spot {
             Spot::WolfBurrow,
             world,
             1.5,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -203,13 +260,16 @@ impl SpotGenerate for Spot {
             Spot::TreeStumpForest,
             world,
             20.0,
-            |g, c| {
-                g < 0.25
-                    && !c.near_cliffs()
-                    && !c.river.near_water()
-                    && !c.path.0.is_way()
-                    && c.sites.is_empty()
-                    && matches!(c.get_biome(), Jungle | Forest)
+            |g, c, _| {
+                tree_stump_forest_spot_candidate(
+                    g,
+                    c.near_cliffs(),
+                    c.river.near_water(),
+                    c.path.0.is_way(),
+                    c.sites.is_empty(),
+                    c.get_biome(),
+                    c.forest_kind,
+                )
             },
             true,
         );
@@ -217,7 +277,7 @@ impl SpotGenerate for Spot {
             Spot::DesertBones,
             world,
             6.0,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -231,7 +291,7 @@ impl SpotGenerate for Spot {
             Spot::Arch,
             world,
             2.0,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -245,7 +305,7 @@ impl SpotGenerate for Spot {
             Spot::AirshipCrash,
             world,
             0.7,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -259,7 +319,7 @@ impl SpotGenerate for Spot {
             Spot::FruitTree,
             world,
             20.0,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -273,7 +333,7 @@ impl SpotGenerate for Spot {
             Spot::GnomeSpring,
             world,
             1.0,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -287,8 +347,14 @@ impl SpotGenerate for Spot {
             Spot::Shipwreck,
             world,
             1.0,
-            |g, c| {
-                g < 0.25 && c.is_underwater() && c.sites.is_empty() && c.water_alt > c.alt + 30.0
+            |g, c, aquatic_spawn| {
+                shipwreck_spot_candidate(
+                    g,
+                    c.is_underwater(),
+                    c.sites.is_empty(),
+                    c.water_alt - c.alt,
+                    aquatic_spawn,
+                )
             },
             true,
         );
@@ -296,8 +362,14 @@ impl SpotGenerate for Spot {
             Spot::Shipwreck2,
             world,
             1.0,
-            |g, c| {
-                g < 0.25 && c.is_underwater() && c.sites.is_empty() && c.water_alt > c.alt + 30.0
+            |g, c, aquatic_spawn| {
+                shipwreck_spot_candidate(
+                    g,
+                    c.is_underwater(),
+                    c.sites.is_empty(),
+                    c.water_alt - c.alt,
+                    aquatic_spawn,
+                )
             },
             true,
         );
@@ -306,7 +378,7 @@ impl SpotGenerate for Spot {
             Spot::GraveSmall,
             world,
             2.0,
-            |g, c| {
+            |g, c, _| {
                 g < 0.25
                     && !c.near_cliffs()
                     && !c.river.near_water()
@@ -340,7 +412,7 @@ impl SpotGenerate for Spot {
         // What tests should we perform to see whether we can spawn the spot here? The two
         // parameters are the gradient of the terrain and the [`SimChunk`] of the candidate
         // location.
-        mut valid: impl FnMut(f32, &SimChunk) -> bool,
+        mut valid: impl FnMut(f32, &SimChunk, Option<AquaticSpawnPotential>) -> bool,
         // Should we allow trees and other trivial structures to spawn close to the spot?
         spawn: bool,
     ) {
@@ -351,11 +423,12 @@ impl SpotGenerate for Spot {
             .ceil() as u64
         {
             let pos = world_size.map(|e| (world.rng.random_range(0..e) & !0b11) as i32);
-            if let Some((_, chunk)) = world
+            let aquatic_spawn = world.aquatic_spawn_potential(pos);
+            let valid_here = world
                 .get_gradient_approx(pos)
-                .zip(world.get_mut(pos))
-                .filter(|(grad, chunk)| valid(*grad, chunk))
-            {
+                .zip(world.get(pos))
+                .is_some_and(|(grad, chunk)| valid(grad, chunk, aquatic_spawn));
+            if valid_here && let Some(chunk) = world.get_mut(pos) {
                 chunk.spot = Some(spot);
                 if !spawn {
                     chunk.tree_density = 0.0;
@@ -647,4 +720,227 @@ fn test_spot_configs() {
         // Entities are tested in another test so don't really need to test it
         // here.
     }
+}
+
+#[test]
+fn shipwreck_spot_candidate_requires_marine_semantics() {
+    let freshwater = AquaticSpawnPotential {
+        freshwater_shoreline: false,
+        river_channel: false,
+        lake_water: true,
+        coastal_shoreline: false,
+        submerged_freshwater: true,
+        submerged_marine: false,
+        open_ocean: false,
+    };
+    let marine = AquaticSpawnPotential {
+        freshwater_shoreline: false,
+        river_channel: false,
+        lake_water: false,
+        coastal_shoreline: false,
+        submerged_freshwater: false,
+        submerged_marine: true,
+        open_ocean: true,
+    };
+
+    assert!(!shipwreck_spot_candidate(
+        0.1,
+        true,
+        true,
+        40.0,
+        Some(freshwater),
+    ));
+    assert!(shipwreck_spot_candidate(
+        0.1,
+        true,
+        true,
+        40.0,
+        Some(marine)
+    ));
+}
+
+#[test]
+fn shipwreck_spot_candidate_preserves_existing_deep_water_gates() {
+    let marine = AquaticSpawnPotential {
+        freshwater_shoreline: false,
+        river_channel: false,
+        lake_water: false,
+        coastal_shoreline: false,
+        submerged_freshwater: false,
+        submerged_marine: true,
+        open_ocean: true,
+    };
+
+    assert!(!shipwreck_spot_candidate(
+        0.3,
+        true,
+        true,
+        40.0,
+        Some(marine)
+    ));
+    assert!(!shipwreck_spot_candidate(
+        0.1,
+        false,
+        true,
+        40.0,
+        Some(marine)
+    ));
+    assert!(!shipwreck_spot_candidate(
+        0.1,
+        true,
+        false,
+        40.0,
+        Some(marine)
+    ));
+    assert!(!shipwreck_spot_candidate(
+        0.1,
+        true,
+        true,
+        20.0,
+        Some(marine)
+    ));
+}
+
+#[test]
+fn tree_stump_forest_spot_candidate_requires_oak_forest_semantics() {
+    assert!(tree_stump_forest_spot_candidate(
+        0.1,
+        false,
+        false,
+        false,
+        true,
+        BiomeKind::Forest,
+        ForestKind::Oak,
+    ));
+    assert!(!tree_stump_forest_spot_candidate(
+        0.1,
+        false,
+        false,
+        false,
+        true,
+        BiomeKind::Jungle,
+        ForestKind::Oak,
+    ));
+    assert!(!tree_stump_forest_spot_candidate(
+        0.1,
+        false,
+        false,
+        false,
+        true,
+        BiomeKind::Forest,
+        ForestKind::Chestnut,
+    ));
+}
+
+#[test]
+fn tree_stump_forest_spot_candidate_preserves_existing_land_gates() {
+    assert!(!tree_stump_forest_spot_candidate(
+        0.3,
+        false,
+        false,
+        false,
+        true,
+        BiomeKind::Forest,
+        ForestKind::Oak,
+    ));
+    assert!(!tree_stump_forest_spot_candidate(
+        0.1,
+        true,
+        false,
+        false,
+        true,
+        BiomeKind::Forest,
+        ForestKind::Oak,
+    ));
+    assert!(!tree_stump_forest_spot_candidate(
+        0.1,
+        false,
+        true,
+        false,
+        true,
+        BiomeKind::Forest,
+        ForestKind::Oak,
+    ));
+    assert!(!tree_stump_forest_spot_candidate(
+        0.1,
+        false,
+        false,
+        true,
+        true,
+        BiomeKind::Forest,
+        ForestKind::Oak,
+    ));
+    assert!(!tree_stump_forest_spot_candidate(
+        0.1,
+        false,
+        false,
+        false,
+        false,
+        BiomeKind::Forest,
+        ForestKind::Oak,
+    ));
+}
+
+#[test]
+fn jungle_spot_candidate_requires_jungle_biome() {
+    assert!(jungle_spot_candidate(
+        0.1,
+        false,
+        false,
+        false,
+        true,
+        BiomeKind::Jungle,
+    ));
+    assert!(!jungle_spot_candidate(
+        0.1,
+        false,
+        false,
+        false,
+        true,
+        BiomeKind::Forest,
+    ));
+}
+
+#[test]
+fn jungle_spot_candidate_preserves_existing_land_gates() {
+    assert!(!jungle_spot_candidate(
+        0.3,
+        false,
+        false,
+        false,
+        true,
+        BiomeKind::Jungle,
+    ));
+    assert!(!jungle_spot_candidate(
+        0.1,
+        true,
+        false,
+        false,
+        true,
+        BiomeKind::Jungle,
+    ));
+    assert!(!jungle_spot_candidate(
+        0.1,
+        false,
+        true,
+        false,
+        true,
+        BiomeKind::Jungle,
+    ));
+    assert!(!jungle_spot_candidate(
+        0.1,
+        false,
+        false,
+        true,
+        true,
+        BiomeKind::Jungle,
+    ));
+    assert!(!jungle_spot_candidate(
+        0.1,
+        false,
+        false,
+        false,
+        false,
+        BiomeKind::Jungle,
+    ));
 }

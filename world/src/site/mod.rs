@@ -1,8 +1,10 @@
+pub(crate) mod coastal_suitability;
 pub mod economy;
 mod generation;
 pub mod genstat;
 pub mod namegen;
 pub mod plot;
+pub(crate) mod terrain_fit;
 mod tile;
 pub mod util;
 

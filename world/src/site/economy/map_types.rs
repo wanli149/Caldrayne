@@ -282,6 +282,27 @@ pub struct NaturalResources {
     pub average_yield_per_chunk: GoodMap<f32>,
 }
 
+impl NaturalResources {
+    pub fn cached_total_yield(&self, good: GoodIndex) -> f32 {
+        self.chunks_per_resource[good] * self.average_yield_per_chunk[good]
+    }
+
+    pub fn refresh_cache(&mut self) {
+        for g in (0..GoodIndex::LENGTH).map(GoodIndex::from_usize) {
+            let amount: f32 = self.per_area.iter().map(|area| area.resource_sum[g]).sum();
+            let chunks: f32 = self
+                .per_area
+                .iter()
+                .map(|area| area.resource_chunks[g])
+                .sum();
+            if chunks > 0.001 {
+                self.chunks_per_resource[g] = chunks;
+                self.average_yield_per_chunk[g] = amount / chunks;
+            }
+        }
+    }
+}
+
 pub fn default_professions() -> Vec<Profession> {
     Ron::<Vec<RawProfession>>::load_expect("common.professions")
         .read()

@@ -79,6 +79,26 @@ function Normalize-PreviewMetrics {
         max_height = $json.max_height
         site_markers = $json.site_markers
         possible_starting_sites = $json.possible_starting_sites
+        starting_site_profile_contract = $json.starting_site_profile_contract
+        starting_site_scoring_contract = $json.starting_site_scoring_contract
+        starting_site_candidates = @(
+            $json.starting_site_candidates | ForEach-Object {
+                [pscustomobject]@{
+                    rank = $_.rank
+                    selected = $_.selected
+                    profile = [pscustomobject]@{
+                        site_id = $_.profile.site_id
+                        name = $_.profile.name
+                        site_kind = $_.profile.site_kind
+                        center_biome = $_.profile.center_biome
+                        center_chunk = $_.profile.center_chunk
+                        plot_count = $_.profile.plot_count
+                        biome_factor = $_.profile.biome_factor
+                    }
+                    score = $_.score
+                }
+            }
+        )
         poi_markers = $json.poi_markers
         sim = $json.sim
     }
@@ -144,14 +164,81 @@ function Normalize-RuntimeMatrix {
         sample_chunks = $sampleChunks
         runtime_audit_mode = $json.runtime_audit_mode
         strict_determinism = $json.strict_determinism
+        runtime_chunk_contract = $json.runtime_chunk_contract
         fixed_overlay_fixture = $json.fixed_overlay_fixture
         sampled_chunks = @(
             $json.sampled_chunks | ForEach-Object {
                 [pscustomobject]@{
                     chunk_pos = $_.chunk_pos
-                    raw_worldgen = $_.raw_worldgen
-                    empty_overlay = $_.empty_overlay
-                    fixed_overlay = $_.fixed_overlay
+                    base_runtime_chunk = $_.base_runtime_chunk
+                    empty_overlay_runtime_chunk = $_.empty_overlay_runtime_chunk
+                    fixed_overlay_runtime_chunk = $_.fixed_overlay_runtime_chunk
+                }
+            }
+        )
+    }
+}
+
+function Normalize-WildlifeRuntimeMatrix {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $json = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    $sampleChunks = if ($null -ne $json.sample_chunks) {
+        [int]$json.sample_chunks
+    } else {
+        @($json.sampled_chunks).Count
+    }
+    return [pscustomobject]@{
+        seed = $json.seed
+        gen_opts = $json.gen_opts
+        recipe = $json.recipe
+        sample_chunks = $sampleChunks
+        runtime_audit_mode = $json.runtime_audit_mode
+        strict_determinism = $json.strict_determinism
+        runtime_chunk_contract = $json.runtime_chunk_contract
+        contexts = $json.contexts
+        aquatic_fauna_sampling_contract = $json.aquatic_fauna_sampling_contract
+        sampling_contract = $json.sampling_contract
+        aquatic_fauna_samples = @(
+            $json.aquatic_fauna_samples | ForEach-Object {
+                [pscustomobject]@{
+                    chunk_pos = $_.chunk_pos
+                    selection_bucket = $_.selection_bucket
+                    biome = $_.biome
+                    alt = $_.alt
+                    water_alt = $_.water_alt
+                    near_water = $_.near_water
+                    aquatic_spawn_potential = $_.aquatic_spawn_potential
+                    aquatic_fauna = $_.aquatic_fauna
+                }
+            }
+        )
+        sampled_chunks = @(
+            $json.sampled_chunks | ForEach-Object {
+                [pscustomobject]@{
+                    chunk_pos = $_.chunk_pos
+                    selection_bucket = $_.selection_bucket
+                    selection_score = $_.selection_score
+                    biome = $_.biome
+                    alt = $_.alt
+                    temp = $_.temp
+                    humidity = $_.humidity
+                    tree_density = $_.tree_density
+                    contains_river = $_.contains_river
+                    near_water = $_.near_water
+                    aquatic_spawn_potential = $_.aquatic_spawn_potential
+                    baseline_night = [pscustomobject]@{
+                        variant_mode = $_.baseline_night.variant_mode
+                        expected_spawn_score = $_.baseline_night.expected_spawn_score
+                        entity_signature_count = $_.baseline_night.entity_signature_count
+                        entity_signatures = $_.baseline_night.entity_signatures
+                    }
+                    halloween_night = [pscustomobject]@{
+                        variant_mode = $_.halloween_night.variant_mode
+                        expected_spawn_score = $_.halloween_night.expected_spawn_score
+                        entity_signature_count = $_.halloween_night.entity_signature_count
+                        entity_signatures = $_.halloween_night.entity_signatures
+                    }
                 }
             }
         )
@@ -549,6 +636,7 @@ function Resolve-VolatileFieldContracts {
             preview_metrics = @($artifactDeclaredFields["preview_metrics"] | Sort-Object -Unique)
             chunk_stats = @($artifactDeclaredFields["chunk_stats"] | Sort-Object -Unique)
             runtime_matrix = @($artifactDeclaredFields["runtime_matrix"] | Sort-Object -Unique)
+            wildlife_runtime_matrix = @($artifactDeclaredFields["wildlife_runtime_matrix"] | Sort-Object -Unique)
             warnings = @($artifactDeclaredFields["warnings"] | Sort-Object -Unique)
         }
     }
@@ -1274,7 +1362,7 @@ function Invoke-AuditVerifyCase {
         -Value $compareStatus `
         -Name "schema_version" `
         -Context "compare status"
-    if ($compareStatusSchemaVersion -cne "worldgen_compare_status_v1") {
+    if ($compareStatusSchemaVersion -cne "worldgen_compare_status_v2") {
         throw "Unsupported compare status schema version '$compareStatusSchemaVersion' in $compareStatusPath"
     }
     $compareMode = Get-RequiredStringPropertyValue `
@@ -1319,6 +1407,10 @@ function Invoke-AuditVerifyCase {
         -Value $compareArtifacts `
         -Name "runtime_matrix" `
         -Context "compare status artifacts"
+    $wildlifeRuntimeMatrixArtifactContractPath = Get-RequiredStringPropertyValue `
+        -Value $compareArtifacts `
+        -Name "wildlife_runtime_matrix" `
+        -Context "compare status artifacts"
     $warningsArtifactContractPath = Get-RequiredStringPropertyValue `
         -Value $compareArtifacts `
         -Name "warnings" `
@@ -1328,6 +1420,7 @@ function Invoke-AuditVerifyCase {
             preview_metrics = $previewArtifactContractPath
             chunk_stats = $chunkArtifactContractPath
             runtime_matrix = $runtimeMatrixArtifactContractPath
+            wildlife_runtime_matrix = $wildlifeRuntimeMatrixArtifactContractPath
             warnings = $warningsArtifactContractPath
         }) `
         -DeclaredVolatileFields $compareVolatileFields
@@ -1336,6 +1429,7 @@ function Invoke-AuditVerifyCase {
     $previewDeclaredVolatileFields = @($volatileFieldContracts.artifact_declared_fields.preview_metrics)
     $chunkDeclaredVolatileFields = @($volatileFieldContracts.artifact_declared_fields.chunk_stats)
     $runtimeMatrixDeclaredVolatileFields = @($volatileFieldContracts.artifact_declared_fields.runtime_matrix)
+    $wildlifeRuntimeMatrixDeclaredVolatileFields = @($volatileFieldContracts.artifact_declared_fields.wildlife_runtime_matrix)
     $warningsDeclaredVolatileFields = @($volatileFieldContracts.artifact_declared_fields.warnings)
 
     $previewArtifactSourcePath = Resolve-RunOwnedContractPath `
@@ -1350,6 +1444,10 @@ function Invoke-AuditVerifyCase {
         -RunDirPath $runDir.FullName `
         -ContractPath $runtimeMatrixArtifactContractPath `
         -Context "runtime_matrix artifact"
+    $wildlifeRuntimeMatrixArtifactSourcePath = Resolve-RunOwnedContractPath `
+        -RunDirPath $runDir.FullName `
+        -ContractPath $wildlifeRuntimeMatrixArtifactContractPath `
+        -Context "wildlife_runtime_matrix artifact"
     $warningsArtifactSourcePath = Resolve-RunOwnedContractPath `
         -RunDirPath $runDir.FullName `
         -ContractPath $warningsArtifactContractPath `
@@ -1358,24 +1456,29 @@ function Invoke-AuditVerifyCase {
     $actualPreviewPath = Join-Path $compareDiffDir "preview_metrics.normalized.json"
     $actualChunkPath = Join-Path $compareDiffDir "chunk_stats.normalized.json"
     $actualRuntimeMatrixPath = Join-Path $compareDiffDir "runtime_matrix.normalized.json"
+    $actualWildlifeRuntimeMatrixPath = Join-Path $compareDiffDir "wildlife_runtime_matrix.normalized.json"
     $actualWarningsPath = Join-Path $compareDiffDir "warnings.txt"
     $previewDiffPath = Join-Path $compareDiffDir "preview_metrics.diff.json"
     $chunkDiffPath = Join-Path $compareDiffDir "chunk_stats.diff.json"
     $runtimeMatrixDiffPath = Join-Path $compareDiffDir "runtime_matrix.diff.json"
+    $wildlifeRuntimeMatrixDiffPath = Join-Path $compareDiffDir "wildlife_runtime_matrix.diff.json"
     $warningsDiffPath = Join-Path $compareDiffDir "warnings.diff.json"
     $summaryPath = Join-Path $compareDiffDir "summary.json"
 
     $normalizedPreviewMetrics = Normalize-PreviewMetrics -Path $previewArtifactSourcePath
     $normalizedChunkStats = Normalize-ChunkStats -Path $chunkArtifactSourcePath
     $normalizedRuntimeMatrix = Normalize-RuntimeMatrix -Path $runtimeMatrixArtifactSourcePath
+    $normalizedWildlifeRuntimeMatrix = Normalize-WildlifeRuntimeMatrix -Path $wildlifeRuntimeMatrixArtifactSourcePath
     Write-NormalizedJson -Value $normalizedPreviewMetrics -Path $actualPreviewPath
     Write-NormalizedJson -Value $normalizedChunkStats -Path $actualChunkPath
     Write-NormalizedJson -Value $normalizedRuntimeMatrix -Path $actualRuntimeMatrixPath
+    Write-NormalizedJson -Value $normalizedWildlifeRuntimeMatrix -Path $actualWildlifeRuntimeMatrixPath
     Copy-Item -LiteralPath $warningsArtifactSourcePath -Destination $actualWarningsPath -Force
 
     $baselinePreviewPath = Join-Path $baselineDirPath "preview_metrics.normalized.json"
     $baselineChunkPath = Join-Path $baselineDirPath "chunk_stats.normalized.json"
     $baselineRuntimeMatrixPath = Join-Path $baselineDirPath "runtime_matrix.normalized.json"
+    $baselineWildlifeRuntimeMatrixPath = Join-Path $baselineDirPath "wildlife_runtime_matrix.normalized.json"
     $baselineWarningsPath = Join-Path $baselineDirPath "warnings.txt"
 
     $previewComparability = Get-OptionalStringPropertyValue `
@@ -1387,6 +1490,9 @@ function Invoke-AuditVerifyCase {
     $runtimeMatrixComparability = Get-OptionalStringPropertyValue `
         -Value $compareComparabilityObject `
         -Name "runtime_matrix"
+    $wildlifeRuntimeMatrixComparability = Get-OptionalStringPropertyValue `
+        -Value $compareComparabilityObject `
+        -Name "wildlife_runtime_matrix"
     $warningsComparability = Get-OptionalStringPropertyValue `
         -Value $compareComparabilityObject `
         -Name "warnings"
@@ -1399,6 +1505,9 @@ function Invoke-AuditVerifyCase {
     $runtimeMatrixExecution = Resolve-ArtifactComparisonExecution `
         -ArtifactName "runtime_matrix" `
         -Comparability $runtimeMatrixComparability
+    $wildlifeRuntimeMatrixExecution = Resolve-ArtifactComparisonExecution `
+        -ArtifactName "wildlife_runtime_matrix" `
+        -Comparability $wildlifeRuntimeMatrixComparability
     $warningsExecution = Resolve-ArtifactComparisonExecution `
         -ArtifactName "warnings" `
         -Comparability $warningsComparability
@@ -1418,6 +1527,11 @@ function Invoke-AuditVerifyCase {
         -ActualPath $actualRuntimeMatrixPath `
         -BaselinePath $baselineRuntimeMatrixPath `
         -VolatileFieldMatchers @($volatileFieldContracts.artifact_matchers["runtime_matrix"])
+    $wildlifeRuntimeMatrixRawDiff = Build-StructuredArtifactDiff `
+        -ArtifactName "wildlife_runtime_matrix" `
+        -ActualPath $actualWildlifeRuntimeMatrixPath `
+        -BaselinePath $baselineWildlifeRuntimeMatrixPath `
+        -VolatileFieldMatchers @($volatileFieldContracts.artifact_matchers["wildlife_runtime_matrix"])
     $warningsRawDiff = Build-TextArtifactDiff `
         -ArtifactName "warnings" `
         -ActualPath $actualWarningsPath `
@@ -1425,17 +1539,20 @@ function Invoke-AuditVerifyCase {
     $previewDiff = Convert-ToExecutedArtifactDiff -RawDiff $previewRawDiff -Execution $previewExecution
     $chunkDiff = Convert-ToExecutedArtifactDiff -RawDiff $chunkRawDiff -Execution $chunkExecution
     $runtimeMatrixDiff = Convert-ToExecutedArtifactDiff -RawDiff $runtimeMatrixRawDiff -Execution $runtimeMatrixExecution
+    $wildlifeRuntimeMatrixDiff = Convert-ToExecutedArtifactDiff -RawDiff $wildlifeRuntimeMatrixRawDiff -Execution $wildlifeRuntimeMatrixExecution
     $warningsDiff = Convert-ToExecutedArtifactDiff -RawDiff $warningsRawDiff -Execution $warningsExecution
-    $artifactDiffs = @($previewDiff, $chunkDiff, $runtimeMatrixDiff, $warningsDiff)
+    $artifactDiffs = @($previewDiff, $chunkDiff, $runtimeMatrixDiff, $wildlifeRuntimeMatrixDiff, $warningsDiff)
 
     $previewMatch = $previewDiff.match
     $chunkMatch = $chunkDiff.match
     $runtimeMatrixMatch = $runtimeMatrixDiff.match
+    $wildlifeRuntimeMatrixMatch = $wildlifeRuntimeMatrixDiff.match
     $warningsMatch = $warningsDiff.match
 
     Write-NormalizedJson -Value $previewDiff -Path $previewDiffPath
     Write-NormalizedJson -Value $chunkDiff -Path $chunkDiffPath
     Write-NormalizedJson -Value $runtimeMatrixDiff -Path $runtimeMatrixDiffPath
+    Write-NormalizedJson -Value $wildlifeRuntimeMatrixDiff -Path $wildlifeRuntimeMatrixDiffPath
     Write-NormalizedJson -Value $warningsDiff -Path $warningsDiffPath
 
     $resolvedCaseSampleChunks = [int]$normalizedChunkStats.sample_chunks
@@ -1452,7 +1569,7 @@ function Invoke-AuditVerifyCase {
     $overallStatus = Resolve-OverallComparisonStatus -ArtifactDiffs $artifactDiffs
 
     $summary = [pscustomobject]@{
-        schema_version = "worldgen_compare_diff_summary_v5"
+        schema_version = "worldgen_compare_diff_summary_v6"
         diff_contract = "pairwise_artifact_diff_v1"
         corpus_config = $CorpusConfig
         baseline_dir = $BaselineDir
@@ -1510,6 +1627,19 @@ function Invoke-AuditVerifyCase {
                 diff = $runtimeMatrixDiffPath
                 diff_status = $runtimeMatrixDiff.status
                 difference_count = $runtimeMatrixDiff.difference_count
+            }
+            wildlife_runtime_matrix = [pscustomobject]@{
+                source = $wildlifeRuntimeMatrixArtifactSourcePath
+                actual = $actualWildlifeRuntimeMatrixPath
+                baseline = $baselineWildlifeRuntimeMatrixPath
+                comparability = $wildlifeRuntimeMatrixComparability
+                execution_status = $wildlifeRuntimeMatrixDiff.execution_status
+                gates_overall_status = $wildlifeRuntimeMatrixDiff.gates_overall_status
+                declared_volatile_fields = $wildlifeRuntimeMatrixDeclaredVolatileFields
+                match = $wildlifeRuntimeMatrixMatch
+                diff = $wildlifeRuntimeMatrixDiffPath
+                diff_status = $wildlifeRuntimeMatrixDiff.status
+                difference_count = $wildlifeRuntimeMatrixDiff.difference_count
             }
             warnings = [pscustomobject]@{
                 source = $warningsArtifactSourcePath

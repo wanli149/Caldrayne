@@ -1,0 +1,532 @@
+{
+  "seed": 424242,
+  "gen_opts": {
+    "x_lg": 10,
+    "y_lg": 9,
+    "scale": 1.5,
+    "map_kind": "Square",
+    "erosion_quality": 0.25
+  },
+  "recipe": {
+    "world_recipe_hash": "8f9a066089d1025a1e7a3e150234c8fdc27ea74f763e48d6119d0eecf50173c4",
+    "chunk_recipe_hash": "d6a12f45c3446e02368855edbcbe0ad6f229f2fc7c33dc9ba1390764430be354",
+    "topology_id": "bounded_plane_v1",
+    "preset_id": "custom_gen_opts_v1",
+    "world_alg_version": "world-sim-v1-record-only",
+    "chunk_pass_version": "chunk-static-v1-record-only",
+    "seed_elements": false
+  },
+  "sample_chunks": 9,
+  "runtime_audit_mode": "wildlife_runtime_matrix_v2",
+  "strict_determinism": true,
+  "runtime_chunk_contract": {
+    "base_chunk_entry": "world.generate_chunk_static_snapshot(time=fixed)+layer::wildlife::apply_wildlife_supplement(...)",
+    "includes_world_runtime_finalize": false,
+    "includes_time_context": true,
+    "includes_rtsim_resource_thinning": false,
+    "wildlife_only_supplement": true
+  },
+  "contexts": {
+    "baseline_night": {
+      "variant_mode": "baseline_night",
+      "time_of_day_seconds": 79200.0,
+      "day_period": "Night",
+      "calendar_events": []
+    },
+    "halloween_night": {
+      "variant_mode": "halloween_night",
+      "time_of_day_seconds": 79200.0,
+      "day_period": "Night",
+      "calendar_events": [
+        "Halloween"
+      ]
+    }
+  },
+  "aquatic_fauna_sampling_contract": {
+    "sampler_id": "center_spiral_aquatic_fauna_buckets_v1",
+    "edge_margin_chunks": 16,
+    "bucket_coverage_mode": "best_effort_primary_buckets",
+    "bucket_order": [
+      "freshwater_fauna",
+      "coastal_fauna",
+      "shelf_fauna",
+      "pelagic_fauna"
+    ],
+    "distinct_chunks": true,
+    "selection_contract": "deterministic first interior chunk per fauna bucket using WorldSim aquatic fauna summary"
+  },
+  "sampling_contract": {
+    "sampler_id": "center_spiral_biome_plus_aquatic_buckets_v2",
+    "edge_margin_chunks": 16,
+    "requires_site_free_chunks": true,
+    "requires_waypoint_free_chunks": true,
+    "requires_positive_spawn_rate": true,
+    "excluded_biomes": [
+      "Void",
+      "Lake"
+    ],
+    "bucket_coverage_mode": "best_effort_primary_then_fallback",
+    "bucket_order": [
+      "forest",
+      "jungle",
+      "snowland",
+      "taiga",
+      "desert",
+      "grassland_or_savannah",
+      "ocean",
+      "river"
+    ],
+    "fallback_bucket_order": [
+      "fallback_general",
+      "fallback_any"
+    ],
+    "max_bucket_candidates": 32,
+    "score_sample_stride": 4,
+    "selection_score_contract": "deterministic_density_signal=sum(requestable_density*spawn_rate) over fixed-stride columns"
+  },
+  "aquatic_fauna_samples": [
+    {
+      "chunk_pos": [
+        527,
+        271
+      ],
+      "selection_bucket": "freshwater_fauna",
+      "biome": "Lake",
+      "alt": 152.96469,
+      "water_alt": 157.37608,
+      "near_water": true,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": true,
+        "coastal_shoreline": false,
+        "submerged_freshwater": true,
+        "submerged_marine": false,
+        "open_ocean": false
+      },
+      "aquatic_fauna": {
+        "freshwater_fauna": true,
+        "coastal_fauna": false,
+        "shelf_fauna": false,
+        "pelagic_fauna": false
+      }
+    },
+    {
+      "chunk_pos": [
+        523,
+        125
+      ],
+      "selection_bucket": "coastal_fauna",
+      "biome": "Ocean",
+      "alt": 139.98598,
+      "water_alt": 140.0,
+      "near_water": true,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": true,
+        "open_ocean": true
+      },
+      "aquatic_fauna": {
+        "freshwater_fauna": false,
+        "coastal_fauna": true,
+        "shelf_fauna": false,
+        "pelagic_fauna": false
+      }
+    },
+    {
+      "chunk_pos": [
+        546,
+        101
+      ],
+      "selection_bucket": "shelf_fauna",
+      "biome": "Ocean",
+      "alt": 99.57788,
+      "water_alt": 140.0,
+      "near_water": true,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": true,
+        "open_ocean": true
+      },
+      "aquatic_fauna": {
+        "freshwater_fauna": false,
+        "coastal_fauna": false,
+        "shelf_fauna": true,
+        "pelagic_fauna": false
+      }
+    },
+    {
+      "chunk_pos": [
+        523,
+        124
+      ],
+      "selection_bucket": "pelagic_fauna",
+      "biome": "Ocean",
+      "alt": 138.99397,
+      "water_alt": 140.0,
+      "near_water": true,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": true,
+        "open_ocean": true
+      },
+      "aquatic_fauna": {
+        "freshwater_fauna": false,
+        "coastal_fauna": false,
+        "shelf_fauna": false,
+        "pelagic_fauna": true
+      }
+    }
+  ],
+  "sampled_chunks": [
+    {
+      "chunk_pos": [
+        516,
+        256
+      ],
+      "selection_bucket": "forest",
+      "selection_score": 0.43982255,
+      "biome": "Forest",
+      "alt": 197.3938,
+      "temp": 0.44424033,
+      "humidity": 0.74187994,
+      "tree_density": 1.0,
+      "contains_river": false,
+      "near_water": false,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": false,
+        "open_ocean": false
+      },
+      "baseline_night": {
+        "variant_mode": "baseline_night",
+        "expected_spawn_score": 0.15588936,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night": {
+        "variant_mode": "halloween_night",
+        "expected_spawn_score": 0.2839332,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        530,
+        264
+      ],
+      "selection_bucket": "jungle",
+      "selection_score": 1.0035301,
+      "biome": "Jungle",
+      "alt": 169.74184,
+      "temp": 0.5484896,
+      "humidity": 0.6835248,
+      "tree_density": 1.0,
+      "contains_river": false,
+      "near_water": false,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": false,
+        "open_ocean": false
+      },
+      "baseline_night": {
+        "variant_mode": "baseline_night",
+        "expected_spawn_score": 0.4440683,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night": {
+        "variant_mode": "halloween_night",
+        "expected_spawn_score": 0.55946183,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        461,
+        205
+      ],
+      "selection_bucket": "snowland",
+      "selection_score": 0.3449038,
+      "biome": "Snowland",
+      "alt": 672.3126,
+      "temp": -0.8582592,
+      "humidity": 0.3747781,
+      "tree_density": 0.065373465,
+      "contains_river": false,
+      "near_water": false,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": false,
+        "open_ocean": false
+      },
+      "baseline_night": {
+        "variant_mode": "baseline_night",
+        "expected_spawn_score": 0.14262697,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night": {
+        "variant_mode": "halloween_night",
+        "expected_spawn_score": 0.20227683,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        505,
+        244
+      ],
+      "selection_bucket": "taiga",
+      "selection_score": 0.34537214,
+      "biome": "Taiga",
+      "alt": 326.56683,
+      "temp": -0.31657928,
+      "humidity": 0.36984354,
+      "tree_density": 0.045351326,
+      "contains_river": false,
+      "near_water": false,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": false,
+        "open_ocean": false
+      },
+      "baseline_night": {
+        "variant_mode": "baseline_night",
+        "expected_spawn_score": 0.14794357,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night": {
+        "variant_mode": "halloween_night",
+        "expected_spawn_score": 0.19742858,
+        "entity_signature_count": 1,
+        "entity_signatures": [
+          "pos_bits=1182596608,1173640192,1134362772;body=QuadrupedSmall(Body { species: Fox, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false"
+        ]
+      }
+    },
+    {
+      "chunk_pos": [
+        483,
+        282
+      ],
+      "selection_bucket": "desert",
+      "selection_score": 0.11428883,
+      "biome": "Desert",
+      "alt": 180.21713,
+      "temp": 0.8525946,
+      "humidity": 0.14789209,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": false,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": false,
+        "open_ocean": false
+      },
+      "baseline_night": {
+        "variant_mode": "baseline_night",
+        "expected_spawn_score": 0.057144415,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night": {
+        "variant_mode": "halloween_night",
+        "expected_spawn_score": 0.057144415,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        512,
+        257
+      ],
+      "selection_bucket": "grassland_or_savannah",
+      "selection_score": 0.3638255,
+      "biome": "Grassland",
+      "alt": 194.36465,
+      "temp": 0.43958712,
+      "humidity": 0.6257211,
+      "tree_density": 0.36586532,
+      "contains_river": false,
+      "near_water": false,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": false,
+        "open_ocean": false
+      },
+      "baseline_night": {
+        "variant_mode": "baseline_night",
+        "expected_spawn_score": 0.12394296,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night": {
+        "variant_mode": "halloween_night",
+        "expected_spawn_score": 0.23988254,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        524,
+        125
+      ],
+      "selection_bucket": "ocean",
+      "selection_score": 0.37075618,
+      "biome": "Ocean",
+      "alt": 139.36694,
+      "temp": 0.42131567,
+      "humidity": 0.963486,
+      "tree_density": 0.0,
+      "contains_river": false,
+      "near_water": true,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": true,
+        "open_ocean": true
+      },
+      "baseline_night": {
+        "variant_mode": "baseline_night",
+        "expected_spawn_score": 0.18537809,
+        "entity_signature_count": 4,
+        "entity_signatures": [
+          "pos_bits=1182994688,1165645824,1124817812;body=FishSmall(Body { species: Clownfish, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1182998784,1165625344,1124817812;body=FishSmall(Body { species: Clownfish, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1182998784,1165674496,1124817812;body=FishSmall(Body { species: Clownfish, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1183003392,1165645824,1124817812;body=FishSmall(Body { species: Clownfish, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false"
+        ]
+      },
+      "halloween_night": {
+        "variant_mode": "halloween_night",
+        "expected_spawn_score": 0.18537809,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        469,
+        316
+      ],
+      "selection_bucket": "river",
+      "selection_score": 0.48290128,
+      "biome": "Desert",
+      "alt": 160.5785,
+      "temp": 0.95975864,
+      "humidity": 0.061226286,
+      "tree_density": 0.0,
+      "contains_river": true,
+      "near_water": true,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": true,
+        "river_channel": true,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": false,
+        "open_ocean": false
+      },
+      "baseline_night": {
+        "variant_mode": "baseline_night",
+        "expected_spawn_score": 0.24145064,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night": {
+        "variant_mode": "halloween_night",
+        "expected_spawn_score": 0.24145064,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      }
+    },
+    {
+      "chunk_pos": [
+        512,
+        256
+      ],
+      "selection_bucket": "fallback_general",
+      "selection_score": 0.34214064,
+      "biome": "Forest",
+      "alt": 200.53107,
+      "temp": 0.40779757,
+      "humidity": 0.674355,
+      "tree_density": 0.46082288,
+      "contains_river": false,
+      "near_water": false,
+      "aquatic_spawn_potential": {
+        "freshwater_shoreline": false,
+        "river_channel": false,
+        "lake_water": false,
+        "coastal_shoreline": false,
+        "submerged_freshwater": false,
+        "submerged_marine": false,
+        "open_ocean": false
+      },
+      "baseline_night": {
+        "variant_mode": "baseline_night",
+        "expected_spawn_score": 0.11172322,
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night": {
+        "variant_mode": "halloween_night",
+        "expected_spawn_score": 0.23041742,
+        "entity_signature_count": 5,
+        "entity_signatures": [
+          "pos_bits=1182795008,1174408704,1128898658;body=Humanoid(Body { species: Draugr, body_type: Female, hair_style: 12, beard: 0, eyes: 0, accessory: 1, hair_color: 8, skin: 7, eye_color: 3 });alignment=Enemy;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1182797056,1174405632,1128964194;body=Humanoid(Body { species: Draugr, body_type: Female, hair_style: 12, beard: 0, eyes: 0, accessory: 1, hair_color: 8, skin: 7, eye_color: 3 });alignment=Enemy;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1182798592,1174413824,1128833122;body=Humanoid(Body { species: Draugr, body_type: Female, hair_style: 12, beard: 0, eyes: 0, accessory: 1, hair_color: 8, skin: 7, eye_color: 3 });alignment=Enemy;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1182800640,1174405632,1128898658;body=Humanoid(Body { species: Draugr, body_type: Female, hair_style: 12, beard: 0, eyes: 0, accessory: 1, hair_color: 8, skin: 7, eye_color: 3 });alignment=Enemy;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1182802688,1174408704,1128833122;body=Humanoid(Body { species: Draugr, body_type: Female, hair_style: 12, beard: 0, eyes: 0, accessory: 1, hair_color: 8, skin: 7, eye_color: 3 });alignment=Enemy;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false"
+        ]
+      }
+    }
+  ]
+}

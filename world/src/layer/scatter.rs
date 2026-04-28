@@ -1,7 +1,8 @@
 use crate::{
     CONFIG, Canvas,
+    all::ForestKind,
     column::ColumnSample,
-    sim::SimChunk,
+    sim::{SimChunk, marine_semantics::WaterAccessClass},
     util::{RandomField, close},
 };
 use common::{
@@ -32,6 +33,64 @@ const MUSH_FACT: f32 = 1.0e-4; // To balance things around the mushroom spawning
 const GRASS_FACT: f32 = 1.0e-3; // To balance things around the grass spawning rate
 const TREE_FACT: f32 = 0.15e-3; // To balance things around the wood spawning rate
 const DEPTH_WATER_NORM: f32 = 15.0; // Water depth at which regular underwater sprites start spawning
+
+fn marine_submerged(col: &ColumnSample<'_>) -> bool {
+    matches!(
+        WaterAccessClass::from_column_sample(col),
+        WaterAccessClass::MarineSubmerged
+    )
+}
+
+fn is_freshwater_submerged(water_access_class: WaterAccessClass) -> bool {
+    matches!(water_access_class, WaterAccessClass::FreshwaterSubmerged)
+}
+
+fn freshwater_submerged(col: &ColumnSample<'_>) -> bool {
+    is_freshwater_submerged(WaterAccessClass::from_column_sample(col))
+}
+
+fn is_freshwater_shoreline(water_access_class: WaterAccessClass) -> bool {
+    matches!(water_access_class, WaterAccessClass::FreshwaterShoreline)
+}
+
+fn freshwater_shoreline(col: &ColumnSample<'_>) -> bool {
+    is_freshwater_shoreline(WaterAccessClass::from_column_sample(col))
+}
+
+fn is_hardwood_forest(forest_kind: ForestKind) -> bool {
+    matches!(
+        forest_kind,
+        ForestKind::Palm | ForestKind::Mangrove | ForestKind::Swamp
+    )
+}
+
+fn hardwood_forest_floor(col: &ColumnSample<'_>) -> bool { is_hardwood_forest(col.forest_kind) }
+
+fn is_frostwood_forest(forest_kind: ForestKind) -> bool {
+    matches!(forest_kind, ForestKind::Frostpine)
+}
+
+fn frostwood_forest_floor(col: &ColumnSample<'_>) -> bool { is_frostwood_forest(col.forest_kind) }
+
+fn marine_benthic_depth_gate(
+    water_access_class: WaterAccessClass,
+    alt: f32,
+    water_level: f32,
+    depth_bias: f32,
+) -> bool {
+    matches!(water_access_class, WaterAccessClass::MarineSubmerged)
+        && alt < water_level - DEPTH_WATER_NORM + depth_bias
+}
+
+fn marine_benthic(col: &ColumnSample<'_>, depth_bias: f32) -> bool {
+    marine_benthic_depth_gate(
+        WaterAccessClass::from_column_sample(col),
+        col.alt,
+        col.water_level,
+        depth_bias,
+    )
+}
+
 pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Option<&Calendar>) {
     enum WaterMode {
         Underwater,
@@ -273,6 +332,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
             f: |_, col| {
                 (
                     close(col.temp, 0.3, 0.4).min(close(col.humidity, CONFIG.jungle_hum, 0.4))
+                        * f32::from(hardwood_forest_floor(col))
                         * col.tree_density
                         * MUSH_FACT
                         * 200.0,
@@ -347,11 +407,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
             permit: |b| matches!(b, BlockKind::Grass),
             f: |_, col| {
                 (
-                    ((close(col.temp, CONFIG.tropical_temp + 0.1, 0.3).min(close(
-                        col.humidity,
-                        CONFIG.jungle_hum,
-                        0.4,
-                    )) > 0.0) as i32) as f32
+                    f32::from(hardwood_forest_floor(col))
                         * (col.tree_density * 1.25 - 0.25).powf(0.5).max(0.0)
                         * TREE_FACT
                         * 0.75,
@@ -374,7 +430,10 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
             permit: |b| matches!(b, BlockKind::Snow | BlockKind::Ice),
             f: |_, col| {
                 (
-                    (col.tree_density * 1.25 - 0.25).powf(0.5).max(0.0) * TREE_FACT * 0.5,
+                    f32::from(frostwood_forest_floor(col))
+                        * (col.tree_density * 1.25 - 0.25).powf(0.5).max(0.0)
+                        * TREE_FACT
+                        * 0.5,
                     None,
                 )
             },
@@ -509,6 +568,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
             f: |_, col| {
                 (
                     close(col.temp, 0.3, 0.4).min(close(col.humidity, CONFIG.jungle_hum, 0.4))
+                        * f32::from(hardwood_forest_floor(col))
                         * col.tree_density
                         * MUSH_FACT
                         * 350.0,
@@ -811,13 +871,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, CONFIG.temperate_temp, 0.8)
                         * MUSH_FACT
                         * 300.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM + 18.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        * if marine_benthic(col, 18.0) { 1.0 } else { 0.0 },
                     Some((0.0, 150.0, 0.3)),
                 )
             },
@@ -831,9 +885,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                 (
                     MUSH_FACT
                         * 600.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && (col.water_level - col.alt) < 3.0
-                        {
+                        * if marine_submerged(col) && (col.water_level - col.alt) < 3.0 {
                             1.0
                         } else {
                             0.0
@@ -852,13 +904,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, CONFIG.temperate_temp, 0.8)
                         * MUSH_FACT
                         * 50.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM + 11.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        * if marine_benthic(col, 11.0) { 1.0 } else { 0.0 },
                     Some((0.0, 500.0, 0.75)),
                 )
             },
@@ -873,13 +919,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, 1.0, 0.95)
                         * MUSH_FACT
                         * 50.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM + 11.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        * if marine_benthic(col, 11.0) { 1.0 } else { 0.0 },
                     Some((0.0, 500.0, 0.75)),
                 )
             },
@@ -891,15 +931,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
             permit: |b| matches!(b, BlockKind::Earth | BlockKind::Sand),
             f: |_, col| {
                 (
-                    MUSH_FACT
-                        * 250.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM + 10.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                    MUSH_FACT * 250.0 * if marine_benthic(col, 10.0) { 1.0 } else { 0.0 },
                     Some((0.0, 100.0, 0.15)),
                 )
             },
@@ -911,15 +943,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
             permit: |b| matches!(b, BlockKind::Earth | BlockKind::Sand),
             f: |_, col| {
                 (
-                    MUSH_FACT
-                        * 250.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM + 10.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                    MUSH_FACT * 250.0 * if marine_benthic(col, 10.0) { 1.0 } else { 0.0 },
                     Some((0.0, 100.0, 0.15)),
                 )
             },
@@ -934,13 +958,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, 1.0, 0.95)
                         * MUSH_FACT
                         * 500.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM + 10.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        * if marine_benthic(col, 10.0) { 1.0 } else { 0.0 },
                     Some((0.0, 50.0, 0.10)),
                 )
             },
@@ -955,13 +973,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, CONFIG.temperate_temp, 0.8)
                         * MUSH_FACT
                         * 125.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM - 9.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        * if marine_benthic(col, -9.0) { 1.0 } else { 0.0 },
                     Some((0.0, 100.0, 0.3)),
                 )
             },
@@ -976,13 +988,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, CONFIG.temperate_temp, 0.8)
                         * MUSH_FACT
                         * 220.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM - 9.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        * if marine_benthic(col, -9.0) { 1.0 } else { 0.0 },
                     Some((0.0, 200.0, 0.4)),
                 )
             },
@@ -997,13 +1003,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, CONFIG.temperate_temp, 0.7)
                         * MUSH_FACT
                         * 300.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM + 3.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        * if marine_benthic(col, 3.0) { 1.0 } else { 0.0 },
                     Some((0.0, 75.0, 0.3)),
                 )
             },
@@ -1018,13 +1018,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, 1.0, 0.9)
                         * MUSH_FACT
                         * 160.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM + 10.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        * if marine_benthic(col, 10.0) { 1.0 } else { 0.0 },
                     Some((0.0, 120.0, 0.4)),
                 )
             },
@@ -1039,13 +1033,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, 1.0, 0.9)
                         * MUSH_FACT
                         * 120.0
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM + 10.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        * if marine_benthic(col, 10.0) { 1.0 } else { 0.0 },
                     Some((0.0, 120.0, 0.4)),
                 )
             },
@@ -1059,13 +1047,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                 (
                     (c.rockiness - 0.5).max(0.0)
                         * 1.0e-3
-                        * if col.water_level <= CONFIG.sea_level
-                            && col.alt < col.water_level - DEPTH_WATER_NORM + 20.0
-                        {
-                            1.0
-                        } else {
-                            0.0
-                        },
+                        * if marine_benthic(col, 20.0) { 1.0 } else { 0.0 },
                     None,
                 )
             },
@@ -1097,6 +1079,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, 0.2, 0.6).min(close(col.humidity, CONFIG.jungle_hum, 0.4))
                         * GRASS_FACT
                         * 100.0
+                        * f32::from(freshwater_submerged(col))
                         * ((col.alt - CONFIG.sea_level) / 12.0).clamped(0.0, 1.0)
                         * col
                             .water_dist
@@ -1114,6 +1097,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
                     close(col.temp, 0.2, 0.6).min(close(col.humidity, CONFIG.jungle_hum, 0.4))
                         * GRASS_FACT
                         * 100.0
+                        * f32::from(freshwater_submerged(col))
                         * ((col.alt - CONFIG.sea_level) / 12.0).clamped(0.0, 1.0)
                         * col
                             .water_dist
@@ -1129,6 +1113,7 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
             f: |_, col| {
                 (
                     close(col.humidity, CONFIG.jungle_hum, 0.9)
+                        * f32::from(freshwater_shoreline(col))
                         * col
                             .water_dist
                             .map(|wd| Lerp::lerp(0.2, 0.0, (wd / 8.0).clamped(0.0, 1.0)))
@@ -1237,4 +1222,91 @@ pub fn apply_scatter_to(canvas: &mut Canvas, _rng: &mut impl Rng, calendar: Opti
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        density_factor_by_altitude, is_freshwater_shoreline, is_freshwater_submerged,
+        is_frostwood_forest, is_hardwood_forest, marine_benthic_depth_gate,
+    };
+    use crate::{all::ForestKind, sim::marine_semantics::WaterAccessClass};
+
+    #[test]
+    fn density_factor_by_altitude_peaks_midway_and_clamps_outside() {
+        assert_eq!(density_factor_by_altitude(0.0, -1.0, 10.0), 0.0);
+        assert_eq!(density_factor_by_altitude(0.0, 11.0, 10.0), 0.0);
+        assert!(density_factor_by_altitude(0.0, 5.0, 10.0) > 0.9);
+    }
+
+    #[test]
+    fn marine_benthic_depth_gate_requires_marine_submergence() {
+        assert!(marine_benthic_depth_gate(
+            WaterAccessClass::MarineSubmerged,
+            80.0,
+            110.0,
+            0.0,
+        ));
+        assert!(!marine_benthic_depth_gate(
+            WaterAccessClass::FreshwaterSubmerged,
+            80.0,
+            110.0,
+            0.0,
+        ));
+        assert!(!marine_benthic_depth_gate(
+            WaterAccessClass::CoastalShoreline,
+            80.0,
+            110.0,
+            0.0,
+        ));
+    }
+
+    #[test]
+    fn marine_benthic_depth_gate_preserves_existing_depth_threshold_shape() {
+        assert!(marine_benthic_depth_gate(
+            WaterAccessClass::MarineSubmerged,
+            80.0,
+            110.0,
+            10.0,
+        ));
+        assert!(!marine_benthic_depth_gate(
+            WaterAccessClass::MarineSubmerged,
+            106.0,
+            110.0,
+            10.0,
+        ));
+    }
+
+    #[test]
+    fn freshwater_helpers_distinguish_shoreline_submerged_and_marine() {
+        assert!(is_freshwater_submerged(
+            WaterAccessClass::FreshwaterSubmerged
+        ));
+        assert!(!is_freshwater_shoreline(
+            WaterAccessClass::FreshwaterSubmerged
+        ));
+
+        assert!(!is_freshwater_submerged(
+            WaterAccessClass::FreshwaterShoreline
+        ));
+        assert!(is_freshwater_shoreline(
+            WaterAccessClass::FreshwaterShoreline
+        ));
+
+        assert!(!is_freshwater_submerged(WaterAccessClass::MarineSubmerged));
+        assert!(!is_freshwater_shoreline(WaterAccessClass::CoastalShoreline));
+    }
+
+    #[test]
+    fn wood_family_helpers_distinguish_hardwood_and_frostwood_forests() {
+        assert!(is_hardwood_forest(ForestKind::Palm));
+        assert!(is_hardwood_forest(ForestKind::Mangrove));
+        assert!(is_hardwood_forest(ForestKind::Swamp));
+        assert!(!is_hardwood_forest(ForestKind::Oak));
+        assert!(!is_hardwood_forest(ForestKind::Frostpine));
+
+        assert!(is_frostwood_forest(ForestKind::Frostpine));
+        assert!(!is_frostwood_forest(ForestKind::Palm));
+        assert!(!is_frostwood_forest(ForestKind::Swamp));
+    }
 }

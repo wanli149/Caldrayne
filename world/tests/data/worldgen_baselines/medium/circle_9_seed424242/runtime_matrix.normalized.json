@@ -17,8 +17,14 @@
     "seed_elements": false
   },
   "sample_chunks": 9,
-  "runtime_audit_mode": "sampled_runtime_overlay_matrix_v1",
+  "runtime_audit_mode": "sampled_runtime_overlay_matrix_v2",
   "strict_determinism": true,
+  "runtime_chunk_contract": {
+    "base_chunk_entry": "world.generate_chunk(rtsim_resource_fractions=None,time=None)",
+    "includes_world_runtime_finalize": true,
+    "includes_time_context": false,
+    "includes_rtsim_resource_thinning": false
+  },
   "fixed_overlay_fixture": {
     "fixture_id": "fixed_overlay_fixture_v1",
     "contract_path": "server/tests/data/terrain_overlay/fixed_overlay_fixture_v1.ron",
@@ -30,8 +36,8 @@
         1,
         1
       ],
-      "raw_worldgen": {
-        "overlay_mode": "raw_worldgen",
+      "base_runtime_chunk": {
+        "variant_mode": "base_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 79,
@@ -54,8 +60,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "empty_overlay": {
-        "overlay_mode": "empty_overlay_server_chunk",
+      "empty_overlay_runtime_chunk": {
+        "variant_mode": "empty_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 79,
@@ -78,8 +84,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "fixed_overlay": {
-        "overlay_mode": "fixed_overlay_server_chunk",
+      "fixed_overlay_runtime_chunk": {
+        "variant_mode": "fixed_overlay_runtime_chunk",
         "overlay_blocks_applied": 3,
         "overlay_operations_skipped": 0,
         "min_z": 79,
@@ -111,8 +117,8 @@
         1,
         255
       ],
-      "raw_worldgen": {
-        "overlay_mode": "raw_worldgen",
+      "base_runtime_chunk": {
+        "variant_mode": "base_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 47,
@@ -137,8 +143,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "empty_overlay": {
-        "overlay_mode": "empty_overlay_server_chunk",
+      "empty_overlay_runtime_chunk": {
+        "variant_mode": "empty_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 47,
@@ -163,8 +169,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "fixed_overlay": {
-        "overlay_mode": "fixed_overlay_server_chunk",
+      "fixed_overlay_runtime_chunk": {
+        "variant_mode": "fixed_overlay_runtime_chunk",
         "overlay_blocks_applied": 3,
         "overlay_operations_skipped": 0,
         "min_z": 47,
@@ -198,8 +204,8 @@
         1,
         510
       ],
-      "raw_worldgen": {
-        "overlay_mode": "raw_worldgen",
+      "base_runtime_chunk": {
+        "variant_mode": "base_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 140,
@@ -213,8 +219,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "empty_overlay": {
-        "overlay_mode": "empty_overlay_server_chunk",
+      "empty_overlay_runtime_chunk": {
+        "variant_mode": "empty_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 140,
@@ -228,8 +234,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "fixed_overlay": {
-        "overlay_mode": "fixed_overlay_server_chunk",
+      "fixed_overlay_runtime_chunk": {
+        "variant_mode": "fixed_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 3,
         "min_z": 140,
@@ -249,8 +255,8 @@
         255,
         1
       ],
-      "raw_worldgen": {
-        "overlay_mode": "raw_worldgen",
+      "base_runtime_chunk": {
+        "variant_mode": "base_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 61,
@@ -276,8 +282,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "empty_overlay": {
-        "overlay_mode": "empty_overlay_server_chunk",
+      "empty_overlay_runtime_chunk": {
+        "variant_mode": "empty_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 61,
@@ -303,8 +309,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "fixed_overlay": {
-        "overlay_mode": "fixed_overlay_server_chunk",
+      "fixed_overlay_runtime_chunk": {
+        "variant_mode": "fixed_overlay_runtime_chunk",
         "overlay_blocks_applied": 3,
         "overlay_operations_skipped": 0,
         "min_z": 61,
@@ -339,8 +345,8 @@
         255,
         255
       ],
-      "raw_worldgen": {
-        "overlay_mode": "raw_worldgen",
+      "base_runtime_chunk": {
+        "variant_mode": "base_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 558,
@@ -362,8 +368,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "empty_overlay": {
-        "overlay_mode": "empty_overlay_server_chunk",
+      "empty_overlay_runtime_chunk": {
+        "variant_mode": "empty_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 558,
@@ -385,8 +391,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "fixed_overlay": {
-        "overlay_mode": "fixed_overlay_server_chunk",
+      "fixed_overlay_runtime_chunk": {
+        "variant_mode": "fixed_overlay_runtime_chunk",
         "overlay_blocks_applied": 3,
         "overlay_operations_skipped": 0,
         "min_z": 558,
@@ -417,8 +423,8 @@
         255,
         510
       ],
-      "raw_worldgen": {
-        "overlay_mode": "raw_worldgen",
+      "base_runtime_chunk": {
+        "variant_mode": "base_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 140,
@@ -432,8 +438,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "empty_overlay": {
-        "overlay_mode": "empty_overlay_server_chunk",
+      "empty_overlay_runtime_chunk": {
+        "variant_mode": "empty_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 140,
@@ -447,8 +453,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "fixed_overlay": {
-        "overlay_mode": "fixed_overlay_server_chunk",
+      "fixed_overlay_runtime_chunk": {
+        "variant_mode": "fixed_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 3,
         "min_z": 140,
@@ -468,8 +474,8 @@
         510,
         1
       ],
-      "raw_worldgen": {
-        "overlay_mode": "raw_worldgen",
+      "base_runtime_chunk": {
+        "variant_mode": "base_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 140,
@@ -483,8 +489,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "empty_overlay": {
-        "overlay_mode": "empty_overlay_server_chunk",
+      "empty_overlay_runtime_chunk": {
+        "variant_mode": "empty_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 140,
@@ -498,8 +504,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "fixed_overlay": {
-        "overlay_mode": "fixed_overlay_server_chunk",
+      "fixed_overlay_runtime_chunk": {
+        "variant_mode": "fixed_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 3,
         "min_z": 140,
@@ -519,8 +525,8 @@
         510,
         255
       ],
-      "raw_worldgen": {
-        "overlay_mode": "raw_worldgen",
+      "base_runtime_chunk": {
+        "variant_mode": "base_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 140,
@@ -534,8 +540,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "empty_overlay": {
-        "overlay_mode": "empty_overlay_server_chunk",
+      "empty_overlay_runtime_chunk": {
+        "variant_mode": "empty_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 140,
@@ -549,8 +555,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "fixed_overlay": {
-        "overlay_mode": "fixed_overlay_server_chunk",
+      "fixed_overlay_runtime_chunk": {
+        "variant_mode": "fixed_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 3,
         "min_z": 140,
@@ -570,8 +576,8 @@
         510,
         510
       ],
-      "raw_worldgen": {
-        "overlay_mode": "raw_worldgen",
+      "base_runtime_chunk": {
+        "variant_mode": "base_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 140,
@@ -585,8 +591,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "empty_overlay": {
-        "overlay_mode": "empty_overlay_server_chunk",
+      "empty_overlay_runtime_chunk": {
+        "variant_mode": "empty_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 0,
         "min_z": 140,
@@ -600,8 +606,8 @@
         "entity_signature_count": 0,
         "entity_signatures": []
       },
-      "fixed_overlay": {
-        "overlay_mode": "fixed_overlay_server_chunk",
+      "fixed_overlay_runtime_chunk": {
+        "variant_mode": "fixed_overlay_runtime_chunk",
         "overlay_blocks_applied": 0,
         "overlay_operations_skipped": 3,
         "min_z": 140,

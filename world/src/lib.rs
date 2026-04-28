@@ -58,8 +58,8 @@ use common::{
     spiral::Spiral2d,
     spot::Spot,
     terrain::{
-        Block, BlockKind, CoordinateConversions, SpriteKind, TerrainChunk, TerrainChunkMeta,
-        TerrainChunkSize, TerrainGrid,
+        BiomeKind, Block, BlockKind, CoordinateConversions, SpriteKind, TerrainChunk,
+        TerrainChunkMeta, TerrainChunkSize, TerrainGrid,
     },
     vol::{ReadVol, RectVolSize, WriteVol},
 };
@@ -133,6 +133,14 @@ enum ChunkGenerationMode {
     RuntimeFinalized,
 }
 
+enum ChunkGenerationOutput {
+    StaticSnapshot(TerrainChunk),
+    RuntimeFinalized {
+        chunk: TerrainChunk,
+        supplement: ChunkSupplement,
+    },
+}
+
 struct ChunkBaseBuild<'a> {
     chunk_pos: Vec2<i32>,
     chunk_wpos2d: Vec2<i32>,
@@ -143,13 +151,115 @@ struct ChunkBaseBuild<'a> {
 }
 
 struct StaticChunkArtifacts {
+    entity_spawns: Vec<EntitySpawn>,
+    rtsim_resource_blocks: Vec<Vec3<i32>>,
+}
+
+struct RuntimeChunkArtifacts {
     supplement: ChunkSupplement,
     rtsim_resource_blocks: Vec<Vec3<i32>>,
+}
+
+struct WorldRuntimeContext<'a> {
+    time: Option<&'a (TimeOfDay, Calendar)>,
+}
+
+impl<'a> WorldRuntimeContext<'a> {
+    fn new(time: Option<&'a (TimeOfDay, Calendar)>) -> Self { Self { time } }
+
+    fn calendar(&self) -> Option<&'a Calendar> { self.time.map(|(_, calendar)| calendar) }
+
+    fn time(&self) -> Option<&'a (TimeOfDay, Calendar)> { self.time }
+}
+
+struct ChunkGenerationContext<'a> {
+    world_runtime: WorldRuntimeContext<'a>,
+    rtsim_resource_fractions: Option<EnumMap<TerrainResource, f32>>,
+}
+
+impl<'a> ChunkGenerationContext<'a> {
+    fn static_snapshot(time: Option<&'a (TimeOfDay, Calendar)>) -> Self {
+        Self {
+            world_runtime: WorldRuntimeContext::new(time),
+            rtsim_resource_fractions: None,
+        }
+    }
+
+    fn runtime_finalized(
+        time: Option<&'a (TimeOfDay, Calendar)>,
+        rtsim_resource_fractions: Option<EnumMap<TerrainResource, f32>>,
+    ) -> Self {
+        Self {
+            world_runtime: WorldRuntimeContext::new(time),
+            rtsim_resource_fractions,
+        }
+    }
+
+    fn calendar(&self) -> Option<&'a Calendar> { self.world_runtime.calendar() }
+}
+
+impl StaticChunkArtifacts {
+    fn into_runtime_artifacts(self) -> RuntimeChunkArtifacts {
+        RuntimeChunkArtifacts {
+            supplement: ChunkSupplement {
+                entity_spawns: self.entity_spawns,
+                rtsim_max_resources: Default::default(),
+            },
+            rtsim_resource_blocks: self.rtsim_resource_blocks,
+        }
+    }
 }
 
 pub struct World {
     sim: sim::WorldSim,
     civs: civ::Civs,
+}
+
+const STARTING_SITE_COUNT: usize = 5;
+const OPTIMAL_STARTER_TOWN_SIZE: f32 = 30.0;
+
+#[derive(Clone, Copy, Debug)]
+pub struct StartingSiteScoreBreakdown {
+    pub base_kind_score: f32,
+    pub size_score: f32,
+    pub position_score: f32,
+    pub biome_score: f32,
+    pub final_score: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct StartingSiteProfile {
+    pub site_id: world_msg::SiteId,
+    pub name: String,
+    pub site_kind: Option<SiteKind>,
+    pub settlement_kind: Option<SettlementKindMeta>,
+    pub center_biome: Option<BiomeKind>,
+    pub center_near_water: Option<bool>,
+    pub center: Vec2<i32>,
+    pub plot_count: usize,
+    pub biome_factor: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct StartingSiteCandidate {
+    pub profile: StartingSiteProfile,
+    pub score: StartingSiteScoreBreakdown,
+}
+
+#[derive(Clone, Debug)]
+pub struct StartingSiteSelection {
+    pub candidates: Vec<StartingSiteCandidate>,
+}
+
+impl StartingSiteSelection {
+    pub fn selected_site_ids(&self) -> Vec<world_msg::SiteId> {
+        self.candidates
+            .iter()
+            .filter(|candidate| candidate.score.base_kind_score > 0.0)
+            .map(|candidate| candidate.profile.site_id)
+            .take(STARTING_SITE_COUNT)
+            .collect()
+    }
 }
 
 #[derive(Deserialize)]
@@ -164,6 +274,45 @@ impl FileAsset for Colors {
     const EXTENSION: &'static str = "ron";
 
     fn from_bytes(bytes: Cow<[u8]>) -> Result<Self, BoxedError> { load_ron(&bytes) }
+}
+
+fn starting_site_settlement_kind(site_kind: Option<SiteKind>) -> Option<SettlementKindMeta> {
+    match site_kind.and_then(|kind| kind.meta()) {
+        Some(common::terrain::SiteKindMeta::Settlement(settlement_kind)) => Some(settlement_kind),
+        _ => None,
+    }
+}
+
+fn starting_site_base_kind_score(
+    site_kind: Option<SiteKind>,
+    settlement_kind: Option<SettlementKindMeta>,
+) -> f32 {
+    match site_kind {
+        Some(SiteKind::Refactor) => 2.0,
+        _ if settlement_kind.is_some() => 1.0,
+        _ => 0.0,
+    }
+}
+
+fn starting_site_size_score(plots: usize) -> f32 {
+    let plots = plots as f32;
+    if plots > OPTIMAL_STARTER_TOWN_SIZE {
+        1.0 + (1.0 / (1.0 + ((plots - OPTIMAL_STARTER_TOWN_SIZE) / 15.0).powi(3)))
+    } else {
+        (2.05 / (1.0 + ((OPTIMAL_STARTER_TOWN_SIZE - plots) / 15.0).powi(5))) - 0.05
+    }
+    .max(0.01)
+}
+
+fn starting_site_position_score(center: Vec2<i32>, world_size: Vec2<u32>) -> f32 {
+    (10.0
+        / (1.0
+            + (center
+                .map2(world_size, |e, sz| (e as f32 / sz as f32 - 0.5).abs() * 2.0)
+                .reduce_partial_max())
+            .powi(6)
+                * 25.0))
+        .max(0.02)
 }
 
 impl World {
@@ -218,9 +367,125 @@ impl World {
         // TODO
     }
 
+    fn starting_site_biome_score(&self, center: Vec2<i32>) -> f32 {
+        let mut chunk_scores = 2.0;
+        for (chunk, distance) in Spiral2d::with_radius(10).filter_map(|rel_pos| {
+            let chunk_pos = center + rel_pos * 2;
+            self.sim()
+                .get(chunk_pos)
+                .zip(Some(rel_pos.as_::<f32>().magnitude()))
+        }) {
+            let weight = 1.0 / (distance * std::f32::consts::TAU + 1.0);
+            let chunk_difficulty =
+                20.0 / (20.0 + chunk.get_biome().difficulty().pow(4) as f32 / 5.0);
+
+            chunk_scores *= 1.0 - weight + chunk_difficulty * weight;
+        }
+
+        chunk_scores
+    }
+
+    pub fn starting_site_profiles(&self, index: IndexRef) -> Vec<StartingSiteProfile> {
+        let mut profiles = self
+            .civs()
+            .sites
+            .iter()
+            .filter_map(|(_, civ_site)| {
+                let site_idx = civ_site.site_tmp?;
+                let site = &index.sites[site_idx];
+                let (center_biome, center_near_water) = match self.sim().get(civ_site.center) {
+                    Some(chunk) => (Some(chunk.get_biome()), Some(chunk.river.near_water())),
+                    None => (None, None),
+                };
+
+                Some(StartingSiteProfile {
+                    site_id: site_idx.id(),
+                    name: index.sites[site_idx].name().unwrap_or("").to_string(),
+                    site_kind: site.kind,
+                    settlement_kind: starting_site_settlement_kind(site.kind),
+                    center_biome,
+                    center_near_water,
+                    center: civ_site.center,
+                    plot_count: site.plots().len(),
+                    biome_factor: self.starting_site_biome_score(civ_site.center),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        profiles.sort_by_key(|profile| profile.site_id);
+        profiles
+    }
+
+    fn score_starting_site_profile(
+        profile: StartingSiteProfile,
+        world_size: Vec2<u32>,
+    ) -> StartingSiteCandidate {
+        let base_kind_score =
+            starting_site_base_kind_score(profile.site_kind, profile.settlement_kind);
+        let size_score = if base_kind_score > 0.0 {
+            starting_site_size_score(profile.plot_count)
+        } else {
+            1.0
+        };
+        let position_score = if base_kind_score > 0.0 {
+            starting_site_position_score(profile.center, world_size)
+        } else {
+            1.0
+        };
+        let biome_score = if base_kind_score > 0.0 {
+            profile.biome_factor
+        } else {
+            1.0
+        };
+        let final_score = base_kind_score * size_score * position_score * biome_score;
+
+        StartingSiteCandidate {
+            profile,
+            score: StartingSiteScoreBreakdown {
+                base_kind_score,
+                size_score,
+                position_score,
+                biome_score,
+                final_score,
+            },
+        }
+    }
+
+    fn score_starting_site_profiles(
+        profiles: Vec<StartingSiteProfile>,
+        world_size: Vec2<u32>,
+    ) -> Vec<StartingSiteCandidate> {
+        let mut candidates = profiles
+            .into_iter()
+            .map(|profile| Self::score_starting_site_profile(profile, world_size))
+            .collect::<Vec<_>>();
+
+        candidates.sort_by(|a, b| {
+            b.score
+                .final_score
+                .total_cmp(&a.score.final_score)
+                .then_with(|| a.profile.site_id.cmp(&b.profile.site_id))
+        });
+        candidates
+    }
+
+    pub fn starting_site_selection(&self, index: IndexRef) -> StartingSiteSelection {
+        StartingSiteSelection {
+            candidates: Self::score_starting_site_profiles(
+                self.starting_site_profiles(index),
+                self.sim().get_size(),
+            ),
+        }
+    }
+
+    pub fn starting_site_candidates(&self, index: IndexRef) -> Vec<StartingSiteCandidate> {
+        self.starting_site_selection(index).candidates
+    }
+
     pub fn get_map_data(&self, index: IndexRef, threadpool: &rayon::ThreadPool) -> WorldMapMsg {
         prof_span!("World::get_map_data");
         threadpool.install(|| {
+            let starting_site_selection = self.starting_site_selection(index);
             WorldMapMsg {
                 pois: self
                     .civs()
@@ -255,95 +520,7 @@ impl World {
                             .map(|wpos| Marker::at(wpos.as_()).with_kind(MarkerKind::Cave)),
                     )
                     .collect(),
-                possible_starting_sites: {
-                    const STARTING_SITE_COUNT: usize = 5;
-
-                    let mut candidates = self
-                        .civs()
-                        .sites
-                        .iter()
-                        .filter_map(|(_, civ_site)| Some((civ_site, civ_site.site_tmp?)))
-                        .map(|(civ_site, site_id)| {
-                            // Score the site according to how suitable it is to be a starting site
-
-                            let site = &index.sites[site_id];
-                            let mut score = match site.kind {
-                                Some(SiteKind::Refactor) => 2.0,
-                                Some(kind)
-                                    if matches!(
-                                        kind.meta(),
-                                        Some(common::terrain::SiteKindMeta::Settlement(_))
-                                    ) =>
-                                {
-                                    1.0
-                                },
-                                // Non-town sites should not be chosen as starting sites and get a
-                                // score of 0
-                                _ => return (site_id.id(), 0.0),
-                            };
-
-                            /// Optimal number of plots in a starter town
-                            const OPTIMAL_STARTER_TOWN_SIZE: f32 = 30.0;
-
-                            // Prefer sites of a medium size
-                            let plots = site.plots().len() as f32;
-                            let size_score = if plots > OPTIMAL_STARTER_TOWN_SIZE {
-                                1.0 + (1.0
-                                    / (1.0 + ((plots - OPTIMAL_STARTER_TOWN_SIZE) / 15.0).powi(3)))
-                            } else {
-                                (2.05
-                                    / (1.0 + ((OPTIMAL_STARTER_TOWN_SIZE - plots) / 15.0).powi(5)))
-                                    - 0.05
-                            }
-                            .max(0.01);
-
-                            score *= size_score;
-
-                            // Prefer sites that are close to the centre of the world
-                            let pos_score = (10.0
-                                / (1.0
-                                    + (civ_site
-                                        .center
-                                        .map2(self.sim().get_size(), |e, sz| {
-                                            (e as f32 / sz as f32 - 0.5).abs() * 2.0
-                                        })
-                                        .reduce_partial_max())
-                                    .powi(6)
-                                        * 25.0))
-                                .max(0.02);
-                            score *= pos_score;
-
-                            // Check if neighboring biomes are beginner friendly
-                            let mut chunk_scores = 2.0;
-                            for (chunk, distance) in
-                                Spiral2d::with_radius(10).filter_map(|rel_pos| {
-                                    let chunk_pos = civ_site.center + rel_pos * 2;
-                                    self.sim()
-                                        .get(chunk_pos)
-                                        .zip(Some(rel_pos.as_::<f32>().magnitude()))
-                                })
-                            {
-                                let weight = 1.0 / (distance * std::f32::consts::TAU + 1.0);
-                                let chunk_difficulty = 20.0
-                                    / (20.0 + chunk.get_biome().difficulty().pow(4) as f32 / 5.0);
-                                // let chunk_difficulty = 1.0 / chunk.get_biome().difficulty() as
-                                // f32;
-
-                                chunk_scores *= 1.0 - weight + chunk_difficulty * weight;
-                            }
-
-                            score *= chunk_scores;
-
-                            (site_id.id(), score)
-                        })
-                        .collect::<Vec<_>>();
-                    candidates.sort_by_key(|(_, score)| -(*score * 1000.0) as i32);
-                    candidates
-                        .into_iter()
-                        .map(|(site_id, _)| site_id)
-                        .take(STARTING_SITE_COUNT)
-                        .collect()
-                },
+                possible_starting_sites: starting_site_selection.selected_site_ids(),
                 ..self.sim.get_map(index, self.sim().calendar.as_ref())
             }
         })
@@ -374,7 +551,7 @@ impl World {
     ) -> Vec3<f32> {
         let chunk_pos = TerrainGrid::chunk_key(spawn_wpos);
 
-        // Unwrapping because generate_chunk only returns err when should_continue evals
+        // Unwrapping because generate_chunk only returns err when should_abort evals
         // to true
         let tc = self
             .generate_chunk_static_snapshot(index, chunk_pos, || false, None)
@@ -388,18 +565,22 @@ impl World {
         &self,
         index: IndexRef,
         chunk_pos: Vec2<i32>,
-        should_continue: impl FnMut() -> bool,
+        should_abort: impl FnMut() -> bool,
         time: Option<(TimeOfDay, Calendar)>,
     ) -> Result<TerrainChunk, ()> {
         self.generate_chunk_with_mode(
             index,
             chunk_pos,
-            None,
-            should_continue,
-            time,
+            ChunkGenerationContext::static_snapshot(time.as_ref()),
+            should_abort,
             ChunkGenerationMode::StaticSnapshot,
         )
-        .map(|(chunk, _)| chunk)
+        .map(|output| match output {
+            ChunkGenerationOutput::StaticSnapshot(chunk) => chunk,
+            ChunkGenerationOutput::RuntimeFinalized { .. } => {
+                unreachable!("static snapshot generation should not produce runtime output")
+            },
+        })
     }
 
     #[expect(clippy::result_unit_err)]
@@ -407,19 +588,23 @@ impl World {
         &self,
         index: IndexRef,
         chunk_pos: Vec2<i32>,
-        rtsim_resources: Option<EnumMap<TerrainResource, f32>>,
-        // TODO: misleading name
-        should_continue: impl FnMut() -> bool,
+        rtsim_resource_fractions: Option<EnumMap<TerrainResource, f32>>,
+        should_abort: impl FnMut() -> bool,
         time: Option<(TimeOfDay, Calendar)>,
     ) -> Result<(TerrainChunk, ChunkSupplement), ()> {
         self.generate_chunk_with_mode(
             index,
             chunk_pos,
-            rtsim_resources,
-            should_continue,
-            time,
+            ChunkGenerationContext::runtime_finalized(time.as_ref(), rtsim_resource_fractions),
+            should_abort,
             ChunkGenerationMode::RuntimeFinalized,
         )
+        .map(|output| match output {
+            ChunkGenerationOutput::RuntimeFinalized { chunk, supplement } => (chunk, supplement),
+            ChunkGenerationOutput::StaticSnapshot(_) => {
+                unreachable!("runtime chunk generation should not produce a static snapshot")
+            },
+        })
     }
 
     #[expect(clippy::result_unit_err)]
@@ -427,13 +612,11 @@ impl World {
         &self,
         index: IndexRef,
         chunk_pos: Vec2<i32>,
-        rtsim_resources: Option<EnumMap<TerrainResource, f32>>,
-        // TODO: misleading name
-        mut should_continue: impl FnMut() -> bool,
-        time: Option<(TimeOfDay, Calendar)>,
+        generation_context: ChunkGenerationContext<'_>,
+        mut should_abort: impl FnMut() -> bool,
         generation_mode: ChunkGenerationMode,
-    ) -> Result<(TerrainChunk, ChunkSupplement), ()> {
-        let calendar = time.as_ref().map(|(_, cal)| cal);
+    ) -> Result<ChunkGenerationOutput, ()> {
+        let calendar = generation_context.calendar();
 
         let mut sampler = self.sample_blocks();
 
@@ -451,42 +634,99 @@ impl World {
             None => {
                 // NOTE: This is necessary in order to generate a handful of chunks at the
                 // edges of the map.
-                return Ok((self.sim().generate_oob_chunk(), ChunkSupplement::default()));
+                return Ok(match generation_mode {
+                    ChunkGenerationMode::StaticSnapshot => {
+                        ChunkGenerationOutput::StaticSnapshot(self.sim().generate_oob_chunk())
+                    },
+                    ChunkGenerationMode::RuntimeFinalized => {
+                        ChunkGenerationOutput::RuntimeFinalized {
+                            chunk: self.sim().generate_oob_chunk(),
+                            supplement: ChunkSupplement::default(),
+                        }
+                    },
+                });
             },
         };
-        let mut base_build = self.build_base_chunk_volume(
+        let (base_build, static_artifacts) = self.build_chunk_static_stage(
             index,
             chunk_pos,
             base_z,
             sim_chunk,
             &mut sampler,
             calendar,
-            &mut should_continue,
+            &mut should_abort,
         )?;
-        let mut static_artifacts = self.apply_static_passes_and_extract_artifacts(
+        Ok(self.finalize_chunk_generation_mode(
+            generation_mode,
+            base_build,
+            sim_chunk,
+            static_artifacts,
+            index,
+            generation_context,
+        ))
+    }
+
+    #[expect(clippy::result_unit_err)]
+    fn build_chunk_static_stage<'a>(
+        &self,
+        index: IndexRef<'a>,
+        chunk_pos: Vec2<i32>,
+        base_z: i32,
+        sim_chunk: &sim::SimChunk,
+        sampler: &mut BlockGen<'a>,
+        calendar: Option<&'a Calendar>,
+        should_abort: &mut impl FnMut() -> bool,
+    ) -> Result<(ChunkBaseBuild<'a>, StaticChunkArtifacts), ()> {
+        let mut base_build = self.build_base_chunk_volume(
+            index,
+            chunk_pos,
+            base_z,
+            sim_chunk,
+            sampler,
+            calendar,
+            should_abort,
+        )?;
+        let static_artifacts = self.apply_static_passes_and_extract_artifacts(
             &mut base_build,
             sim_chunk,
             index,
             calendar,
         );
 
-        if generation_mode == ChunkGenerationMode::RuntimeFinalized {
-            self.run_runtime_finalizers(
-                &mut base_build,
-                sim_chunk,
-                &mut static_artifacts,
-                index,
-                rtsim_resources,
-                time.as_ref(),
-            );
-        } else {
-            // Static snapshot callers compare only deterministic chunk facts and stop
-            // before runtime supplement / rtsim finalize mutate the returned
-            // value contract.
-            base_build.chunk.defragment();
-        }
+        Ok((base_build, static_artifacts))
+    }
 
-        Ok((base_build.chunk, static_artifacts.supplement))
+    fn finalize_chunk_generation_mode<'a>(
+        &self,
+        generation_mode: ChunkGenerationMode,
+        mut base_build: ChunkBaseBuild<'a>,
+        sim_chunk: &sim::SimChunk,
+        static_artifacts: StaticChunkArtifacts,
+        index: IndexRef<'a>,
+        generation_context: ChunkGenerationContext<'_>,
+    ) -> ChunkGenerationOutput {
+        match generation_mode {
+            ChunkGenerationMode::RuntimeFinalized => {
+                let supplement = self.run_runtime_finalizers(
+                    &mut base_build,
+                    sim_chunk,
+                    static_artifacts,
+                    index,
+                    generation_context,
+                );
+                ChunkGenerationOutput::RuntimeFinalized {
+                    chunk: base_build.chunk,
+                    supplement,
+                }
+            },
+            ChunkGenerationMode::StaticSnapshot => {
+                // Static snapshot callers compare only deterministic chunk facts and stop
+                // before runtime supplement / rtsim finalize mutate the returned
+                // value contract.
+                base_build.chunk.defragment();
+                ChunkGenerationOutput::StaticSnapshot(base_build.chunk)
+            },
+        }
     }
 
     #[expect(clippy::result_unit_err)]
@@ -498,7 +738,7 @@ impl World {
         sim_chunk: &sim::SimChunk,
         sampler: &mut BlockGen<'a>,
         calendar: Option<&'a Calendar>,
-        should_continue: &mut impl FnMut() -> bool,
+        should_abort: &mut impl FnMut() -> bool,
     ) -> Result<ChunkBaseBuild<'a>, ()> {
         let chunk_wpos2d = chunk_pos * TerrainChunkSize::RECT_SIZE.map(|e| e as i32);
         let chunk_center_wpos2d = chunk_wpos2d + TerrainChunkSize::RECT_SIZE.map(|e| e as i32 / 2);
@@ -553,7 +793,7 @@ impl World {
 
         for y in 0..TerrainChunkSize::RECT_SIZE.y as i32 {
             for x in 0..TerrainChunkSize::RECT_SIZE.x as i32 {
-                if should_continue() {
+                if should_abort() {
                     return Err(());
                 };
 
@@ -666,10 +906,7 @@ impl World {
 
         StaticChunkArtifacts {
             rtsim_resource_blocks: std::mem::take(&mut canvas.rtsim_resource_blocks),
-            supplement: ChunkSupplement {
-                entity_spawns: std::mem::take(&mut canvas.entity_spawns),
-                rtsim_max_resources: Default::default(),
-            },
+            entity_spawns: std::mem::take(&mut canvas.entity_spawns),
         }
     }
 
@@ -677,11 +914,15 @@ impl World {
         &self,
         base_build: &mut ChunkBaseBuild<'a>,
         sim_chunk: &sim::SimChunk,
-        static_artifacts: &mut StaticChunkArtifacts,
+        static_artifacts: StaticChunkArtifacts,
         index: IndexRef<'a>,
-        rtsim_resources: Option<EnumMap<TerrainResource, f32>>,
-        time: Option<&(TimeOfDay, Calendar)>,
-    ) {
+        generation_context: ChunkGenerationContext<'_>,
+    ) -> ChunkSupplement {
+        let ChunkGenerationContext {
+            world_runtime,
+            rtsim_resource_fractions,
+        } = generation_context;
+        let time = world_runtime.time();
         let runtime_time_bits = time
             .as_ref()
             .map(|(time_of_day, _)| time_of_day.day().to_bits())
@@ -704,32 +945,61 @@ impl World {
             0x5255_4E54,
         ]);
         let mut runtime_rng = ChaCha8Rng::from_seed(seed_expan::rng_state(runtime_rng_seed));
-        Self::apply_runtime_chunk_supplement(
-            &base_build.chunk,
-            &mut static_artifacts.supplement,
+        let RuntimeChunkArtifacts {
+            mut supplement,
+            rtsim_resource_blocks,
+        } = static_artifacts.into_runtime_artifacts();
+        Self::finalize_world_runtime_chunk(
+            &mut base_build.chunk,
+            sim_chunk,
+            &mut supplement,
             &mut runtime_rng,
             base_build.chunk_wpos2d,
             &base_build.zcache_grid,
             base_build.grid_border,
             index,
+            time,
+        );
+        supplement.rtsim_max_resources = Self::apply_rtsim_resource_thinning(
+            &mut base_build.chunk,
+            rtsim_resource_blocks,
+            rtsim_resource_fractions,
+            &mut runtime_rng,
+            base_build.chunk_wpos2d,
+        );
+
+        supplement
+    }
+
+    fn finalize_world_runtime_chunk(
+        chunk: &mut TerrainChunk,
+        sim_chunk: &sim::SimChunk,
+        supplement: &mut ChunkSupplement,
+        runtime_rng: &mut ChaCha8Rng,
+        chunk_wpos2d: Vec2<i32>,
+        zcache_grid: &Grid<Option<block::ZCache<'_>>>,
+        grid_border: i32,
+        index: IndexRef<'_>,
+        time: Option<&(TimeOfDay, Calendar)>,
+    ) {
+        Self::apply_world_runtime_supplement(
+            chunk,
+            supplement,
+            runtime_rng,
+            chunk_wpos2d,
+            zcache_grid,
+            grid_border,
+            index,
             sim_chunk,
             time,
         );
 
-        // Finally, defragment to minimize space consumption.
-        base_build.chunk.defragment();
-
-        Self::finalize_rtsim_resources(
-            &mut base_build.chunk,
-            &mut static_artifacts.supplement,
-            &mut static_artifacts.rtsim_resource_blocks,
-            rtsim_resources,
-            &mut runtime_rng,
-            base_build.chunk_wpos2d,
-        );
+        // World-owned runtime finalize stops after supplement expansion and chunk
+        // compaction. Server-side rtsim thinning is applied as a distinct tail step.
+        chunk.defragment();
     }
 
-    fn apply_runtime_chunk_supplement(
+    fn apply_world_runtime_supplement(
         chunk: &TerrainChunk,
         supplement: &mut ChunkSupplement,
         runtime_rng: &mut ChaCha8Rng,
@@ -796,19 +1066,20 @@ impl World {
         });
     }
 
-    fn finalize_rtsim_resources(
+    fn apply_rtsim_resource_thinning(
         chunk: &mut TerrainChunk,
-        supplement: &mut ChunkSupplement,
-        rtsim_resource_blocks: &mut Vec<Vec3<i32>>,
-        rtsim_resources: Option<EnumMap<TerrainResource, f32>>,
+        mut rtsim_resource_blocks: Vec<Vec3<i32>>,
+        rtsim_resource_fractions: Option<EnumMap<TerrainResource, f32>>,
         runtime_rng: &mut ChaCha8Rng,
         chunk_wpos2d: Vec2<i32>,
-    ) {
+    ) -> EnumMap<TerrainResource, usize> {
+        let mut rtsim_max_resources = EnumMap::default();
+
         // Before we finish, we check candidate rtsim resource blocks, deduplicating
         // positions and only keeping those that actually do have resources.
         // Although this looks potentially very expensive, only blocks that are rtsim
         // resources (i.e: a relatively small number of sprites) are processed here.
-        if let Some(rtsim_resources) = rtsim_resources {
+        if let Some(rtsim_resource_fractions) = rtsim_resource_fractions {
             rtsim_resource_blocks.sort_unstable_by_key(|pos| pos.into_array());
             rtsim_resource_blocks.dedup();
             for wpos in rtsim_resource_blocks.iter().copied() {
@@ -817,21 +1088,24 @@ impl World {
                         // Note: this represents the upper limit, not the actual number spanwed, so
                         // we increment this before deciding whether we're going to spawn the
                         // resource.
-                        supplement.rtsim_max_resources[res] += 1;
+                        rtsim_max_resources[res] += 1;
 
                         debug_assert!(
-                            0.0 <= rtsim_resources[res] && rtsim_resources[res] <= 1.0,
+                            0.0 <= rtsim_resource_fractions[res]
+                                && rtsim_resource_fractions[res] <= 1.0,
                             "The rtsim resource {res:?} has the value '{}', which is not in the \
                              expected range of 0.0..=1.0. When registering a block with the \
                              sprite `{:?}`, with the damage `{:?}`.",
-                            rtsim_resources[res],
+                            rtsim_resource_fractions[res],
                             block.get_sprite(),
                             block.get_attr::<common::terrain::sprite::Damage>().ok(),
                         );
 
                         // Throw a dice to determine whether this resource should actually spawn
                         // TODO: Don't throw a dice, try to generate the *exact* correct number
-                        if runtime_rng.random_bool(rtsim_resources[res].clamp(0.0, 1.0) as f64) {
+                        if runtime_rng
+                            .random_bool(rtsim_resource_fractions[res].clamp(0.0, 1.0) as f64)
+                        {
                             block
                         } else {
                             block.into_vacant()
@@ -842,6 +1116,8 @@ impl World {
                 });
             }
         }
+
+        rtsim_max_resources
     }
 
     // Zone coordinates

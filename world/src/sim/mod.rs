@@ -3,18 +3,27 @@ mod diffusion;
 mod erosion;
 mod location;
 mod map;
+pub(crate) mod marine_semantics;
+pub(crate) mod site_suitability;
+pub(crate) mod subterranean_semantics;
 mod util;
 mod way;
 
 // Reexports
-use self::erosion::Compute;
 pub use self::{
     compat::CompatMode,
     diffusion::diffusion,
     location::Location,
     map::{sample_pos, sample_wpos},
+    marine_semantics::AquaticSpawnPotential,
     util::get_horizon_map,
     way::{Path, Way},
+};
+use self::{
+    erosion::Compute,
+    marine_semantics::{
+        AquaticFaunaProfile, MarineEcologyProfile, WaterAccessClass, WaterBodyKind,
+    },
 };
 pub(crate) use self::{
     erosion::{
@@ -449,9 +458,59 @@ struct GeneratedWorldParts {
     recipe_manifest: RecipeManifestV1,
 }
 
+struct GeneratedWorldFinalizeInputs {
+    seed: u32,
+    map_size_lg: MapSizeLg,
+    gen_ctx: GenCtx,
+    post_erosion_chunk_inputs: PostErosionChunkInputs,
+    rng: ChaChaRng,
+    calendar: Option<Calendar>,
+    compat_mode: CompatMode,
+    compat_audit: CompatAuditV1,
+    recipe_manifest: RecipeManifestV1,
+    seed_elements: bool,
+}
+
 struct PostErosionChunkInputs {
     max_height: f32,
     gen_cdf: GenCdf,
+}
+
+impl GeneratedWorldFinalizeInputs {
+    fn into_parts(self) -> (GeneratedWorldParts, bool) {
+        let Self {
+            seed,
+            map_size_lg,
+            gen_ctx,
+            post_erosion_chunk_inputs,
+            rng,
+            calendar,
+            compat_mode,
+            compat_audit,
+            recipe_manifest,
+            seed_elements,
+        } = self;
+        let PostErosionChunkInputs {
+            max_height,
+            gen_cdf,
+        } = post_erosion_chunk_inputs;
+        let chunks = WorldSim::build_sim_chunks(map_size_lg, &gen_ctx, &gen_cdf);
+        (
+            GeneratedWorldParts {
+                seed,
+                map_size_lg,
+                max_height,
+                chunks,
+                gen_ctx,
+                rng,
+                calendar,
+                compat_mode,
+                compat_audit,
+                recipe_manifest,
+            },
+            seed_elements,
+        )
+    }
 }
 
 struct ErosionProgressReporter<'a> {
@@ -1172,6 +1231,31 @@ pub struct WorldSim {
     pub(crate) recipe_manifest: RecipeManifestV1,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AquaticFaunaSummary {
+    pub freshwater_fauna: bool,
+    pub coastal_fauna: bool,
+    pub shelf_fauna: bool,
+    pub pelagic_fauna: bool,
+}
+
+impl AquaticFaunaSummary {
+    fn from_profile(profile: AquaticFaunaProfile) -> Self {
+        Self {
+            freshwater_fauna: profile.freshwater_fauna,
+            coastal_fauna: profile.coastal_fauna,
+            shelf_fauna: profile.shelf_fauna,
+            pelagic_fauna: profile.pelagic_fauna,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ChunkAquaticSemantics {
+    aquatic_spawn_potential: AquaticSpawnPotential,
+    marine_ecology_profile: MarineEcologyProfile,
+}
+
 impl WorldSim {
     pub fn empty() -> Self {
         let gen_ctx = GenCtx {
@@ -1351,16 +1435,18 @@ impl WorldSim {
             threadpool,
         );
         Ok(Self::finalize_world_from_chunk_inputs(
-            seed,
-            map_size_lg,
-            gen_ctx,
-            post_erosion_chunk_inputs,
-            rng,
-            calendar,
-            compat_mode,
-            compat_audit,
-            recipe_manifest,
-            seed_elements,
+            GeneratedWorldFinalizeInputs {
+                seed,
+                map_size_lg,
+                gen_ctx,
+                post_erosion_chunk_inputs,
+                rng,
+                calendar,
+                compat_mode,
+                compat_audit,
+                recipe_manifest,
+                seed_elements,
+            },
         ))
     }
 
@@ -2256,63 +2342,8 @@ impl WorldSim {
             .collect::<Vec<_>>()
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn prepare_generated_world_parts(
-        seed: u32,
-        map_size_lg: MapSizeLg,
-        gen_ctx: GenCtx,
-        max_height: f32,
-        chunks: Vec<SimChunk>,
-        rng: ChaChaRng,
-        calendar: Option<Calendar>,
-        compat_mode: CompatMode,
-        compat_audit: CompatAuditV1,
-        recipe_manifest: RecipeManifestV1,
-    ) -> GeneratedWorldParts {
-        GeneratedWorldParts {
-            seed,
-            map_size_lg,
-            max_height,
-            chunks,
-            gen_ctx,
-            rng,
-            calendar,
-            compat_mode,
-            compat_audit,
-            recipe_manifest,
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn finalize_world_from_chunk_inputs(
-        seed: u32,
-        map_size_lg: MapSizeLg,
-        gen_ctx: GenCtx,
-        post_erosion_chunk_inputs: PostErosionChunkInputs,
-        rng: ChaChaRng,
-        calendar: Option<Calendar>,
-        compat_mode: CompatMode,
-        compat_audit: CompatAuditV1,
-        recipe_manifest: RecipeManifestV1,
-        seed_elements: bool,
-    ) -> Self {
-        let PostErosionChunkInputs {
-            max_height,
-            gen_cdf,
-        } = post_erosion_chunk_inputs;
-        let chunks = Self::build_sim_chunks(map_size_lg, &gen_ctx, &gen_cdf);
-        let parts = Self::prepare_generated_world_parts(
-            seed,
-            map_size_lg,
-            gen_ctx,
-            max_height,
-            chunks,
-            rng,
-            calendar,
-            compat_mode,
-            compat_audit,
-            recipe_manifest,
-        );
+    fn finalize_world_from_chunk_inputs(inputs: GeneratedWorldFinalizeInputs) -> Self {
+        let (parts, seed_elements) = inputs.into_parts();
         let mut this = Self::finalize_world_from_parts(parts);
         this.run_generation_postprocesses(seed_elements);
 
@@ -2724,6 +2755,51 @@ impl WorldSim {
         } else {
             None
         }
+    }
+
+    fn chunk_aquatic_semantics(&self, chunk_pos: Vec2<i32>) -> Option<ChunkAquaticSemantics> {
+        let chunk = self.get(chunk_pos)?;
+        let water_body_kind = WaterBodyKind::from_chunk(chunk);
+        let is_submerged = chunk.water_alt > chunk.alt;
+        let marine_adjacent =
+            marine_semantics::marine_adjacency_at_site(self, chunk_pos, chunk.alt);
+        let water_access_class = WaterAccessClass::from_semantic_facts(
+            water_body_kind,
+            is_submerged,
+            chunk.river.near_water(),
+            chunk.water_alt,
+            marine_adjacent,
+        );
+
+        Some(ChunkAquaticSemantics {
+            aquatic_spawn_potential: AquaticSpawnPotential::from_semantic_facts(
+                water_body_kind,
+                water_access_class,
+            ),
+            marine_ecology_profile: MarineEcologyProfile::from_world_facts(
+                chunk.water_alt,
+                marine_adjacent,
+                chunk.get_biome(),
+                chunk.alt,
+            ),
+        })
+    }
+
+    pub fn aquatic_spawn_potential(&self, chunk_pos: Vec2<i32>) -> Option<AquaticSpawnPotential> {
+        Some(
+            self.chunk_aquatic_semantics(chunk_pos)?
+                .aquatic_spawn_potential,
+        )
+    }
+
+    pub fn aquatic_fauna_summary(&self, chunk_pos: Vec2<i32>) -> Option<AquaticFaunaSummary> {
+        let semantics = self.chunk_aquatic_semantics(chunk_pos)?;
+        Some(AquaticFaunaSummary::from_profile(
+            AquaticFaunaProfile::from_profiles(
+                semantics.aquatic_spawn_potential,
+                semantics.marine_ecology_profile,
+            ),
+        ))
     }
 
     pub fn get_gradient_approx(&self, chunk_pos: Vec2<i32>) -> Option<f32> {
@@ -3174,6 +3250,39 @@ pub struct NearestWaysData<M, F: FnOnce() -> Vec2<f32>> {
 }
 
 impl SimChunk {
+    fn environment_near_water_value(alt: f32, water_alt: f32, river: &RiverData) -> f32 {
+        let water_access = WaterAccessClass::from_world_facts(
+            WaterBodyKind::from_river_data(river),
+            water_alt > alt,
+            river.near_water(),
+            water_alt,
+        );
+
+        if matches!(
+            water_access,
+            WaterAccessClass::FreshwaterShoreline | WaterAccessClass::FreshwaterSubmerged
+        ) || alt < CONFIG.sea_level + 6.0
+        {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
+    fn build_environment(
+        humidity: f32,
+        temp: f32,
+        alt: f32,
+        water_alt: f32,
+        river: &RiverData,
+    ) -> Environment {
+        Environment {
+            humid: humidity,
+            temp,
+            near_water: Self::environment_near_water_value(alt, water_alt, river),
+        }
+    }
+
     fn generate(map_size_lg: MapSizeLg, posi: usize, gen_ctx: &GenCtx, gen_cdf: &GenCdf) -> Self {
         let pos = uniform_idx_as_vec2(map_size_lg, posi);
         let wposf = (pos * TerrainChunkSize::RECT_SIZE.map(|e| e as i32)).map(|e| e as f64);
@@ -3384,15 +3493,7 @@ impl SimChunk {
             },
             tree_density,
             forest_kind: {
-                let env = Environment {
-                    humid: humidity,
-                    temp,
-                    near_water: if river.is_lake() || river.near_river() {
-                        1.0
-                    } else {
-                        0.0
-                    },
-                };
+                let env = Self::build_environment(humidity, temp, alt, water_alt, &river);
 
                 ForestKind::iter()
                     .max_by_key(|fk| (fk.proclivity(&env) * 10000.0) as u32)
@@ -3422,52 +3523,56 @@ impl SimChunk {
     pub fn get_biome(&self) -> BiomeKind {
         let savannah_hum_temp = [0.05..0.55, 0.3..1.6];
         let taiga_hum_temp = [0.2..1.4, -0.7..-0.3];
-        if self.river.is_ocean() {
-            BiomeKind::Ocean
-        } else if self.river.is_lake() {
-            BiomeKind::Lake
-        } else if self.temp < CONFIG.snow_temp {
-            BiomeKind::Snowland
-        } else if self.alt > 500.0 && self.chaos > 0.3 && self.tree_density < 0.6 {
-            BiomeKind::Mountain
-        } else if self.temp > CONFIG.desert_temp && self.humidity < CONFIG.desert_hum {
-            BiomeKind::Desert
-        } else if self.tree_density > 0.65 && self.humidity > 0.65 && self.temp > 0.45 {
-            BiomeKind::Jungle
-        } else if savannah_hum_temp[0].contains(&self.humidity)
-            && savannah_hum_temp[1].contains(&self.temp)
-        {
-            BiomeKind::Savannah
-        } else if taiga_hum_temp[0].contains(&self.humidity)
-            && taiga_hum_temp[1].contains(&self.temp)
-        {
-            BiomeKind::Taiga
-        } else if self.tree_density > 0.4 {
-            BiomeKind::Forest
-        // } else if self.humidity > 0.8 {
-        //    BiomeKind::Swamp
-        //      Swamps don't really exist yet.
-        } else {
-            BiomeKind::Grassland
+        match WaterBodyKind::from_river_data(&self.river) {
+            WaterBodyKind::Ocean => BiomeKind::Ocean,
+            WaterBodyKind::Lake => BiomeKind::Lake,
+            WaterBodyKind::River | WaterBodyKind::DryLand if self.temp < CONFIG.snow_temp => {
+                BiomeKind::Snowland
+            },
+            WaterBodyKind::River | WaterBodyKind::DryLand
+                if self.alt > 500.0 && self.chaos > 0.3 && self.tree_density < 0.6 =>
+            {
+                BiomeKind::Mountain
+            },
+            WaterBodyKind::River | WaterBodyKind::DryLand
+                if self.temp > CONFIG.desert_temp && self.humidity < CONFIG.desert_hum =>
+            {
+                BiomeKind::Desert
+            },
+            WaterBodyKind::River | WaterBodyKind::DryLand
+                if self.tree_density > 0.65 && self.humidity > 0.65 && self.temp > 0.45 =>
+            {
+                BiomeKind::Jungle
+            },
+            WaterBodyKind::River | WaterBodyKind::DryLand
+                if savannah_hum_temp[0].contains(&self.humidity)
+                    && savannah_hum_temp[1].contains(&self.temp) =>
+            {
+                BiomeKind::Savannah
+            },
+            WaterBodyKind::River | WaterBodyKind::DryLand
+                if taiga_hum_temp[0].contains(&self.humidity)
+                    && taiga_hum_temp[1].contains(&self.temp) =>
+            {
+                BiomeKind::Taiga
+            },
+            WaterBodyKind::River | WaterBodyKind::DryLand if self.tree_density > 0.4 => {
+                BiomeKind::Forest
+            },
+            WaterBodyKind::River | WaterBodyKind::DryLand => BiomeKind::Grassland,
         }
     }
 
     pub fn near_cliffs(&self) -> bool { self.cliff_height > 0.0 }
 
     pub fn get_environment(&self) -> Environment {
-        Environment {
-            humid: self.humidity,
-            temp: self.temp,
-            near_water: if self.river.is_lake()
-                || self.river.near_river()
-                || self.alt < CONFIG.sea_level + 6.0
-            // Close to sea in altitude
-            {
-                1.0
-            } else {
-                0.0
-            },
-        }
+        Self::build_environment(
+            self.humidity,
+            self.temp,
+            self.alt,
+            self.water_alt,
+            &self.river,
+        )
     }
 
     pub fn get_location_name(
@@ -3626,5 +3731,112 @@ mod compat_tests {
         );
         assert!(content.compat_audit.failure_detail.world_size_mismatch);
         assert!(content.compat_audit.failure_detail.world_scale_mismatch);
+    }
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use super::{RiverData, RiverKind, SimChunk};
+    use crate::{all::ForestKind, config::CONFIG};
+    use common::{spot::Spot, terrain::BiomeKind};
+    use vek::{Vec2, Vec3};
+
+    fn river_data(kind: Option<RiverKind>) -> RiverData {
+        RiverData {
+            velocity: Vec3::zero(),
+            spline_derivative: Vec2::zero(),
+            river_kind: kind,
+            neighbor_rivers: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn environment_near_water_counts_freshwater_influence() {
+        let lake = river_data(Some(RiverKind::Lake {
+            neighbor_pass_pos: Vec2::zero(),
+        }));
+        assert_eq!(
+            SimChunk::environment_near_water_value(
+                CONFIG.sea_level + 20.0,
+                CONFIG.sea_level,
+                &lake
+            ),
+            1.0
+        );
+
+        let river = river_data(Some(RiverKind::River {
+            cross_section: Vec2::one(),
+        }));
+        assert_eq!(
+            SimChunk::environment_near_water_value(
+                CONFIG.sea_level + 20.0,
+                CONFIG.sea_level,
+                &river,
+            ),
+            1.0
+        );
+    }
+
+    #[test]
+    fn environment_near_water_preserves_coastal_low_altitude_bias() {
+        let dry_land = river_data(None);
+        assert_eq!(
+            SimChunk::environment_near_water_value(
+                CONFIG.sea_level + 5.0,
+                CONFIG.sea_level,
+                &dry_land,
+            ),
+            1.0
+        );
+        assert_eq!(
+            SimChunk::environment_near_water_value(
+                CONFIG.sea_level + 20.0,
+                CONFIG.sea_level,
+                &dry_land,
+            ),
+            0.0
+        );
+    }
+
+    fn sim_chunk_with_river(kind: Option<RiverKind>) -> SimChunk {
+        SimChunk {
+            chaos: 0.0,
+            alt: 200.0,
+            basement: 200.0,
+            water_alt: CONFIG.sea_level,
+            downhill: None,
+            flux: 0.0,
+            temp: 0.0,
+            humidity: 0.5,
+            rockiness: 0.0,
+            tree_density: 0.5,
+            forest_kind: ForestKind::Oak,
+            spawn_rate: 1.0,
+            river: river_data(kind),
+            surface_veg: 1.0,
+            sites: Vec::new(),
+            place: None,
+            poi: None,
+            path: Default::default(),
+            cliff_height: 0.0,
+            spot: Option::<Spot>::None,
+            contains_waypoint: false,
+        }
+    }
+
+    #[test]
+    fn get_biome_uses_water_body_prefix_but_keeps_river_on_land_ladder() {
+        let ocean = sim_chunk_with_river(Some(RiverKind::Ocean));
+        assert_eq!(ocean.get_biome(), BiomeKind::Ocean);
+
+        let lake = sim_chunk_with_river(Some(RiverKind::Lake {
+            neighbor_pass_pos: Vec2::zero(),
+        }));
+        assert_eq!(lake.get_biome(), BiomeKind::Lake);
+
+        let river = sim_chunk_with_river(Some(RiverKind::River {
+            cross_section: Vec2::one(),
+        }));
+        assert_eq!(river.get_biome(), BiomeKind::Forest);
     }
 }

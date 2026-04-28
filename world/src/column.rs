@@ -1,7 +1,10 @@
 use crate::{
     CONFIG, IndexRef,
     all::ForestKind,
-    sim::{Path, RiverKind, SimChunk, WorldSim, local_cells},
+    sim::{
+        Path, RiverKind, SimChunk, WorldSim, local_cells,
+        marine_semantics::marine_adjacent_from_ocean_distance,
+    },
     site::SpawnRules,
     util::{RandomField, RandomPerm, Sampler},
 };
@@ -495,6 +498,7 @@ impl<'a> Sampler<'a> for ColumnGen<'a> {
             lake_water_level,
             lake_dist,
             water_dist,
+            ocean_dist,
             unbounded_water_level,
         ) = neighbor_river_data.iter().copied().fold(
             (
@@ -502,6 +506,7 @@ impl<'a> Sampler<'a> for ColumnGen<'a> {
                 false,
                 WeightedSum::default().with_max(base_sea_level),
                 10000.0f32,
+                None,
                 None,
                 WeightedSum::default().with_max(base_sea_level),
             ),
@@ -511,6 +516,7 @@ impl<'a> Sampler<'a> for ColumnGen<'a> {
                 lake_water_level,
                 mut lake_dist,
                 water_dist,
+                ocean_dist,
                 mut unbounded_water_level,
             ),
              (river_chunk_idx, river_chunk, river, dist_info)| match (
@@ -605,6 +611,13 @@ impl<'a> Sampler<'a> for ColumnGen<'a> {
                             .unwrap_or(river_edge_dist_unclamped)
                             .min(river_edge_dist_unclamped),
                     );
+                    let ocean_dist = matches!(kind, RiverKind::Ocean)
+                        .then_some(
+                            ocean_dist
+                                .unwrap_or(river_edge_dist_unclamped)
+                                .min(river_edge_dist_unclamped),
+                        )
+                        .or(ocean_dist);
 
                     (
                         river_water_level,
@@ -612,6 +625,7 @@ impl<'a> Sampler<'a> for ColumnGen<'a> {
                         lake_water_level,
                         lake_dist,
                         water_dist,
+                        ocean_dist,
                         unbounded_water_level,
                     )
                 },
@@ -621,11 +635,13 @@ impl<'a> Sampler<'a> for ColumnGen<'a> {
                     lake_water_level,
                     lake_dist,
                     water_dist,
+                    ocean_dist,
                     unbounded_water_level,
                 ),
             },
         );
         let unbounded_water_level = unbounded_water_level.eval_or(base_sea_level);
+        let marine_adjacent = marine_adjacent_from_ocean_distance(ocean_dist);
         // Calculate a final, canonical altitude for the water in this column by
         // combining and clamping the attributes we found while iterating over
         // nearby bodies of water.
@@ -1255,6 +1271,7 @@ impl<'a> Sampler<'a> for ColumnGen<'a> {
             spawn_rate,
             stone_col,
             water_dist,
+            marine_adjacent,
             gradient,
             path,
             snow_cover,
@@ -1289,6 +1306,7 @@ pub struct ColumnSample<'a> {
     pub spawn_rate: f32,
     pub stone_col: Rgb<u8>,
     pub water_dist: Option<f32>,
+    pub marine_adjacent: bool,
     pub gradient: Option<f32>,
     pub path: Option<(f32, Vec2<f32>, Path, Vec2<f32>)>,
     pub snow_cover: bool,

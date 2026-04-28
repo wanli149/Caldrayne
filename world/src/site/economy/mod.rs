@@ -2,7 +2,7 @@
 /// and functions to simulate it
 use crate::world_msg::EconomyInfo;
 use crate::{
-    sim::SimChunk,
+    sim::{SimChunk, marine_semantics::WaterBodyKind},
     site::Site,
     util::{DHashMap, DHashSet, map_array::GenericIndex},
 };
@@ -19,7 +19,7 @@ use tracing::{debug, info, trace, warn};
 use Good::*;
 mod map_types;
 pub use map_types::Labor;
-use map_types::{GoodIndex, GoodMap, LaborIndex, LaborMap, NaturalResources};
+use map_types::{AreaResources, GoodIndex, GoodMap, LaborIndex, LaborMap, NaturalResources};
 mod context;
 pub use context::simulate_economy;
 mod cache;
@@ -63,6 +63,48 @@ lazy_static! {
     static ref COIN_INDEX: GoodIndex = Coin.try_into().unwrap_or_default();
     static ref FOOD_INDEX: GoodIndex = Good::Food.try_into().unwrap_or_default();
     static ref TRANSPORTATION_INDEX: GoodIndex = Transportation.try_into().unwrap_or_default();
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct EconomyChunkProfile {
+    terrain_resources: GoodMap<f32>,
+}
+
+impl EconomyChunkProfile {
+    fn from_chunk(ch: &SimChunk) -> Self {
+        let mut profile = Self::default();
+        match WaterBodyKind::from_chunk(ch) {
+            WaterBodyKind::Ocean => profile.add_terrain(BiomeKind::Ocean, 1.0),
+            WaterBodyKind::Lake => profile.add_terrain(BiomeKind::Lake, 1.0),
+            WaterBodyKind::River | WaterBodyKind::DryLand => {
+                profile.add_terrain(BiomeKind::Forest, 0.5 + ch.tree_density);
+                profile.add_terrain(BiomeKind::Grassland, 0.5 + ch.humidity);
+                profile.add_terrain(BiomeKind::Jungle, 0.5 + ch.humidity * ch.temp.max(0.0));
+                profile.add_terrain(BiomeKind::Mountain, 0.5 + (ch.alt / 4000.0).max(0.0));
+                profile.add_terrain(
+                    BiomeKind::Desert,
+                    0.5 + (1.0 - ch.humidity) * ch.temp.max(0.0),
+                );
+                profile.add_terrain(BiomeKind::Snowland, 0.5 + (-ch.temp).max(0.0));
+            },
+        }
+        profile
+    }
+
+    fn add_terrain(&mut self, biome: BiomeKind, amount: f32) {
+        if let Ok(idx) = GoodIndex::try_from(Terrain(biome)) {
+            self.terrain_resources[idx] += amount;
+        }
+    }
+
+    fn accumulate_into(self, area: &mut AreaResources) {
+        for (idx, amount) in self.terrain_resources.iter() {
+            if *amount > 0.0 {
+                area.resource_sum[idx] += *amount;
+                area.resource_chunks[idx] += *amount;
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -200,36 +242,12 @@ impl Economy {
                 .natural_resources
                 .chunks_per_resource
                 .iter()
-                .map(|(g, a)| {
-                    (
-                        Good::from(g),
-                        (*a) * self.natural_resources.average_yield_per_chunk[g],
-                    )
-                })
+                .map(|(g, _)| (Good::from(g), self.natural_resources.cached_total_yield(g)))
                 .collect(),
         }
     }
 
-    pub fn cache_economy(&mut self) {
-        for g in good_list() {
-            let amount: f32 = self
-                .natural_resources
-                .per_area
-                .iter()
-                .map(|a| a.resource_sum[g])
-                .sum();
-            let chunks = self
-                .natural_resources
-                .per_area
-                .iter()
-                .map(|a| a.resource_chunks[g])
-                .sum();
-            if chunks > 0.001 {
-                self.natural_resources.chunks_per_resource[g] = chunks;
-                self.natural_resources.average_yield_per_chunk[g] = amount / chunks;
-            }
-        }
-    }
+    pub fn cache_economy(&mut self) { self.natural_resources.refresh_cache(); }
 
     /// orders per profession (excluding everyone)
     fn get_orders(&self) -> &'static LaborMap<Vec<(GoodIndex, f32)>> {
@@ -270,45 +288,31 @@ impl Economy {
     }
 
     fn replenish(&mut self, _time: f32) {
-        for (good, &ch) in self.natural_resources.chunks_per_resource.iter() {
-            let per_year = self.natural_resources.average_yield_per_chunk[good] * ch;
-            self.stocks[good] = self.stocks[good].max(per_year);
+        for (good, stock) in self.stocks.iter_mut() {
+            *stock = stock.max(self.natural_resources.cached_total_yield(good));
         }
         // info!("resources {:?}", self.stocks);
     }
 
-    pub fn add_chunk(&mut self, ch: &SimChunk, distance_squared: i64) {
-        // let biome = ch.get_biome();
-        // we don't scale by pi, although that would be correct
-        let distance_bin = (distance_squared >> 16).min(64) as usize;
+    fn natural_resource_distance_bin(distance_squared: i64) -> usize {
+        (distance_squared >> 16).min(64) as usize
+    }
+
+    fn area_resources_mut(&mut self, distance_bin: usize) -> &mut AreaResources {
         if self.natural_resources.per_area.len() <= distance_bin {
             self.natural_resources
                 .per_area
                 .resize_with(distance_bin + 1, Default::default);
         }
-        self.natural_resources.per_area[distance_bin].chunks += 1;
+        &mut self.natural_resources.per_area[distance_bin]
+    }
 
-        let mut add_biome = |biome, amount| {
-            if let Ok(idx) = GoodIndex::try_from(Terrain(biome)) {
-                self.natural_resources.per_area[distance_bin].resource_sum[idx] += amount;
-                self.natural_resources.per_area[distance_bin].resource_chunks[idx] += amount;
-            }
-        };
-        if ch.river.is_ocean() {
-            add_biome(BiomeKind::Ocean, 1.0);
-        } else if ch.river.is_lake() {
-            add_biome(BiomeKind::Lake, 1.0);
-        } else {
-            add_biome(BiomeKind::Forest, 0.5 + ch.tree_density);
-            add_biome(BiomeKind::Grassland, 0.5 + ch.humidity);
-            add_biome(BiomeKind::Jungle, 0.5 + ch.humidity * ch.temp.max(0.0));
-            add_biome(BiomeKind::Mountain, 0.5 + (ch.alt / 4000.0).max(0.0));
-            add_biome(
-                BiomeKind::Desert,
-                0.5 + (1.0 - ch.humidity) * ch.temp.max(0.0),
-            );
-            add_biome(BiomeKind::Snowland, 0.5 + (-ch.temp).max(0.0));
-        }
+    pub fn add_chunk(&mut self, ch: &SimChunk, distance_squared: i64) {
+        let distance_bin = Self::natural_resource_distance_bin(distance_squared);
+        let chunk_profile = EconomyChunkProfile::from_chunk(ch);
+        let area = self.area_resources_mut(distance_bin);
+        area.chunks += 1;
+        chunk_profile.accumulate_into(area);
     }
 
     pub fn add_neighbor(&mut self, id: Id<Site>, _distance: usize) {
@@ -1421,4 +1425,209 @@ impl GraphInfo {
     pub fn labor_list(&self) -> impl Iterator<Item = Labor> + use<> { Labor::list() }
 
     pub fn can_store(&self, g: &GoodIndex) -> bool { direct_use_goods().contains(g) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Economy, EconomyChunkProfile, GoodIndex, GoodMap};
+    use crate::{
+        all::ForestKind,
+        config::CONFIG,
+        sim::{RiverData, RiverKind, SimChunk},
+        site::Site,
+    };
+    use common::{spot::Spot, store::Id, terrain::BiomeKind, trade::Good::Terrain};
+    use vek::{Vec2, Vec3};
+
+    fn river_data(kind: Option<RiverKind>) -> RiverData {
+        RiverData {
+            velocity: Vec3::zero(),
+            spline_derivative: Vec2::zero(),
+            river_kind: kind,
+            neighbor_rivers: Vec::new(),
+        }
+    }
+
+    fn sim_chunk_with_river(kind: Option<RiverKind>) -> SimChunk {
+        SimChunk {
+            chaos: 0.0,
+            alt: 200.0,
+            basement: 200.0,
+            water_alt: CONFIG.sea_level,
+            downhill: None,
+            flux: 0.0,
+            temp: 0.0,
+            humidity: 0.5,
+            rockiness: 0.0,
+            tree_density: 0.5,
+            forest_kind: ForestKind::Oak,
+            spawn_rate: 1.0,
+            river: river_data(kind),
+            surface_veg: 1.0,
+            sites: Vec::new(),
+            place: None,
+            poi: None,
+            path: Default::default(),
+            cliff_height: 0.0,
+            spot: Option::<Spot>::None,
+            contains_waypoint: false,
+        }
+    }
+
+    fn terrain_amount(resources: &GoodMap<f32>, biome: BiomeKind) -> f32 {
+        resources[GoodIndex::try_from(Terrain(biome)).unwrap()]
+    }
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn economy_chunk_profile_short_circuits_ocean_and_lake() {
+        let ocean = EconomyChunkProfile::from_chunk(&sim_chunk_with_river(Some(RiverKind::Ocean)));
+        assert_close(
+            terrain_amount(&ocean.terrain_resources, BiomeKind::Ocean),
+            1.0,
+        );
+        assert_close(
+            ocean
+                .terrain_resources
+                .iter()
+                .map(|(_, amount)| *amount)
+                .sum(),
+            1.0,
+        );
+
+        let lake = EconomyChunkProfile::from_chunk(&sim_chunk_with_river(Some(RiverKind::Lake {
+            neighbor_pass_pos: Vec2::zero(),
+        })));
+        assert_close(
+            terrain_amount(&lake.terrain_resources, BiomeKind::Lake),
+            1.0,
+        );
+        assert_close(
+            lake.terrain_resources
+                .iter()
+                .map(|(_, amount)| *amount)
+                .sum(),
+            1.0,
+        );
+    }
+
+    #[test]
+    fn economy_chunk_profile_preserves_weighted_land_projection() {
+        let mut dry_land = sim_chunk_with_river(None);
+        dry_land.tree_density = 0.25;
+        dry_land.humidity = 0.4;
+        dry_land.temp = 0.8;
+        dry_land.alt = 2000.0;
+
+        let dry_profile = EconomyChunkProfile::from_chunk(&dry_land);
+        assert_close(
+            terrain_amount(&dry_profile.terrain_resources, BiomeKind::Forest),
+            0.75,
+        );
+        assert_close(
+            terrain_amount(&dry_profile.terrain_resources, BiomeKind::Grassland),
+            0.9,
+        );
+        assert_close(
+            terrain_amount(&dry_profile.terrain_resources, BiomeKind::Mountain),
+            1.0,
+        );
+        assert_close(
+            terrain_amount(&dry_profile.terrain_resources, BiomeKind::Desert),
+            0.98,
+        );
+        assert!(GoodIndex::try_from(Terrain(BiomeKind::Jungle)).is_err());
+        assert!(GoodIndex::try_from(Terrain(BiomeKind::Snowland)).is_err());
+        assert_close(
+            dry_profile
+                .terrain_resources
+                .iter()
+                .map(|(_, amount)| *amount)
+                .sum(),
+            0.75 + 0.9 + 1.0 + 0.98,
+        );
+
+        let river_profile =
+            EconomyChunkProfile::from_chunk(&sim_chunk_with_river(Some(RiverKind::River {
+                cross_section: Vec2::one(),
+            })));
+        let default_land_profile = EconomyChunkProfile::from_chunk(&sim_chunk_with_river(None));
+        for biome in [
+            BiomeKind::Forest,
+            BiomeKind::Grassland,
+            BiomeKind::Mountain,
+            BiomeKind::Desert,
+        ] {
+            assert_close(
+                terrain_amount(&river_profile.terrain_resources, biome),
+                terrain_amount(&default_land_profile.terrain_resources, biome),
+            );
+        }
+    }
+
+    #[test]
+    fn add_chunk_caches_projected_resources_in_capped_distance_bin() {
+        let mut economy = Economy::default();
+        let mut chunk = sim_chunk_with_river(None);
+        chunk.tree_density = 0.25;
+        chunk.humidity = 0.4;
+        chunk.temp = 0.8;
+        chunk.alt = 2000.0;
+
+        let far_distance = 65_i64 << 16;
+        economy.add_chunk(&chunk, far_distance);
+        economy.add_chunk(&chunk, far_distance);
+
+        assert_eq!(economy.natural_resources.per_area.len(), 65);
+        assert_eq!(economy.natural_resources.per_area[64].chunks, 2);
+        assert_close(
+            terrain_amount(
+                &economy.natural_resources.per_area[64].resource_sum,
+                BiomeKind::Forest,
+            ),
+            1.5,
+        );
+
+        economy.cache_economy();
+
+        assert_close(
+            terrain_amount(
+                &economy.natural_resources.chunks_per_resource,
+                BiomeKind::Forest,
+            ),
+            1.5,
+        );
+        assert_close(
+            terrain_amount(
+                &economy.natural_resources.average_yield_per_chunk,
+                BiomeKind::Forest,
+            ),
+            1.0,
+        );
+    }
+
+    #[test]
+    fn cached_total_yield_is_shared_by_information_and_replenish() {
+        let mut economy = Economy::default();
+        let forest = GoodIndex::try_from(Terrain(BiomeKind::Forest)).unwrap();
+        economy.natural_resources.chunks_per_resource[forest] = 2.0;
+        economy.natural_resources.average_yield_per_chunk[forest] = 1.5;
+        economy.stocks[forest] = 0.5;
+
+        let info = economy.get_information(Id::<Site>::new(1));
+        assert_close(economy.natural_resources.cached_total_yield(forest), 3.0);
+        assert_close(
+            *info.resources.get(&Terrain(BiomeKind::Forest)).unwrap(),
+            3.0,
+        );
+
+        economy.replenish(0.0);
+        assert_close(economy.stocks[forest], 3.0);
+    }
 }

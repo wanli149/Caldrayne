@@ -174,13 +174,12 @@
         "Rock": 20129
       },
       "sprite_kind_counts": {
-        "Empty": 6786,
-        "JungleFern": 8,
+        "Empty": 6793,
         "JungleLeafyPlant": 4,
         "LeafyPlant": 4,
         "LongGrass": 9,
         "MediumGrass": 28,
-        "ShortGrass": 63
+        "ShortGrass": 64
       }
     },
     {

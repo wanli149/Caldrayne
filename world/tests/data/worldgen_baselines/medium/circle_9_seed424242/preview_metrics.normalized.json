@@ -25,22 +25,1137 @@
     512
   ],
   "max_height": 590.93945,
-  "site_markers": 0,
-  "possible_starting_sites": 0,
-  "poi_markers": 0,
+  "site_markers": 66,
+  "possible_starting_sites": 5,
+  "starting_site_profile_contract": "starting_site_profile_v2",
+  "starting_site_scoring_contract": "starting_site_scoring_v1",
+  "starting_site_candidates": [
+    {
+      "rank": 1,
+      "selected": true,
+      "profile": {
+        "site_id": 1,
+        "name": "Sprenton",
+        "site_kind": "Refactor",
+        "center_biome": "Forest",
+        "center_chunk": [
+          223,
+          322
+        ],
+        "plot_count": 25,
+        "biome_factor": 1.3073227
+      },
+      "score": {
+        "base_kind_score": 2.0,
+        "size_score": 1.9915984,
+        "position_score": 9.927123,
+        "biome_score": 1.3073227,
+        "final_score": 51.69374
+      }
+    },
+    {
+      "rank": 2,
+      "selected": true,
+      "profile": {
+        "site_id": 5,
+        "name": "Abealzeaux",
+        "site_kind": "Refactor",
+        "center_biome": "Forest",
+        "center_chunk": [
+          218,
+          395
+        ],
+        "plot_count": 21,
+        "biome_factor": 1.0658245
+      },
+      "score": {
+        "base_kind_score": 2.0,
+        "size_score": 1.8520932,
+        "position_score": 6.0953197,
+        "biome_score": 1.0658245,
+        "final_score": 24.0644
+      }
+    },
+    {
+      "rank": 3,
+      "selected": true,
+      "profile": {
+        "site_id": 10,
+        "name": "Endoric",
+        "site_kind": "Refactor",
+        "center_biome": "Grassland",
+        "center_chunk": [
+          153,
+          341
+        ],
+        "plot_count": 29,
+        "biome_factor": 0.6582674
+      },
+      "score": {
+        "base_kind_score": 2.0,
+        "size_score": 1.9999974,
+        "position_score": 9.041157,
+        "biome_score": 0.6582674,
+        "final_score": 23.805964
+      }
+    },
+    {
+      "rank": 4,
+      "selected": true,
+      "profile": {
+        "site_id": 2,
+        "name": "Praven",
+        "site_kind": "Refactor",
+        "center_biome": "Forest",
+        "center_chunk": [
+          366,
+          193
+        ],
+        "plot_count": 89,
+        "biome_factor": 1.1652489
+      },
+      "score": {
+        "base_kind_score": 2.0,
+        "size_score": 1.0161674,
+        "position_score": 8.640456,
+        "biome_score": 1.1652489,
+        "final_score": 20.462118
+      }
+    },
+    {
+      "rank": 5,
+      "selected": true,
+      "profile": {
+        "site_id": 0,
+        "name": "Alelen",
+        "site_kind": "Refactor",
+        "center_biome": "Taiga",
+        "center_chunk": [
+          182,
+          268
+        ],
+        "plot_count": 42,
+        "biome_factor": 0.5582877
+      },
+      "score": {
+        "base_kind_score": 2.0,
+        "size_score": 1.6613756,
+        "position_score": 9.856253,
+        "biome_score": 0.5582877,
+        "final_score": 18.283854
+      }
+    },
+    {
+      "rank": 6,
+      "selected": false,
+      "profile": {
+        "site_id": 7,
+        "name": "Toric",
+        "site_kind": "Refactor",
+        "center_biome": "Forest",
+        "center_chunk": [
+          157,
+          419
+        ],
+        "plot_count": 42,
+        "biome_factor": 1.0605247
+      },
+      "score": {
+        "base_kind_score": 2.0,
+        "size_score": 1.6613756,
+        "position_score": 3.7512028,
+        "biome_score": 1.0605247,
+        "final_score": 13.218714
+      }
+    },
+    {
+      "rank": 7,
+      "selected": false,
+      "profile": {
+        "site_id": 9,
+        "name": "Pren",
+        "site_kind": "Refactor",
+        "center_biome": "Forest",
+        "center_chunk": [
+          130,
+          113
+        ],
+        "plot_count": 80,
+        "biome_factor": 0.9505835
+      },
+      "score": {
+        "base_kind_score": 2.0,
+        "size_score": 1.0262902,
+        "position_score": 5.6834965,
+        "biome_score": 0.9505835,
+        "final_score": 11.089349
+      }
+    },
+    {
+      "rank": 8,
+      "selected": false,
+      "profile": {
+        "site_id": 3,
+        "name": "Mbamato",
+        "site_kind": "SavannahTown",
+        "center_biome": "Savannah",
+        "center_chunk": [
+          410,
+          317
+        ],
+        "plot_count": 39,
+        "biome_factor": 0.51614887
+      },
+      "score": {
+        "base_kind_score": 1.0,
+        "size_score": 1.8223684,
+        "position_score": 4.5771956,
+        "biome_score": 0.51614887,
+        "final_score": 4.3053713
+      }
+    },
+    {
+      "rank": 9,
+      "selected": false,
+      "profile": {
+        "site_id": 4,
+        "name": "Bridge of Strograd",
+        "site_kind": "Bridge(Vec2 { x: 366, y: 228 }, Vec2 { x: 366, y: 224 })",
+        "center_biome": "Savannah",
+        "center_chunk": [
+          366,
+          226
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.6732334
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 10,
+      "selected": false,
+      "profile": {
+        "site_id": 6,
+        "name": "Bridge of Fricelen",
+        "site_kind": "Bridge(Vec2 { x: 233, y: 333 }, Vec2 { x: 229, y: 333 })",
+        "center_biome": "Forest",
+        "center_chunk": [
+          231,
+          333
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.4361618
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 11,
+      "selected": false,
+      "profile": {
+        "site_id": 8,
+        "name": "Bridge of Nelen",
+        "site_kind": "Bridge(Vec2 { x: 205, y: 388 }, Vec2 { x: 209, y: 388 })",
+        "center_biome": "Forest",
+        "center_chunk": [
+          207,
+          388
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.2233454
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 12,
+      "selected": false,
+      "profile": {
+        "site_id": 11,
+        "name": "",
+        "site_kind": "JungleRuin",
+        "center_biome": "Jungle",
+        "center_chunk": [
+          227,
+          93
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.4210784
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 13,
+      "selected": false,
+      "profile": {
+        "site_id": 12,
+        "name": "Gnokarl",
+        "site_kind": "Gnarling",
+        "center_biome": "Forest",
+        "center_chunk": [
+          65,
+          373
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.63257873
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 14,
+      "selected": false,
+      "profile": {
+        "site_id": 13,
+        "name": "Grarok",
+        "site_kind": "Gnarling",
+        "center_biome": "Forest",
+        "center_chunk": [
+          52,
+          164
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.9286117
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 15,
+      "selected": false,
+      "profile": {
+        "site_id": 14,
+        "name": "",
+        "site_kind": "Camp",
+        "center_biome": "Taiga",
+        "center_chunk": [
+          233,
+          149
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.54965216
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 16,
+      "selected": false,
+      "profile": {
+        "site_id": 15,
+        "name": "Faelanes Mine",
+        "site_kind": "DwarvenMine",
+        "center_biome": "Forest",
+        "center_chunk": [
+          422,
+          236
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.7902624
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 17,
+      "selected": false,
+      "profile": {
+        "site_id": 16,
+        "name": "Owist Rock",
+        "site_kind": "Sahagin",
+        "center_biome": "Ocean",
+        "center_chunk": [
+          80,
+          125
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.7959682
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 18,
+      "selected": false,
+      "profile": {
+        "site_id": 17,
+        "name": "Croshey Lair",
+        "site_kind": "Cultist",
+        "center_biome": "Grassland",
+        "center_chunk": [
+          33,
+          298
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.81371874
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 19,
+      "selected": false,
+      "profile": {
+        "site_id": 18,
+        "name": "",
+        "site_kind": "TrollCave",
+        "center_biome": "Forest",
+        "center_chunk": [
+          103,
+          287
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.95043296
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 20,
+      "selected": false,
+      "profile": {
+        "site_id": 19,
+        "name": "Enathul Mine",
+        "site_kind": "DwarvenMine",
+        "center_biome": "Forest",
+        "center_chunk": [
+          56,
+          210
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.015664
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 21,
+      "selected": false,
+      "profile": {
+        "site_id": 20,
+        "name": "Ikkajuq",
+        "site_kind": "Adlet",
+        "center_biome": "Snowland",
+        "center_chunk": [
+          178,
+          107
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.5608911
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 22,
+      "selected": false,
+      "profile": {
+        "site_id": 21,
+        "name": "Krin Cay",
+        "site_kind": "Sahagin",
+        "center_biome": "Ocean",
+        "center_chunk": [
+          477,
+          306
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.7959682
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 23,
+      "selected": false,
+      "profile": {
+        "site_id": 22,
+        "name": "Ammeties Mine",
+        "site_kind": "DwarvenMine",
+        "center_biome": "Desert",
+        "center_chunk": [
+          68,
+          498
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.014311905
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 24,
+      "selected": false,
+      "profile": {
+        "site_id": 23,
+        "name": "Tree of Iven",
+        "site_kind": "GiantTree",
+        "center_biome": "Forest",
+        "center_chunk": [
+          200,
+          189
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.73774624
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 25,
+      "selected": false,
+      "profile": {
+        "site_id": 24,
+        "name": "",
+        "site_kind": "TrollCave",
+        "center_biome": "Snowland",
+        "center_chunk": [
+          241,
+          264
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.47528863
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 26,
+      "selected": false,
+      "profile": {
+        "site_id": 25,
+        "name": "Gretik",
+        "site_kind": "Gnarling",
+        "center_biome": "Forest",
+        "center_chunk": [
+          368,
+          143
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.64525807
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 27,
+      "selected": false,
+      "profile": {
+        "site_id": 26,
+        "name": "Quvit",
+        "site_kind": "Adlet",
+        "center_biome": "Taiga",
+        "center_chunk": [
+          13,
+          155
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.5430536
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 28,
+      "selected": false,
+      "profile": {
+        "site_id": 27,
+        "name": "Tree of Krog",
+        "site_kind": "GiantTree",
+        "center_biome": "Forest",
+        "center_chunk": [
+          113,
+          239
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.4197509
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 29,
+      "selected": false,
+      "profile": {
+        "site_id": 28,
+        "name": "",
+        "site_kind": "Camp",
+        "center_biome": "Forest",
+        "center_chunk": [
+          330,
+          128
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.5768634
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 30,
+      "selected": false,
+      "profile": {
+        "site_id": 29,
+        "name": "Knor Katik",
+        "site_kind": "Gnarling",
+        "center_biome": "Forest",
+        "center_chunk": [
+          311,
+          353
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.8065594
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 31,
+      "selected": false,
+      "profile": {
+        "site_id": 30,
+        "name": "Tree of Strir",
+        "site_kind": "GiantTree",
+        "center_biome": "Forest",
+        "center_chunk": [
+          296,
+          428
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.2919012
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 32,
+      "selected": false,
+      "profile": {
+        "site_id": 31,
+        "name": "Grakmalmek",
+        "site_kind": "Gnarling",
+        "center_biome": "Forest",
+        "center_chunk": [
+          144,
+          255
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.0249659
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 33,
+      "selected": false,
+      "profile": {
+        "site_id": 32,
+        "name": "Naeon",
+        "site_kind": "ChapelSite",
+        "center_biome": "Ocean",
+        "center_chunk": [
+          95,
+          11
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.8195077
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 34,
+      "selected": false,
+      "profile": {
+        "site_id": 33,
+        "name": "",
+        "site_kind": "RockCircle",
+        "center_biome": "Snowland",
+        "center_chunk": [
+          279,
+          172
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.44082958
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 35,
+      "selected": false,
+      "profile": {
+        "site_id": 34,
+        "name": "",
+        "site_kind": "JungleRuin",
+        "center_biome": "Jungle",
+        "center_chunk": [
+          103,
+          414
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.37935075
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 36,
+      "selected": false,
+      "profile": {
+        "site_id": 35,
+        "name": "",
+        "site_kind": "Camp",
+        "center_biome": "Forest",
+        "center_chunk": [
+          151,
+          161
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.8269506
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 37,
+      "selected": false,
+      "profile": {
+        "site_id": 36,
+        "name": "",
+        "site_kind": "RockCircle",
+        "center_biome": "Grassland",
+        "center_chunk": [
+          475,
+          193
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.5580172
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 38,
+      "selected": false,
+      "profile": {
+        "site_id": 37,
+        "name": "",
+        "site_kind": "Camp",
+        "center_biome": "Snowland",
+        "center_chunk": [
+          299,
+          312
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.90953934
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 39,
+      "selected": false,
+      "profile": {
+        "site_id": 38,
+        "name": "",
+        "site_kind": "JungleRuin",
+        "center_biome": "Jungle",
+        "center_chunk": [
+          363,
+          271
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.25347567
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 40,
+      "selected": false,
+      "profile": {
+        "site_id": 39,
+        "name": "",
+        "site_kind": "Camp",
+        "center_biome": "Snowland",
+        "center_chunk": [
+          284,
+          227
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.4476717
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 41,
+      "selected": false,
+      "profile": {
+        "site_id": 40,
+        "name": "",
+        "site_kind": "TrollCave",
+        "center_biome": "Taiga",
+        "center_chunk": [
+          357,
+          76
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.7107488
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 42,
+      "selected": false,
+      "profile": {
+        "site_id": 41,
+        "name": "",
+        "site_kind": "JungleRuin",
+        "center_biome": "Jungle",
+        "center_chunk": [
+          92,
+          330
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.37131163
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 43,
+      "selected": false,
+      "profile": {
+        "site_id": 42,
+        "name": "Allasdeles Mine",
+        "site_kind": "DwarvenMine",
+        "center_biome": "Forest",
+        "center_chunk": [
+          95,
+          179
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.8071196
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 44,
+      "selected": false,
+      "profile": {
+        "site_id": 43,
+        "name": "Takarl",
+        "site_kind": "Gnarling",
+        "center_biome": "Forest",
+        "center_chunk": [
+          307,
+          90
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.6986173
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 45,
+      "selected": false,
+      "profile": {
+        "site_id": 44,
+        "name": "",
+        "site_kind": "RockCircle",
+        "center_biome": "Taiga",
+        "center_chunk": [
+          359,
+          330
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.6031726
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 46,
+      "selected": false,
+      "profile": {
+        "site_id": 45,
+        "name": "Bret Rock",
+        "site_kind": "Sahagin",
+        "center_biome": "Ocean",
+        "center_chunk": [
+          51,
+          424
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.4447157
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 47,
+      "selected": false,
+      "profile": {
+        "site_id": 46,
+        "name": "Tree of Shir",
+        "site_kind": "GiantTree",
+        "center_biome": "Forest",
+        "center_chunk": [
+          68,
+          258
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.0120411
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    }
+  ],
+  "poi_markers": 114,
   "sim": {
     "chunk_count": 262144,
     "alt_min": -138.15997,
     "alt_max": 733.00543,
-    "alt_mean": 177.34682,
+    "alt_mean": 177.31363,
     "water_alt_min": 140.0,
     "water_alt_max": 729.119,
-    "water_alt_mean": 172.86763,
+    "water_alt_mean": 172.84998,
     "river_chunks": 725,
     "near_water_chunks": 139564,
-    "site_chunks": 6334,
+    "site_chunks": 8080,
     "poi_chunks": 238688,
+    "spot_kind_counts": {
+      "AirshipCrash": 24,
+      "Arch": 6,
+      "DesertBones": 6,
+      "FallenTree": 24,
+      "FruitTree": 210,
+      "GnarlingTotem": 34,
+      "GnomeSpring": 18,
+      "GraveSmall": 63,
+      "Igloo": 20,
+      "LionRock": 4,
+      "MyrmidonTemple": 1,
+      "RonFile(SpotProperties { base_structures: \"spots_general.mage_tower\", freq: 1.0, condition: All([Typical, MaxGradient(0.2), Biome([Forest, Taiga, Snowland, Grassland])]), spawn: true })": 8,
+      "SaurokAltar": 1,
+      "Shipwreck": 122,
+      "Shipwreck2": 100,
+      "TreeStumpForest": 133,
+      "WitchHouse": 30,
+      "WolfBurrow": 48
+    },
     "mean_temp": -0.03340074,
-    "mean_humidity": 0.37527722
+    "mean_humidity": 0.37527722,
+    "marine_adjacency_compare": {
+      "runtime_probe": "chunk_center_column_when_available_v1",
+      "compare_contract": "record static/runtime marine_adjacent handoff counts; static_true_runtime_false_chunks should remain zero",
+      "compared_chunks": 259081,
+      "skipped_runtime_probe_chunks": 3063,
+      "static_true_runtime_true_chunks": 137150,
+      "static_true_runtime_false_chunks": 0,
+      "static_false_runtime_true_chunks": 102,
+      "static_false_runtime_false_chunks": 121829
+    }
   }
 }

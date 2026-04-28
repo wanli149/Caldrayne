@@ -17,7 +17,7 @@ use clap::{Parser, Subcommand};
 use common::{
     resources::MapKind,
     terrain::{
-        BlockKind, TerrainChunkSize,
+        BlockKind, CoordinateConversions, TerrainChunkSize,
         map::{MapConfig, MapSample},
         uniform_idx_as_vec2,
     },
@@ -35,6 +35,7 @@ use vek::{Aabr, Rgb, Vec2, Vec3};
 use veloren_world::{
     CONFIG, IndexOwned, IndexRef, World, WorldGenerateStage,
     sim::{FileOpts, GenOpts, WorldOpts, WorldSimStage, get_horizon_map, sample_pos, sample_wpos},
+    util::Sampler,
 };
 
 #[derive(Parser)]
@@ -159,8 +160,22 @@ struct AuditSimSummary {
     near_water_chunks: usize,
     site_chunks: usize,
     poi_chunks: usize,
+    spot_kind_counts: BTreeMap<String, usize>,
     mean_temp: f32,
     mean_humidity: f32,
+    marine_adjacency_compare: AuditMarineAdjacencyCompareSummary,
+}
+
+#[derive(Serialize)]
+struct AuditMarineAdjacencyCompareSummary {
+    runtime_probe: String,
+    compare_contract: String,
+    compared_chunks: usize,
+    skipped_runtime_probe_chunks: usize,
+    static_true_runtime_true_chunks: usize,
+    static_true_runtime_false_chunks: usize,
+    static_false_runtime_true_chunks: usize,
+    static_false_runtime_false_chunks: usize,
 }
 
 #[derive(Serialize)]
@@ -174,8 +189,39 @@ struct AuditPreviewMetrics {
     max_height: f32,
     site_markers: usize,
     possible_starting_sites: usize,
+    starting_site_profile_contract: String,
+    starting_site_scoring_contract: String,
+    starting_site_candidates: Vec<AuditStartingSiteCandidate>,
     poi_markers: usize,
     sim: AuditSimSummary,
+}
+
+#[derive(Serialize)]
+struct AuditStartingSiteCandidate {
+    rank: usize,
+    selected: bool,
+    profile: AuditStartingSiteProfile,
+    score: AuditStartingSiteScore,
+}
+
+#[derive(Serialize)]
+struct AuditStartingSiteProfile {
+    site_id: u64,
+    name: String,
+    site_kind: String,
+    center_biome: String,
+    center_chunk: [i32; 2],
+    plot_count: usize,
+    biome_factor: f32,
+}
+
+#[derive(Serialize)]
+struct AuditStartingSiteScore {
+    base_kind_score: f32,
+    size_score: f32,
+    position_score: f32,
+    biome_score: f32,
+    final_score: f32,
 }
 
 #[derive(Serialize)]
@@ -210,6 +256,7 @@ struct AuditCompareArtifacts {
     preview_metrics: String,
     chunk_stats: String,
     runtime_matrix: String,
+    wildlife_runtime_matrix: String,
     warnings: String,
 }
 
@@ -218,6 +265,7 @@ struct AuditCompareComparability {
     preview_metrics: String,
     chunk_stats: String,
     runtime_matrix: String,
+    wildlife_runtime_matrix: String,
 }
 
 #[derive(Serialize)]
@@ -530,7 +578,8 @@ fn do_audit(
         (!no_progress).then(progress_bar),
     );
     let index_ref = index.as_index_ref();
-    let preview_metrics = build_preview_metrics(&run_id, &world, index_ref, &config.gen_opts);
+    let preview_metrics =
+        build_preview_metrics(&run_id, &world, index_ref, &config.gen_opts, &pool);
     let chunk_stats = build_chunk_stats(
         &run_id,
         &world,
@@ -539,6 +588,13 @@ fn do_audit(
         audit_config.sample_chunks,
     );
     let runtime_matrix = batch_generate_runtime_audit::build_runtime_chunk_matrix(
+        &run_id,
+        &world,
+        index_ref,
+        &config.gen_opts,
+        audit_config.sample_chunks,
+    );
+    let wildlife_runtime_matrix = batch_generate_runtime_audit::build_wildlife_runtime_matrix(
         &run_id,
         &world,
         index_ref,
@@ -554,12 +610,22 @@ fn do_audit(
         .expect("Could not write chunk stats");
     write_json(&runtime_dir.join("runtime_matrix.json"), &runtime_matrix)
         .expect("Could not write runtime chunk matrix");
+    write_json(
+        &runtime_dir.join("wildlife_runtime_matrix.json"),
+        &wildlife_runtime_matrix,
+    )
+    .expect("Could not write wildlife runtime matrix");
     write_warnings_file(&run_dir.join("warnings.txt"), &world)
         .expect("Could not write warnings file");
     write_map_config(&run_dir.join("input.ron"), &config).expect("Could not write audit config");
     write_json(
         &run_dir.join("compare").join("status.json"),
-        &build_compare_status(&run_id, &chunk_stats, &runtime_matrix),
+        &build_compare_status(
+            &run_id,
+            &chunk_stats,
+            &runtime_matrix,
+            &wildlife_runtime_matrix,
+        ),
     )
     .expect("Could not write compare status");
 
@@ -684,8 +750,9 @@ fn write_warnings_file(world_path: &Path, world: &World) -> Result<(), Box<dyn s
         "chunk_stats.json is produced through the explicit static chunk snapshot entry; runtime \
          supplement and rtsim thinning remain outside this contract"
             .to_string(),
-        "runtime/runtime_matrix.json records raw_worldgen, empty_overlay, and fixed_overlay \
-         variants from the runtime chunk return path while preview metrics remain raw"
+        "runtime/runtime_matrix.json records base_runtime_chunk, empty_overlay_runtime_chunk, and \
+         fixed_overlay_runtime_chunk variants from the world runtime chunk path without time \
+         context or rtsim thinning while preview metrics remain raw"
             .to_string(),
     ];
 
@@ -726,10 +793,50 @@ fn build_preview_metrics(
     world: &World,
     index_ref: IndexRef,
     gen_opts: &GenOpts,
+    threadpool: &ThreadPool,
 ) -> AuditPreviewMetrics {
     let sampler = world.sim();
-    let map = sampler.get_map(index_ref, None);
+    let map = world.get_map_data(index_ref, threadpool);
     let size = sampler.get_size();
+    let starting_site_selection = world.starting_site_selection(index_ref);
+    let selected_starting_sites = starting_site_selection
+        .selected_site_ids()
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let starting_site_candidates = starting_site_selection
+        .candidates
+        .into_iter()
+        .enumerate()
+        .map(|(rank, candidate)| AuditStartingSiteCandidate {
+            rank: rank + 1,
+            selected: selected_starting_sites.contains(&candidate.profile.site_id),
+            profile: AuditStartingSiteProfile {
+                site_id: candidate.profile.site_id,
+                name: candidate.profile.name,
+                site_kind: candidate
+                    .profile
+                    .site_kind
+                    .map(|site_kind| format!("{site_kind:?}"))
+                    .unwrap_or_else(|| "None".to_owned()),
+                center_biome: candidate
+                    .profile
+                    .center_biome
+                    .map(|biome| format!("{biome:?}"))
+                    .unwrap_or_else(|| "None".to_owned()),
+                center_chunk: [candidate.profile.center.x, candidate.profile.center.y],
+                plot_count: candidate.profile.plot_count,
+                biome_factor: candidate.profile.biome_factor,
+            },
+            score: AuditStartingSiteScore {
+                base_kind_score: candidate.score.base_kind_score,
+                size_score: candidate.score.size_score,
+                position_score: candidate.score.position_score,
+                biome_score: candidate.score.biome_score,
+                final_score: candidate.score.final_score,
+            },
+        })
+        .collect::<Vec<_>>();
 
     let mut alt_min = f32::INFINITY;
     let mut alt_max = f32::NEG_INFINITY;
@@ -741,13 +848,20 @@ fn build_preview_metrics(
     let mut near_water_chunks = 0usize;
     let mut site_chunks = 0usize;
     let mut poi_chunks = 0usize;
+    let mut spot_kind_counts = BTreeMap::new();
     let mut temp_sum = 0.0f64;
     let mut humidity_sum = 0.0f64;
+    let mut static_true_runtime_true_chunks = 0usize;
+    let mut static_true_runtime_false_chunks = 0usize;
+    let mut static_false_runtime_true_chunks = 0usize;
+    let mut static_false_runtime_false_chunks = 0usize;
+    let mut skipped_runtime_probe_chunks = 0usize;
 
     for y in 0..size.y as i32 {
         for x in 0..size.x as i32 {
+            let chunk_pos = Vec2::new(x, y);
             let chunk = sampler
-                .get(Vec2::new(x, y))
+                .get(chunk_pos)
                 .expect("chunk coordinates within world bounds");
             alt_min = alt_min.min(chunk.alt);
             alt_max = alt_max.max(chunk.alt);
@@ -759,8 +873,27 @@ fn build_preview_metrics(
             near_water_chunks += usize::from(chunk.river.near_water());
             site_chunks += usize::from(!chunk.sites.is_empty());
             poi_chunks += usize::from(chunk.poi.is_some());
+            if let Some(spot) = chunk.spot {
+                *spot_kind_counts.entry(format!("{spot:?}")).or_insert(0) += 1;
+            }
             temp_sum += f64::from(chunk.temp);
             humidity_sum += f64::from(chunk.humidity);
+
+            let static_marine_adjacent = static_marine_adjacent_at_chunk(sampler, chunk_pos)
+                .expect("chunk coordinates within world bounds");
+            let Some(runtime_marine_adjacent) =
+                sample_chunk_center_column(world, index_ref, chunk_pos)
+                    .map(|column| column.marine_adjacent)
+            else {
+                skipped_runtime_probe_chunks += 1;
+                continue;
+            };
+            match (static_marine_adjacent, runtime_marine_adjacent) {
+                (true, true) => static_true_runtime_true_chunks += 1,
+                (true, false) => static_true_runtime_false_chunks += 1,
+                (false, true) => static_false_runtime_true_chunks += 1,
+                (false, false) => static_false_runtime_false_chunks += 1,
+            }
         }
     }
 
@@ -775,6 +908,9 @@ fn build_preview_metrics(
         max_height: map.max_height,
         site_markers: map.sites.len(),
         possible_starting_sites: map.possible_starting_sites.len(),
+        starting_site_profile_contract: "starting_site_profile_v2".to_owned(),
+        starting_site_scoring_contract: "starting_site_scoring_v1".to_owned(),
+        starting_site_candidates,
         poi_markers: map.pois.len(),
         sim: AuditSimSummary {
             chunk_count,
@@ -788,10 +924,50 @@ fn build_preview_metrics(
             near_water_chunks,
             site_chunks,
             poi_chunks,
+            spot_kind_counts,
             mean_temp: (temp_sum / chunk_count as f64) as f32,
             mean_humidity: (humidity_sum / chunk_count as f64) as f32,
+            marine_adjacency_compare: AuditMarineAdjacencyCompareSummary {
+                runtime_probe: "chunk_center_column_when_available_v1".to_owned(),
+                compare_contract: "record static/runtime marine_adjacent handoff counts; \
+                                   static_true_runtime_false_chunks should remain zero"
+                    .to_owned(),
+                compared_chunks: chunk_count - skipped_runtime_probe_chunks,
+                skipped_runtime_probe_chunks,
+                static_true_runtime_true_chunks,
+                static_true_runtime_false_chunks,
+                static_false_runtime_true_chunks,
+                static_false_runtime_false_chunks,
+            },
         },
     }
+}
+
+fn sample_chunk_center_column<'a>(
+    world: &'a World,
+    index_ref: IndexRef<'a>,
+    chunk_pos: Vec2<i32>,
+) -> Option<veloren_world::ColumnSample<'a>> {
+    world
+        .sample_columns()
+        .get((chunk_pos.cpos_to_wpos_center(), index_ref, None))
+}
+
+fn static_marine_adjacent_at_chunk(
+    sim: &veloren_world::sim::WorldSim,
+    chunk_pos: Vec2<i32>,
+) -> Option<bool> {
+    let center_alt = sim.get(chunk_pos)?.alt;
+    Some(
+        (-1..=1)
+            .flat_map(|x| (-1..=1).map(move |y| Vec2::new(x, y)))
+            .any(|offset| {
+                let check_pos = chunk_pos + offset;
+                sim.get(check_pos).is_some_and(|chunk| {
+                    (center_alt - chunk.alt).abs() < 200.0 && chunk.river.is_ocean()
+                })
+            }),
+    )
 }
 
 fn build_chunk_stats(
@@ -822,9 +998,10 @@ fn build_compare_status(
     run_id: &str,
     chunk_stats: &AuditChunkStatsFile,
     runtime_matrix: &batch_generate_runtime_audit::AuditChunkRuntimeMatrixFile,
+    wildlife_runtime_matrix: &batch_generate_runtime_audit::AuditWildlifeRuntimeMatrixFile,
 ) -> AuditCompareStatus {
     AuditCompareStatus {
-        schema_version: "worldgen_compare_status_v1".to_owned(),
+        schema_version: "worldgen_compare_status_v2".to_owned(),
         run_id: run_id.to_owned(),
         compare_mode: "single_run_only_v1".to_owned(),
         diff_generated: false,
@@ -835,6 +1012,7 @@ fn build_compare_status(
             preview_metrics: "preview/metrics.json".to_owned(),
             chunk_stats: "chunk/chunk_stats.json".to_owned(),
             runtime_matrix: "runtime/runtime_matrix.json".to_owned(),
+            wildlife_runtime_matrix: "runtime/wildlife_runtime_matrix.json".to_owned(),
             warnings: "warnings.txt".to_owned(),
         },
         comparability: AuditCompareComparability {
@@ -845,6 +1023,11 @@ fn build_compare_status(
                 "sample_based_non_strict".to_owned()
             },
             runtime_matrix: if runtime_matrix.strict_determinism {
+                "runtime_chunk_strict_comparable".to_owned()
+            } else {
+                "sample_based_non_strict".to_owned()
+            },
+            wildlife_runtime_matrix: if wildlife_runtime_matrix.strict_determinism {
                 "runtime_chunk_strict_comparable".to_owned()
             } else {
                 "sample_based_non_strict".to_owned()
@@ -866,8 +1049,17 @@ fn build_compare_status(
             "chunk_stats.json intentionally stops before runtime supplement and rtsim finalize \
              mutate the full returned-value contract"
                 .to_owned(),
-            "runtime/runtime_matrix.json captures the runtime chunk path plus empty/fixed overlay \
-             application without changing preview metrics"
+            "runtime/runtime_matrix.json captures the world runtime chunk path without time \
+             context or rtsim thinning, plus empty/fixed overlay application, without changing \
+             preview metrics"
+                .to_owned(),
+            "preview/metrics.json now records world-side starter-site selection as distinct \
+             profile and score stages using the same selection path that feeds \
+             possible_starting_sites"
+                .to_owned(),
+            "runtime/wildlife_runtime_matrix.json captures wildlife-only runtime spawns under \
+             fixed night and calendar contexts plus a static aquatic-fauna audit surface using \
+             dedicated deterministic samplers"
                 .to_owned(),
         ],
     }

@@ -1,3 +1,5 @@
+mod wildlife_matrix;
+
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use common::{
@@ -7,6 +9,8 @@ use common::{
 };
 use serde::{Deserialize, Serialize};
 use vek::{Rgb, Vec2, Vec3};
+
+pub use wildlife_matrix::{AuditWildlifeRuntimeMatrixFile, build_wildlife_runtime_matrix};
 
 const FIXED_OVERLAY_FIXTURE_PATH: &str =
     "server/tests/data/terrain_overlay/fixed_overlay_fixture_v1.ron";
@@ -20,8 +24,17 @@ pub struct AuditChunkRuntimeMatrixFile {
     pub sample_chunks: usize,
     pub runtime_audit_mode: String,
     pub strict_determinism: bool,
+    pub runtime_chunk_contract: AuditRuntimeChunkContractSummary,
     pub fixed_overlay_fixture: AuditFixedOverlayFixtureSummary,
     pub sampled_chunks: Vec<AuditChunkRuntimeSample>,
+}
+
+#[derive(Serialize)]
+pub struct AuditRuntimeChunkContractSummary {
+    pub base_chunk_entry: String,
+    pub includes_world_runtime_finalize: bool,
+    pub includes_time_context: bool,
+    pub includes_rtsim_resource_thinning: bool,
 }
 
 #[derive(Serialize)]
@@ -34,14 +47,14 @@ pub struct AuditFixedOverlayFixtureSummary {
 #[derive(Serialize)]
 pub struct AuditChunkRuntimeSample {
     pub chunk_pos: [i32; 2],
-    pub raw_worldgen: AuditChunkRuntimeVariant,
-    pub empty_overlay: AuditChunkRuntimeVariant,
-    pub fixed_overlay: AuditChunkRuntimeVariant,
+    pub base_runtime_chunk: AuditChunkRuntimeVariant,
+    pub empty_overlay_runtime_chunk: AuditChunkRuntimeVariant,
+    pub fixed_overlay_runtime_chunk: AuditChunkRuntimeVariant,
 }
 
 #[derive(Serialize)]
 pub struct AuditChunkRuntimeVariant {
-    pub overlay_mode: String,
+    pub variant_mode: String,
     pub overlay_blocks_applied: usize,
     pub overlay_operations_skipped: usize,
     pub min_z: i32,
@@ -106,8 +119,15 @@ pub fn build_runtime_chunk_matrix(
         gen_opts: gen_opts.clone(),
         recipe: super::build_recipe_summary(world),
         sample_chunks,
-        runtime_audit_mode: "sampled_runtime_overlay_matrix_v1".to_owned(),
+        runtime_audit_mode: "sampled_runtime_overlay_matrix_v2".to_owned(),
         strict_determinism: true,
+        runtime_chunk_contract: AuditRuntimeChunkContractSummary {
+            base_chunk_entry: "world.generate_chunk(rtsim_resource_fractions=None,time=None)"
+                .to_owned(),
+            includes_world_runtime_finalize: true,
+            includes_time_context: false,
+            includes_rtsim_resource_thinning: false,
+        },
         fixed_overlay_fixture: AuditFixedOverlayFixtureSummary {
             fixture_id: fixture.fixture_id.clone(),
             contract_path: FIXED_OVERLAY_FIXTURE_PATH.to_owned(),
@@ -123,33 +143,34 @@ fn build_runtime_chunk_sample(
     chunk_pos: Vec2<i32>,
     fixture: &FixedOverlayFixture,
 ) -> AuditChunkRuntimeSample {
-    let (raw_chunk, supplement) = world
+    let (base_runtime_chunk, supplement) = world
         .generate_chunk(index_ref, chunk_pos, None, || false, None)
         .expect("runtime audit chunk generation should succeed");
-    let empty_overlay_chunk = raw_chunk.clone();
-    let mut fixed_overlay_chunk = raw_chunk.clone();
+    let empty_overlay_runtime_chunk = base_runtime_chunk.clone();
+    let mut fixed_overlay_runtime_chunk = base_runtime_chunk.clone();
     let empty_overlay_summary = OverlayApplySummary::default();
-    let fixed_overlay_summary = apply_fixed_overlay_fixture(&mut fixed_overlay_chunk, fixture);
+    let fixed_overlay_summary =
+        apply_fixed_overlay_fixture(&mut fixed_overlay_runtime_chunk, fixture);
 
     let entity_signatures = summarize_entity_spawns(&supplement.entity_spawns);
 
     AuditChunkRuntimeSample {
         chunk_pos: [chunk_pos.x, chunk_pos.y],
-        raw_worldgen: summarize_runtime_variant(
-            "raw_worldgen",
-            &raw_chunk,
+        base_runtime_chunk: summarize_runtime_variant(
+            "base_runtime_chunk",
+            &base_runtime_chunk,
             OverlayApplySummary::default(),
             &entity_signatures,
         ),
-        empty_overlay: summarize_runtime_variant(
-            "empty_overlay_server_chunk",
-            &empty_overlay_chunk,
+        empty_overlay_runtime_chunk: summarize_runtime_variant(
+            "empty_overlay_runtime_chunk",
+            &empty_overlay_runtime_chunk,
             empty_overlay_summary,
             &entity_signatures,
         ),
-        fixed_overlay: summarize_runtime_variant(
-            "fixed_overlay_server_chunk",
-            &fixed_overlay_chunk,
+        fixed_overlay_runtime_chunk: summarize_runtime_variant(
+            "fixed_overlay_runtime_chunk",
+            &fixed_overlay_runtime_chunk,
             fixed_overlay_summary,
             &entity_signatures,
         ),
@@ -157,14 +178,14 @@ fn build_runtime_chunk_sample(
 }
 
 fn summarize_runtime_variant(
-    overlay_mode: &str,
+    variant_mode: &str,
     chunk: &TerrainChunk,
     overlay_summary: OverlayApplySummary,
     entity_signatures: &[String],
 ) -> AuditChunkRuntimeVariant {
     let volume = super::summarize_chunk_volume(chunk);
     AuditChunkRuntimeVariant {
-        overlay_mode: overlay_mode.to_owned(),
+        variant_mode: variant_mode.to_owned(),
         overlay_blocks_applied: overlay_summary.applied,
         overlay_operations_skipped: overlay_summary.skipped,
         min_z: chunk.get_min_z(),
@@ -261,7 +282,7 @@ fn resolve_overlay_target(
     }
 }
 
-fn summarize_entity_spawns(entity_spawns: &[EntitySpawn]) -> Vec<String> {
+pub(super) fn summarize_entity_spawns(entity_spawns: &[EntitySpawn]) -> Vec<String> {
     let mut entity_signatures = Vec::new();
     for entity_spawn in entity_spawns {
         match entity_spawn {

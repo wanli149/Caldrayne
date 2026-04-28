@@ -487,6 +487,7 @@ impl Civs {
                     center: loc,
                     place,
                     site_tmp: None,
+                    refactor_city_size_hint: None,
                 }))
             });
         }
@@ -579,7 +580,10 @@ impl Civs {
                 };
                 match &sim_site.kind {
                     SiteKind::Refactor => {
-                        let size = Lerp::lerp(0.03, 1.0, rng.random_range(0.0..1f32).powi(5));
+                        let size = refactor_city_size_with_hint(
+                            sim_site.refactor_city_size_hint,
+                            &mut rng,
+                        );
                         WorldSite::generate_city(
                             &Land::from_sim(ctx.sim),
                             index_ref,
@@ -889,26 +893,8 @@ impl Civs {
         let avoid_town_enemies = ProximityRequirementsBuilder::new()
             .avoid_all_of(self.town_enemies(), 60)
             .finalize(&world_dims);
-        let loc = (0..100)
-            .flat_map(|_| {
-                find_site_loc(ctx, &avoid_town_enemies, &kind).and_then(|loc| {
-                    town_attributes_of_site(loc, ctx.sim)
-                        .map(|town_attrs| (loc, town_attrs.score()))
-                })
-            })
-            .reduce(|a, b| if a.1 > b.1 { a } else { b })?
-            .0;
-
-        let site = self.establish_site(ctx, loc, |place| Site {
-            kind,
-            site_tmp: None,
-            center: loc,
-            place,
-            /* most economic members have moved to site/Economy */
-            /* last_exports: Stocks::from_default(0.0),
-             * export_targets: Stocks::from_default(0.0),
-             * //trade_states: Stocks::default(), */
-        });
+        let foundation = best_town_foundation(ctx, &avoid_town_enemies, kind)?;
+        let site = self.establish_town_site_from_foundation(ctx, kind, foundation);
 
         let civ = self.civs.insert(Civ {
             capital: site,
@@ -916,6 +902,18 @@ impl Civs {
         });
 
         Some(civ)
+    }
+
+    fn establish_town_site_from_foundation(
+        &mut self,
+        ctx: &mut GenCtx<impl Rng>,
+        kind: SiteKind,
+        foundation: SelectedTownFoundation,
+    ) -> Id<Site> {
+        let loc = foundation.loc;
+        self.establish_site(ctx, loc, |place| {
+            site_from_selected_town_foundation(kind, foundation, place)
+        })
     }
 
     fn establish_place(
@@ -1390,6 +1388,7 @@ impl Civs {
                                     Site {
                                         kind: SiteKind::Bridge(locs[1], locs[2]),
                                         site_tmp: None,
+                                        refactor_city_size_hint: None,
                                         center,
                                         place,
                                     }
@@ -1663,10 +1662,10 @@ fn find_site_loc(
 ) -> Option<Vec2<i32>> {
     prof_span!("find_site_loc");
     const MAX_ATTEMPTS: usize = 10000;
-    let mut loc = None;
+    let mut retry_loc = None;
     let location_hint = proximity_reqs.location_hint;
     for _ in 0..MAX_ATTEMPTS {
-        let test_loc = loc.unwrap_or_else(|| {
+        let test_loc = retry_loc.take().unwrap_or_else(|| {
             Vec2::new(
                 ctx.rng
                     .random_range(location_hint.min.x..location_hint.max.x),
@@ -1675,136 +1674,30 @@ fn find_site_loc(
             )
         });
 
-        let is_suitable_loc = site_kind.is_suitable_loc(test_loc, ctx.sim);
-        if is_suitable_loc && proximity_reqs.satisfied_by(test_loc) {
-            if site_kind.exclusion_radius_clear(ctx.sim, test_loc) {
-                return Some(test_loc);
-            }
+        let search_gates_satisfied =
+            site_kind.is_suitable_loc(test_loc, ctx.sim) && proximity_reqs.satisfied_by(test_loc);
+        let attempt_outcome = if search_gates_satisfied {
+            site_loc_attempt_outcome(
+                test_loc,
+                true,
+                site_kind.exclusion_radius_clear(ctx.sim, test_loc),
+                ctx.sim.get(test_loc).and_then(|c| c.downhill),
+            )
+        } else {
+            SiteLocAttemptOutcome::Reject
+        };
 
+        match attempt_outcome {
+            SiteLocAttemptOutcome::Accept(loc) => return Some(loc),
             // If the current location is suitable and meets proximity requirements,
             // try nearby spot downhill.
-            loc = ctx.sim.get(test_loc).and_then(|c| c.downhill);
+            SiteLocAttemptOutcome::RetryDownhill(loc) => retry_loc = Some(loc),
+            SiteLocAttemptOutcome::Reject => {},
         }
     }
 
     debug!("Failed to place site {:?}.", site_kind);
     None
-}
-
-fn town_attributes_of_site(loc: Vec2<i32>, sim: &WorldSim) -> Option<TownSiteAttributes> {
-    sim.get(loc).map(|chunk| {
-        const RESOURCE_RADIUS: i32 = 1;
-        let mut river_chunks = 0;
-        let mut lake_chunks = 0;
-        let mut ocean_chunks = 0;
-        let mut rock_chunks = 0;
-        let mut tree_chunks = 0;
-        let mut farmable_chunks = 0;
-        let mut farmable_needs_irrigation_chunks = 0;
-        let mut land_chunks = 0;
-        for x in (-RESOURCE_RADIUS)..RESOURCE_RADIUS {
-            for y in (-RESOURCE_RADIUS)..RESOURCE_RADIUS {
-                let check_loc = loc + Vec2::new(x, y).cpos_to_wpos();
-                sim.get(check_loc).map(|c| {
-                    if num::abs(chunk.alt - c.alt) < 200.0 {
-                        if c.river.is_river() {
-                            river_chunks += 1;
-                        }
-                        if c.river.is_lake() {
-                            lake_chunks += 1;
-                        }
-                        if c.river.is_ocean() {
-                            ocean_chunks += 1;
-                        }
-                        if c.tree_density > 0.7 {
-                            tree_chunks += 1;
-                        }
-                        if c.rockiness < 0.3 && c.temp > CONFIG.snow_temp {
-                            if c.surface_veg > 0.5 {
-                                farmable_chunks += 1;
-                            } else {
-                                match c.get_biome() {
-                                    common::terrain::BiomeKind::Savannah => {
-                                        farmable_needs_irrigation_chunks += 1
-                                    },
-                                    common::terrain::BiomeKind::Desert => {
-                                        farmable_needs_irrigation_chunks += 1
-                                    },
-                                    _ => (),
-                                }
-                            }
-                        }
-                        if !c.river.is_river() && !c.river.is_lake() && !c.river.is_ocean() {
-                            land_chunks += 1;
-                        }
-                    }
-                    // Mining is different since presumably you dig into the hillside
-                    if c.rockiness > 0.7 && c.alt - chunk.alt > -10.0 {
-                        rock_chunks += 1;
-                    }
-                });
-            }
-        }
-        let has_river = river_chunks > 1;
-        let has_lake = lake_chunks > 1;
-        let vegetation_implies_potable_water = chunk.tree_density > 0.4
-            && !matches!(chunk.get_biome(), common::terrain::BiomeKind::Swamp);
-        let has_many_rocks = chunk.rockiness > 1.2;
-        let warm_or_firewood = chunk.temp > CONFIG.snow_temp || tree_chunks > 2;
-        let has_potable_water =
-            { has_river || (has_lake && chunk.alt > 100.0) || vegetation_implies_potable_water };
-        let has_building_materials = tree_chunks > 0
-            || rock_chunks > 0
-            || chunk.temp > CONFIG.tropical_temp && (has_river || has_lake);
-        let water_rich = lake_chunks + river_chunks > 2;
-        let can_grow_rice = water_rich
-            && chunk.humidity + 1.0 > CONFIG.jungle_hum
-            && chunk.temp + 1.0 > CONFIG.tropical_temp;
-        let farming_score = if can_grow_rice {
-            farmable_chunks * 2
-        } else {
-            farmable_chunks
-        } + if water_rich {
-            farmable_needs_irrigation_chunks
-        } else {
-            0
-        };
-        let fish_score = lake_chunks + ocean_chunks;
-        let food_score = farming_score + fish_score;
-        let mining_score = if tree_chunks > 1 { rock_chunks } else { 0 };
-        let forestry_score = if has_river { tree_chunks } else { 0 };
-        let trading_score = std::cmp::min(std::cmp::min(land_chunks, ocean_chunks), river_chunks);
-        TownSiteAttributes {
-            food_score,
-            mining_score,
-            forestry_score,
-            trading_score,
-            heating: warm_or_firewood,
-            potable_water: has_potable_water,
-            building_materials: has_building_materials,
-            aquifer: has_many_rocks,
-        }
-    })
-}
-
-pub struct TownSiteAttributes {
-    food_score: i32,
-    mining_score: i32,
-    forestry_score: i32,
-    trading_score: i32,
-    heating: bool,
-    potable_water: bool,
-    building_materials: bool,
-    aquifer: bool,
-}
-
-impl TownSiteAttributes {
-    pub fn score(&self) -> f32 {
-        3.0 * (self.food_score as f32 + 1.0).log2()
-            + 2.0 * (self.forestry_score as f32 + 1.0).log2()
-            + (self.mining_score as f32 + 1.0).log2()
-            + (self.trading_score as f32 + 1.0).log2()
-    }
 }
 
 #[derive(Debug)]
@@ -1838,8 +1731,54 @@ pub struct Site {
     pub kind: SiteKind,
     // TODO: Remove this field when overhauling
     pub site_tmp: Option<Id<crate::site::Site>>,
+    refactor_city_size_hint: Option<f32>,
     pub center: Vec2<i32>,
     pub place: Id<Place>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ScoredTownFoundationLoc {
+    loc: Vec2<i32>,
+    score: f32,
+    economic_output: site::terrain_fit::TownEconomicOutput,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SelectedTownFoundation {
+    loc: Vec2<i32>,
+    economic_output: site::terrain_fit::TownEconomicOutput,
+}
+
+fn default_refactor_city_size(rng: &mut impl Rng) -> f32 {
+    Lerp::lerp(0.03, 1.0, rng.random_range(0.0..1f32).powi(5))
+}
+
+fn refactor_city_size_with_hint(size_hint: Option<f32>, rng: &mut impl Rng) -> f32 {
+    let baseline_size = default_refactor_city_size(rng);
+    size_hint.map_or(baseline_size, |hint| Lerp::lerp(baseline_size, hint, 0.25))
+}
+
+fn refactor_city_size_from_economic_output(
+    economic_output: site::terrain_fit::TownEconomicOutput,
+) -> f32 {
+    let food_score = (economic_output.farming_score + economic_output.fishing_score).max(0) as f32;
+    let forestry_score = economic_output.forestry_score.max(0) as f32;
+    let mining_score = economic_output.mining_score.max(0) as f32;
+    let trade_score = economic_output.trade_corridor_score.max(0) as f32;
+    let settlement_score = 3.0 * (food_score + 1.0).log2()
+        + 2.0 * (forestry_score + 1.0).log2()
+        + (mining_score + 1.0).log2()
+        + (trade_score + 1.0).log2();
+    let normalized = (settlement_score / 16.0).clamped(0.0, 1.0);
+
+    Lerp::lerp(0.12, 0.65, normalized)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SiteLocAttemptOutcome {
+    Accept(Vec2<i32>),
+    RetryDownhill(Vec2<i32>),
+    Reject,
 }
 
 impl fmt::Display for Site {
@@ -1850,136 +1789,233 @@ impl fmt::Display for Site {
     }
 }
 
+fn pirate_hideout_gate(on_land: bool, hideout_shoreline_band: bool, ocean_facing: bool) -> bool {
+    on_land && hideout_shoreline_band && ocean_facing
+}
+
+fn dwarven_mine_gate(
+    biome: BiomeKind,
+    away_from_cliffs: bool,
+    away_from_water: bool,
+    flat_enough: bool,
+) -> bool {
+    matches!(biome, BiomeKind::Forest | BiomeKind::Desert)
+        && away_from_cliffs
+        && away_from_water
+        && flat_enough
+}
+
+fn terracotta_myrmidon_gate(
+    temp: f32,
+    water_level: f32,
+    on_land: bool,
+    flat_enough: bool,
+    away_from_water: bool,
+    away_from_cliffs: bool,
+) -> bool {
+    (0.9..1.0).contains(&temp)
+        && on_land
+        && (water_level - CONFIG.sea_level) > 50.0
+        && flat_enough
+        && away_from_water
+        && away_from_cliffs
+}
+
+const BIRTH_CIV_TOWN_FOUNDATION_SAMPLES: usize = 100;
+
+fn higher_scored_town_foundation(
+    a: ScoredTownFoundationLoc,
+    b: ScoredTownFoundationLoc,
+) -> ScoredTownFoundationLoc {
+    if a.score > b.score { a } else { b }
+}
+
+impl From<ScoredTownFoundationLoc> for SelectedTownFoundation {
+    fn from(candidate: ScoredTownFoundationLoc) -> Self {
+        Self {
+            loc: candidate.loc,
+            economic_output: candidate.economic_output,
+        }
+    }
+}
+
+fn site_from_selected_town_foundation(
+    kind: SiteKind,
+    foundation: SelectedTownFoundation,
+    place: Id<Place>,
+) -> Site {
+    let SelectedTownFoundation {
+        loc,
+        economic_output,
+    } = foundation;
+    Site {
+        kind,
+        site_tmp: None,
+        refactor_city_size_hint: matches!(kind, SiteKind::Refactor)
+            .then_some(refactor_city_size_from_economic_output(economic_output)),
+        center: loc,
+        place,
+        /* most economic members have moved to site/Economy */
+        /* last_exports: Stocks::from_default(0.0),
+         * export_targets: Stocks::from_default(0.0),
+         * //trade_states: Stocks::default(), */
+    }
+}
+
+fn sample_scored_town_foundation_loc(
+    ctx: &mut GenCtx<impl Rng>,
+    proximity_reqs: &ProximityRequirements,
+    site_kind: SiteKind,
+) -> Option<ScoredTownFoundationLoc> {
+    let loc = find_site_loc(ctx, proximity_reqs, &site_kind)?;
+    let candidate = site::terrain_fit::TownFoundationCandidate::at_site_loc(ctx.sim, loc)?;
+    let score = candidate.score();
+    let economic_output = candidate.economic_output();
+    Some(ScoredTownFoundationLoc {
+        loc,
+        score,
+        economic_output,
+    })
+}
+
+fn best_town_foundation(
+    ctx: &mut GenCtx<impl Rng>,
+    proximity_reqs: &ProximityRequirements,
+    site_kind: SiteKind,
+) -> Option<SelectedTownFoundation> {
+    (0..BIRTH_CIV_TOWN_FOUNDATION_SAMPLES)
+        .flat_map(|_| sample_scored_town_foundation_loc(ctx, proximity_reqs, site_kind))
+        .reduce(higher_scored_town_foundation)
+        .map(SelectedTownFoundation::from)
+}
+
+fn site_loc_attempt_outcome(
+    test_loc: Vec2<i32>,
+    search_gates_satisfied: bool,
+    exclusion_radius_clear: bool,
+    downhill: Option<Vec2<i32>>,
+) -> SiteLocAttemptOutcome {
+    if !search_gates_satisfied {
+        SiteLocAttemptOutcome::Reject
+    } else if exclusion_radius_clear {
+        SiteLocAttemptOutcome::Accept(test_loc)
+    } else if let Some(retry_loc) = downhill {
+        SiteLocAttemptOutcome::RetryDownhill(retry_loc)
+    } else {
+        SiteLocAttemptOutcome::Reject
+    }
+}
+
 impl SiteKind {
     pub fn is_suitable_loc(&self, loc: Vec2<i32>, sim: &WorldSim) -> bool {
-        let on_land = || -> bool {
-            if let Some(chunk) = sim.get(loc) {
-                !chunk.river.is_ocean()
-                    && !chunk.river.is_lake()
-                    && !chunk.river.is_river()
-                    && !chunk.is_underwater()
-                    && !matches!(
-                        chunk.get_biome(),
-                        common::terrain::BiomeKind::Lake | common::terrain::BiomeKind::Ocean
-                    )
-            } else {
-                false
-            }
+        let Some(terrain_fit) = site::terrain_fit::SiteTerrainContext::at_site_loc(sim, loc) else {
+            return false;
         };
-        let on_flat_terrain = || -> bool {
-            sim.get_gradient_approx(loc)
-                .map(|grad| grad < 1.0)
-                .unwrap_or(false)
+        let sample = terrain_fit.semantic_sample;
+        let suitabilities = terrain_fit.suitabilities;
+        let on_land = || suitabilities.settlement.on_land;
+        let on_flat_terrain = || suitabilities.settlement.flat_enough;
+        let suitable_for_town = || -> bool {
+            site::terrain_fit::TownFoundationCandidate::from_terrain(sim, loc, terrain_fit)
+                .is_some_and(|candidate| candidate.supports_site_kind(*self))
         };
 
-        sim.get(loc).is_some_and(|chunk| {
-            let suitable_for_town = || -> bool {
-                let attributes = town_attributes_of_site(loc, sim);
-                attributes.is_some_and(|attributes| {
-                    // aquifer and has_many_rocks was added to make mesa clifftowns suitable for towns
-                    (attributes.potable_water || (attributes.aquifer && matches!(self, SiteKind::CliffTown)))
-                        && attributes.building_materials
-                        && attributes.heating
-                        // Because of how the algorithm for site towns work, they have to start on land.
-                        && on_land()
-                })
-            };
-            match self {
-                SiteKind::Gnarling => {
-                    on_land()
-                        && on_flat_terrain()
-                        && (-0.3..0.4).contains(&chunk.temp)
-                        && chunk.tree_density > 0.75
-                },
-                SiteKind::Adlet => chunk.temp < -0.2 && chunk.cliff_height > 25.0,
-                SiteKind::DwarvenMine => {
-                    matches!(chunk.get_biome(), BiomeKind::Forest | BiomeKind::Desert)
-                        && !chunk.near_cliffs()
-                        && !chunk.river.near_water()
-                        && on_flat_terrain()
-                },
-                SiteKind::Haniwa => {
-                    on_land()
-                        && on_flat_terrain()
-                        && (-0.3..0.4).contains(&chunk.temp)
-                },
-                SiteKind::GiantTree => {
-                    on_land()
-                        && on_flat_terrain()
-                        && chunk.tree_density > 0.4
-                        && (-0.3..0.4).contains(&chunk.temp)
-                },
-                SiteKind::Citadel => true,
-                SiteKind::CliffTown => {
-                    chunk.temp >= CONFIG.desert_temp
-                        && chunk.cliff_height > 40.0
-                        && chunk.rockiness > 1.2
-                        && suitable_for_town()
-                },
-                SiteKind::GliderCourse => {
-                    chunk.alt > 1400.0
-                },
-                SiteKind::SavannahTown => {
-                    matches!(chunk.get_biome(), BiomeKind::Savannah)
-                        && !chunk.near_cliffs()
-                        && !chunk.river.near_water()
-                        && suitable_for_town()
-                },
-                SiteKind::CoastalTown => {
-                    (2.0..3.5).contains(&(chunk.water_alt - CONFIG.sea_level))
-                        && suitable_for_town()
-                },
-                SiteKind::PirateHideout => {
-                    (0.5..3.5).contains(&(chunk.water_alt - CONFIG.sea_level))
-                },
-                SiteKind::Sahagin => {
-                    matches!(chunk.get_biome(), BiomeKind::Ocean)
-                    && (40.0..45.0).contains(&(CONFIG.sea_level - chunk.alt))
-                },
-                SiteKind::JungleRuin => {
-                    matches!(chunk.get_biome(), BiomeKind::Jungle)
-                },
-                SiteKind::RockCircle => !chunk.near_cliffs() && !chunk.river.near_water(),
-                SiteKind::TrollCave => {
-                    !chunk.near_cliffs()
-                        && on_flat_terrain()
-                        && !chunk.river.near_water()
-                        && chunk.temp < 0.6
-                },
-                SiteKind::Camp => {
-                    !chunk.near_cliffs() && on_flat_terrain() && !chunk.river.near_water()
-                },
-                SiteKind::DesertCity => {
-                    (0.9..1.0).contains(&chunk.temp) && !chunk.near_cliffs() && suitable_for_town()
-                        && on_land()
-                        && !chunk.river.near_water()
-                },
-                SiteKind::ChapelSite => {
-                    matches!(chunk.get_biome(), BiomeKind::Ocean)
-                        && CONFIG.sea_level < chunk.alt + 1.0
-                },
-                SiteKind::Terracotta => {
-                    (0.9..1.0).contains(&chunk.temp)
-                        && on_land()
-                        && (chunk.water_alt - CONFIG.sea_level) > 50.0
-                        && on_flat_terrain()
-                        && !chunk.river.near_water()
-                        && !chunk.near_cliffs()
-                },
-                SiteKind::Myrmidon => {
-                    (0.9..1.0).contains(&chunk.temp)
-                        && on_land()
-                        && (chunk.water_alt - CONFIG.sea_level) > 50.0
-                        && on_flat_terrain()
-                        && !chunk.river.near_water()
-                        && !chunk.near_cliffs()
-                },
-                SiteKind::Cultist => on_land() && chunk.temp < 0.5 && chunk.near_cliffs(),
-                SiteKind::VampireCastle => on_land() && chunk.temp <= -0.8 && chunk.near_cliffs(),
-                SiteKind::Refactor => suitable_for_town(),
-                SiteKind::Bridge(_, _) => true,
-            }
-        })
+        match self {
+            SiteKind::Gnarling => {
+                on_land()
+                    && on_flat_terrain()
+                    && (-0.3..0.4).contains(&sample.temp)
+                    && sample.tree_density > 0.75
+            },
+            SiteKind::Adlet => sample.temp < -0.2 && sample.cliff_height > 25.0,
+            SiteKind::DwarvenMine => dwarven_mine_gate(
+                sample.biome,
+                suitabilities.settlement.away_from_cliffs,
+                suitabilities.settlement.away_from_water,
+                on_flat_terrain(),
+            ),
+            SiteKind::Haniwa => {
+                on_land() && on_flat_terrain() && (-0.3..0.4).contains(&sample.temp)
+            },
+            SiteKind::GiantTree => {
+                on_land()
+                    && on_flat_terrain()
+                    && suitabilities.species_spawn.wooded
+                    && (-0.3..0.4).contains(&sample.temp)
+            },
+            SiteKind::Citadel => true,
+            SiteKind::CliffTown => {
+                sample.temp >= CONFIG.desert_temp
+                    && sample.cliff_height > 40.0
+                    && suitabilities.resource_extraction.stone_rich_ground
+                    && suitable_for_town()
+            },
+            SiteKind::GliderCourse => sample.alt > 1400.0,
+            SiteKind::SavannahTown => {
+                matches!(sample.biome, BiomeKind::Savannah)
+                    && suitabilities.settlement.away_from_cliffs
+                    && suitabilities.settlement.away_from_water
+                    && suitable_for_town()
+            },
+            SiteKind::CoastalTown => {
+                suitabilities.coastal_site.settlement_shoreline_band && suitable_for_town()
+            },
+            SiteKind::PirateHideout => pirate_hideout_gate(
+                on_land(),
+                suitabilities.coastal_site.hideout_shoreline_band,
+                site::coastal_suitability::coastal_profile_at_site(sim, loc)
+                    .is_some_and(|profile| profile.hideout_candidate()),
+            ),
+            SiteKind::Sahagin => suitabilities.marine_site.sahagin_site_candidate,
+            SiteKind::JungleRuin => matches!(sample.biome, BiomeKind::Jungle),
+            SiteKind::RockCircle => {
+                suitabilities.settlement.away_from_cliffs
+                    && suitabilities.settlement.away_from_water
+            },
+            SiteKind::TrollCave => {
+                suitabilities.settlement.away_from_cliffs
+                    && on_flat_terrain()
+                    && suitabilities.settlement.away_from_water
+                    && sample.temp < 0.6
+            },
+            SiteKind::Camp => {
+                suitabilities.settlement.away_from_cliffs
+                    && on_flat_terrain()
+                    && suitabilities.settlement.away_from_water
+            },
+            SiteKind::DesertCity => {
+                (0.9..1.0).contains(&sample.temp)
+                    && suitabilities.settlement.away_from_cliffs
+                    && suitable_for_town()
+                    && on_land()
+                    && suitabilities.settlement.away_from_water
+            },
+            SiteKind::ChapelSite => suitabilities.marine_site.chapel_site_candidate,
+            SiteKind::Terracotta => terracotta_myrmidon_gate(
+                sample.temp,
+                sample.water_level,
+                on_land(),
+                on_flat_terrain(),
+                suitabilities.settlement.away_from_water,
+                suitabilities.settlement.away_from_cliffs,
+            ),
+            SiteKind::Myrmidon => terracotta_myrmidon_gate(
+                sample.temp,
+                sample.water_level,
+                on_land(),
+                on_flat_terrain(),
+                suitabilities.settlement.away_from_water,
+                suitabilities.settlement.away_from_cliffs,
+            ),
+            SiteKind::Cultist => {
+                sample.temp < 0.5 && suitabilities.subterranean_entrance.surface_cave_entrance
+            },
+            SiteKind::VampireCastle => {
+                sample.temp <= -0.8 && suitabilities.subterranean_entrance.surface_cave_entrance
+            },
+            SiteKind::Refactor => suitable_for_town(),
+            SiteKind::Bridge(_, _) => true,
+        }
     }
 
     pub fn exclusion_radius(&self) -> i32 {
@@ -2138,5 +2174,353 @@ mod tests {
             max: Vec2 { x: 200, y: 300 },
         };
         assert_eq!(expected, reqs.location_hint(&map_dims));
+    }
+
+    #[test]
+    fn pirate_hideout_gate_requires_ocean_facing_profile() {
+        assert!(!pirate_hideout_gate(true, true, false));
+        assert!(pirate_hideout_gate(true, true, true));
+    }
+
+    #[test]
+    fn pirate_hideout_gate_rejects_non_land_or_non_shoreline_sites() {
+        assert!(!pirate_hideout_gate(false, true, true));
+        assert!(!pirate_hideout_gate(true, false, true));
+    }
+
+    #[test]
+    fn dwarven_mine_gate_accepts_forest_and_desert_on_safe_flat_ground() {
+        assert!(dwarven_mine_gate(BiomeKind::Forest, true, true, true));
+        assert!(dwarven_mine_gate(BiomeKind::Desert, true, true, true));
+    }
+
+    #[test]
+    fn dwarven_mine_gate_rejects_unsupported_biomes_and_missing_safety_constraints() {
+        assert!(!dwarven_mine_gate(BiomeKind::Savannah, true, true, true));
+        assert!(!dwarven_mine_gate(BiomeKind::Forest, false, true, true));
+        assert!(!dwarven_mine_gate(BiomeKind::Forest, true, false, true));
+        assert!(!dwarven_mine_gate(BiomeKind::Forest, true, true, false));
+    }
+
+    #[test]
+    fn higher_scored_town_foundation_prefers_larger_score() {
+        let lower = ScoredTownFoundationLoc {
+            loc: Vec2 { x: 1, y: 1 },
+            score: 2.0,
+            economic_output: site::terrain_fit::TownEconomicOutput {
+                farming_score: 0,
+                fishing_score: 0,
+                mining_score: 0,
+                forestry_score: 0,
+                building_materials: false,
+                potable_water: false,
+                aquifer: false,
+                heating: false,
+                trade_corridor_score: 0,
+                port_candidate: false,
+            },
+        };
+        let higher = ScoredTownFoundationLoc {
+            loc: Vec2 { x: 2, y: 2 },
+            score: 3.0,
+            economic_output: site::terrain_fit::TownEconomicOutput {
+                farming_score: 0,
+                fishing_score: 0,
+                mining_score: 0,
+                forestry_score: 0,
+                building_materials: false,
+                potable_water: false,
+                aquifer: false,
+                heating: false,
+                trade_corridor_score: 0,
+                port_candidate: false,
+            },
+        };
+
+        assert_eq!(higher_scored_town_foundation(lower, higher), higher);
+        assert_eq!(higher_scored_town_foundation(higher, lower), higher);
+    }
+
+    #[test]
+    fn higher_scored_town_foundation_preserves_later_tie_behavior() {
+        let earlier = ScoredTownFoundationLoc {
+            loc: Vec2 { x: 1, y: 1 },
+            score: 2.0,
+            economic_output: site::terrain_fit::TownEconomicOutput {
+                farming_score: 0,
+                fishing_score: 0,
+                mining_score: 0,
+                forestry_score: 0,
+                building_materials: false,
+                potable_water: false,
+                aquifer: false,
+                heating: false,
+                trade_corridor_score: 0,
+                port_candidate: false,
+            },
+        };
+        let later = ScoredTownFoundationLoc {
+            loc: Vec2 { x: 2, y: 2 },
+            score: 2.0,
+            economic_output: site::terrain_fit::TownEconomicOutput {
+                farming_score: 0,
+                fishing_score: 0,
+                mining_score: 0,
+                forestry_score: 0,
+                building_materials: false,
+                potable_water: false,
+                aquifer: false,
+                heating: false,
+                trade_corridor_score: 0,
+                port_candidate: false,
+            },
+        };
+
+        assert_eq!(higher_scored_town_foundation(earlier, later), later);
+    }
+
+    #[test]
+    fn selected_town_foundation_preserves_loc_and_economic_output() {
+        let economic_output = site::terrain_fit::TownEconomicOutput {
+            farming_score: 2,
+            fishing_score: 1,
+            mining_score: 3,
+            forestry_score: 1,
+            building_materials: true,
+            potable_water: true,
+            aquifer: false,
+            heating: true,
+            trade_corridor_score: 1,
+            port_candidate: false,
+        };
+        let scored = ScoredTownFoundationLoc {
+            loc: Vec2 { x: 4, y: 9 },
+            score: 5.0,
+            economic_output,
+        };
+
+        assert_eq!(
+            SelectedTownFoundation::from(scored),
+            SelectedTownFoundation {
+                loc: scored.loc,
+                economic_output,
+            },
+        );
+    }
+
+    #[test]
+    fn selected_town_foundation_preserves_tie_winner_economic_output() {
+        let earlier = ScoredTownFoundationLoc {
+            loc: Vec2 { x: 1, y: 1 },
+            score: 2.0,
+            economic_output: site::terrain_fit::TownEconomicOutput {
+                farming_score: 1,
+                fishing_score: 0,
+                mining_score: 0,
+                forestry_score: 0,
+                building_materials: true,
+                potable_water: true,
+                aquifer: false,
+                heating: true,
+                trade_corridor_score: 0,
+                port_candidate: false,
+            },
+        };
+        let later = ScoredTownFoundationLoc {
+            loc: Vec2 { x: 2, y: 2 },
+            score: 2.0,
+            economic_output: site::terrain_fit::TownEconomicOutput {
+                farming_score: 0,
+                fishing_score: 2,
+                mining_score: 1,
+                forestry_score: 1,
+                building_materials: false,
+                potable_water: false,
+                aquifer: true,
+                heating: false,
+                trade_corridor_score: 1,
+                port_candidate: true,
+            },
+        };
+
+        assert_eq!(
+            SelectedTownFoundation::from(higher_scored_town_foundation(earlier, later)),
+            SelectedTownFoundation {
+                loc: later.loc,
+                economic_output: later.economic_output,
+            },
+        );
+    }
+
+    #[test]
+    fn site_from_selected_town_foundation_preserves_selected_loc_and_kind() {
+        let foundation = SelectedTownFoundation {
+            loc: Vec2 { x: 11, y: 13 },
+            economic_output: site::terrain_fit::TownEconomicOutput {
+                farming_score: 2,
+                fishing_score: 1,
+                mining_score: 3,
+                forestry_score: 0,
+                building_materials: true,
+                potable_water: true,
+                aquifer: false,
+                heating: true,
+                trade_corridor_score: 1,
+                port_candidate: false,
+            },
+        };
+        let place = Id::new(7);
+        let site = site_from_selected_town_foundation(SiteKind::CoastalTown, foundation, place);
+
+        assert_eq!(site.kind, SiteKind::CoastalTown);
+        assert_eq!(site.site_tmp, None);
+        assert_eq!(site.refactor_city_size_hint, None);
+        assert_eq!(site.center, foundation.loc);
+        assert_eq!(site.place, place);
+    }
+
+    #[test]
+    fn site_from_selected_town_foundation_sets_refactor_city_size_hint() {
+        let foundation = SelectedTownFoundation {
+            loc: Vec2 { x: 11, y: 13 },
+            economic_output: site::terrain_fit::TownEconomicOutput {
+                farming_score: 4,
+                fishing_score: 2,
+                mining_score: 3,
+                forestry_score: 2,
+                building_materials: true,
+                potable_water: true,
+                aquifer: false,
+                heating: true,
+                trade_corridor_score: 2,
+                port_candidate: false,
+            },
+        };
+        let site = site_from_selected_town_foundation(SiteKind::Refactor, foundation, Id::new(7));
+
+        assert_eq!(
+            site.refactor_city_size_hint,
+            Some(refactor_city_size_from_economic_output(
+                foundation.economic_output
+            ))
+        );
+    }
+
+    #[test]
+    fn refactor_city_size_from_economic_output_grows_with_economic_signal() {
+        let weaker = site::terrain_fit::TownEconomicOutput {
+            farming_score: 1,
+            fishing_score: 0,
+            mining_score: 0,
+            forestry_score: 0,
+            building_materials: true,
+            potable_water: true,
+            aquifer: false,
+            heating: true,
+            trade_corridor_score: 0,
+            port_candidate: false,
+        };
+        let stronger = site::terrain_fit::TownEconomicOutput {
+            farming_score: 4,
+            fishing_score: 2,
+            mining_score: 3,
+            forestry_score: 2,
+            building_materials: true,
+            potable_water: true,
+            aquifer: true,
+            heating: true,
+            trade_corridor_score: 2,
+            port_candidate: true,
+        };
+
+        let weaker_size = refactor_city_size_from_economic_output(weaker);
+        let stronger_size = refactor_city_size_from_economic_output(stronger);
+        assert!((0.12..=0.65).contains(&weaker_size));
+        assert!((0.12..=0.65).contains(&stronger_size));
+        assert!(stronger_size > weaker_size);
+    }
+
+    #[test]
+    fn refactor_city_size_with_hint_biases_but_does_not_replace_baseline_size() {
+        let mut baseline_rng = ChaChaRng::seed_from_u64(7);
+        let baseline_size = default_refactor_city_size(&mut baseline_rng);
+
+        let mut hinted_rng = ChaChaRng::seed_from_u64(7);
+        let hinted_size = refactor_city_size_with_hint(Some(0.65), &mut hinted_rng);
+
+        assert!(hinted_size > baseline_size);
+        assert!(hinted_size < 0.65);
+    }
+
+    #[test]
+    fn site_loc_attempt_outcome_accepts_clear_candidate() {
+        let test_loc = Vec2 { x: 5, y: 7 };
+        assert_eq!(
+            site_loc_attempt_outcome(test_loc, true, true, Some(Vec2 { x: 6, y: 8 })),
+            SiteLocAttemptOutcome::Accept(test_loc),
+        );
+    }
+
+    #[test]
+    fn site_loc_attempt_outcome_retries_downhill_after_blocked_exclusion() {
+        let test_loc = Vec2 { x: 5, y: 7 };
+        let downhill = Vec2 { x: 6, y: 8 };
+        assert_eq!(
+            site_loc_attempt_outcome(test_loc, true, false, Some(downhill)),
+            SiteLocAttemptOutcome::RetryDownhill(downhill),
+        );
+    }
+
+    #[test]
+    fn site_loc_attempt_outcome_rejects_failed_gate_or_missing_retry() {
+        let test_loc = Vec2 { x: 5, y: 7 };
+        assert_eq!(
+            site_loc_attempt_outcome(test_loc, false, true, Some(Vec2 { x: 6, y: 8 })),
+            SiteLocAttemptOutcome::Reject,
+        );
+        assert_eq!(
+            site_loc_attempt_outcome(test_loc, true, false, None),
+            SiteLocAttemptOutcome::Reject,
+        );
+    }
+
+    #[test]
+    fn terracotta_myrmidon_gate_accepts_hot_flat_high_plateau_sites() {
+        assert!(terracotta_myrmidon_gate(
+            0.95,
+            CONFIG.sea_level + 80.0,
+            true,
+            true,
+            true,
+            true
+        ));
+    }
+
+    #[test]
+    fn terracotta_myrmidon_gate_rejects_missing_core_conditions() {
+        assert!(!terracotta_myrmidon_gate(
+            0.85,
+            CONFIG.sea_level + 80.0,
+            true,
+            true,
+            true,
+            true
+        ));
+        assert!(!terracotta_myrmidon_gate(
+            0.95,
+            CONFIG.sea_level + 40.0,
+            true,
+            true,
+            true,
+            true
+        ));
+        assert!(!terracotta_myrmidon_gate(
+            0.95,
+            CONFIG.sea_level + 80.0,
+            true,
+            true,
+            false,
+            true
+        ));
     }
 }

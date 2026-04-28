@@ -25,22 +25,356 @@
     256
   ],
   "max_height": 572.776,
-  "site_markers": 0,
-  "possible_starting_sites": 0,
-  "poi_markers": 0,
+  "site_markers": 26,
+  "possible_starting_sites": 2,
+  "starting_site_profile_contract": "starting_site_profile_v2",
+  "starting_site_scoring_contract": "starting_site_scoring_v1",
+  "starting_site_candidates": [
+    {
+      "rank": 1,
+      "selected": true,
+      "profile": {
+        "site_id": 1,
+        "name": "Gremor",
+        "site_kind": "Refactor",
+        "center_biome": "Forest",
+        "center_chunk": [
+          33,
+          207
+        ],
+        "plot_count": 25,
+        "biome_factor": 1.1483566
+      },
+      "score": {
+        "base_kind_score": 2.0,
+        "size_score": 1.9915984,
+        "position_score": 1.931056,
+        "biome_score": 1.1483566,
+        "final_score": 8.832902
+      }
+    },
+    {
+      "rank": 2,
+      "selected": true,
+      "profile": {
+        "site_id": 0,
+        "name": "Blelen",
+        "site_kind": "Refactor",
+        "center_biome": "Forest",
+        "center_chunk": [
+          112,
+          33
+        ],
+        "plot_count": 38,
+        "biome_factor": 0.9099488
+      },
+      "score": {
+        "base_kind_score": 2.0,
+        "size_score": 1.8682789,
+        "position_score": 1.931056,
+        "biome_score": 0.9099488,
+        "final_score": 6.5657377
+      }
+    },
+    {
+      "rank": 3,
+      "selected": false,
+      "profile": {
+        "site_id": 2,
+        "name": "Bridge of Asemberg",
+        "site_kind": "Bridge(Vec2 { x: 36, y: 85 }, Vec2 { x: 41, y: 85 })",
+        "center_biome": "Savannah",
+        "center_chunk": [
+          38,
+          85
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.4294546
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 4,
+      "selected": false,
+      "profile": {
+        "site_id": 3,
+        "name": "Bridge of Helm",
+        "site_kind": "Bridge(Vec2 { x: 74, y: 69 }, Vec2 { x: 74, y: 65 })",
+        "center_biome": "Forest",
+        "center_chunk": [
+          74,
+          67
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.57355225
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 5,
+      "selected": false,
+      "profile": {
+        "site_id": 4,
+        "name": "Gaeoapikron",
+        "site_kind": "ChapelSite",
+        "center_biome": "Ocean",
+        "center_chunk": [
+          221,
+          2
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.1076064
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 6,
+      "selected": false,
+      "profile": {
+        "site_id": 5,
+        "name": "",
+        "site_kind": "JungleRuin",
+        "center_biome": "Jungle",
+        "center_chunk": [
+          215,
+          95
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.39984673
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 7,
+      "selected": false,
+      "profile": {
+        "site_id": 6,
+        "name": "Traktor",
+        "site_kind": "Gnarling",
+        "center_biome": "Forest",
+        "center_chunk": [
+          51,
+          18
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.82652587
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 8,
+      "selected": false,
+      "profile": {
+        "site_id": 7,
+        "name": "",
+        "site_kind": "JungleRuin",
+        "center_biome": "Jungle",
+        "center_chunk": [
+          52,
+          250
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.54593825
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 9,
+      "selected": false,
+      "profile": {
+        "site_id": 8,
+        "name": "",
+        "site_kind": "TrollCave",
+        "center_biome": "Mountain",
+        "center_chunk": [
+          126,
+          148
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.1189866
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 10,
+      "selected": false,
+      "profile": {
+        "site_id": 9,
+        "name": "Aneduil Mine",
+        "site_kind": "DwarvenMine",
+        "center_biome": "Forest",
+        "center_chunk": [
+          148,
+          197
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.574907
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 11,
+      "selected": false,
+      "profile": {
+        "site_id": 10,
+        "name": "Tree of Onauquist",
+        "site_kind": "GiantTree",
+        "center_biome": "Forest",
+        "center_chunk": [
+          161,
+          64
+        ],
+        "plot_count": 1,
+        "biome_factor": 1.1134691
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 12,
+      "selected": false,
+      "profile": {
+        "site_id": 11,
+        "name": "Uluingasuna",
+        "site_kind": "Adlet",
+        "center_biome": "Taiga",
+        "center_chunk": [
+          171,
+          17
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.6228804
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    },
+    {
+      "rank": 13,
+      "selected": false,
+      "profile": {
+        "site_id": 12,
+        "name": "",
+        "site_kind": "TrollCave",
+        "center_biome": "Snowland",
+        "center_chunk": [
+          225,
+          201
+        ],
+        "plot_count": 1,
+        "biome_factor": 0.46573603
+      },
+      "score": {
+        "base_kind_score": 0.0,
+        "size_score": 1.0,
+        "position_score": 1.0,
+        "biome_score": 1.0,
+        "final_score": 0.0
+      }
+    }
+  ],
+  "poi_markers": 58,
   "sim": {
     "chunk_count": 65536,
     "alt_min": 87.5,
     "alt_max": 714.96906,
-    "alt_mean": 294.78775,
+    "alt_mean": 294.7673,
     "water_alt_min": 140.0,
     "water_alt_max": 712.776,
-    "water_alt_mean": 221.86098,
+    "water_alt_mean": 221.86133,
     "river_chunks": 547,
     "near_water_chunks": 3766,
-    "site_chunks": 1065,
+    "site_chunks": 2085,
     "poi_chunks": 54197,
+    "spot_kind_counts": {
+      "AirshipCrash": 16,
+      "Arch": 2,
+      "DesertBones": 4,
+      "FallenTree": 17,
+      "FruitTree": 115,
+      "GnarlingTotem": 22,
+      "GnomeSpring": 5,
+      "GraveSmall": 29,
+      "Igloo": 8,
+      "LionRock": 12,
+      "MyrmidonTemple": 2,
+      "RonFile(SpotProperties { base_structures: \"spots_general.mage_tower\", freq: 1.0, condition: All([Typical, MaxGradient(0.2), Biome([Forest, Taiga, Snowland, Grassland])]), spawn: true })": 9,
+      "SaurokAltar": 1,
+      "SaurokTotem": 1,
+      "Shipwreck": 1,
+      "Shipwreck2": 2,
+      "TreeStumpForest": 68,
+      "WitchHouse": 16,
+      "WolfBurrow": 25
+    },
     "mean_temp": -0.1349954,
-    "mean_humidity": 0.6399556
+    "mean_humidity": 0.6399556,
+    "marine_adjacency_compare": {
+      "runtime_probe": "chunk_center_column_when_available_v1",
+      "compare_contract": "record static/runtime marine_adjacent handoff counts; static_true_runtime_false_chunks should remain zero",
+      "compared_chunks": 64009,
+      "skipped_runtime_probe_chunks": 1527,
+      "static_true_runtime_true_chunks": 2118,
+      "static_true_runtime_false_chunks": 0,
+      "static_false_runtime_true_chunks": 50,
+      "static_false_runtime_false_chunks": 61841
+    }
   }
 }
