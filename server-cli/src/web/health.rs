@@ -978,25 +978,30 @@ impl HealthState {
 
             match world_compat_entry {
                 Some(entry) => match entry.context {
-                    RuntimeObservabilityContext::WorldCompat(context) => WorldCompatReport {
-                        status: if context.strict_load_contract_gap {
-                            "world-compat-review-required"
-                        } else {
-                            "world-compat-clear"
-                        },
-                        environment: self.environment,
-                        requires_operator_review: context.strict_load_contract_gap,
-                        detail: entry.detail,
-                        configured_mode: Some(context.configured_mode),
-                        compat_entry: Some(context.audit.entry.as_str()),
-                        compat_decision: Some(context.audit.decision.as_str()),
-                        compat_failure: Some(context.audit.failure_kind.as_str()),
-                        strict_load_contract_gap: Some(context.strict_load_contract_gap),
-                        world_recipe_hash: Some(context.world_recipe_hash),
-                        chunk_recipe_hash: Some(context.chunk_recipe_hash),
-                        topology_id: Some(context.topology_id),
-                        preset_id: Some(context.preset_id),
-                        source_surface: "world-compat",
+                    RuntimeObservabilityContext::WorldCompat(context) => {
+                        let requires_operator_review =
+                            entry.state != RuntimeObservabilityState::Healthy;
+
+                        WorldCompatReport {
+                            status: if requires_operator_review {
+                                "world-compat-review-required"
+                            } else {
+                                "world-compat-clear"
+                            },
+                            environment: self.environment,
+                            requires_operator_review,
+                            detail: entry.detail,
+                            configured_mode: Some(context.configured_mode),
+                            compat_entry: Some(context.audit.entry.as_str()),
+                            compat_decision: Some(context.audit.decision.as_str()),
+                            compat_failure: Some(context.audit.failure_kind.as_str()),
+                            strict_load_contract_gap: Some(context.strict_load_contract_gap),
+                            world_recipe_hash: Some(context.world_recipe_hash),
+                            chunk_recipe_hash: Some(context.chunk_recipe_hash),
+                            topology_id: Some(context.topology_id),
+                            preset_id: Some(context.preset_id),
+                            source_surface: "world-compat",
+                        }
                     },
                     RuntimeObservabilityContext::None => WorldCompatReport {
                         status: "world-compat-unrecorded",

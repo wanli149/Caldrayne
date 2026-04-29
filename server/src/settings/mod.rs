@@ -439,11 +439,19 @@ pub struct Settings {
     pub server_name: String,
     /// Length of a day in minutes.
     pub day_length: f64,
-    /// When set to None, loads the default map file (if available); otherwise,
-    /// uses the value of the file options to decide how to proceed.
+    /// When set to None, loads the default built-in map asset. Otherwise uses
+    /// the selected file options to decide how to proceed.
+    ///
+    /// `LoadLegacy(path)` remains a transitional explicit compat-import path
+    /// for legacy or sidecarless external worlds; prefer strict `Load(path)`
+    /// with an adjacent `RecipeManifestV1` sidecar whenever possible.
     pub map_file: Option<FileOpts>,
-    /// Controls whether strict world load fallback remains advisory (`record`)
-    /// or becomes a fail-fast startup contract (`enforce`).
+    /// Controls whether strict modern world load fallback remains advisory
+    /// (`record`) or becomes a fail-fast startup contract (`enforce`).
+    ///
+    /// `LoadLegacy(path)` remains outside that strict fallback contract and
+    /// may still surface operator review in health during the deprecation
+    /// window.
     pub world_compat_mode: CompatMode,
     pub max_view_distance: Option<u32>,
     pub max_player_group_size: u32,

@@ -106,6 +106,11 @@ pub(in crate::web) fn set_runtime_observability_status(
 }
 
 #[cfg(feature = "worldgen")]
+fn world_compat_requires_operator_review(audit: server::CompatAuditV1) -> bool {
+    audit.is_strict_load_contract_gap() || audit.entry == server::CompatEntryKindV1::LoadLegacy
+}
+
+#[cfg(feature = "worldgen")]
 pub(crate) fn set_world_compat_observability_status(
     runtime_observability_inventory: &RuntimeObservabilityInventory,
     configured_mode: impl Into<String>,
@@ -114,7 +119,8 @@ pub(crate) fn set_world_compat_observability_status(
 ) {
     let configured_mode = configured_mode.into();
     let strict_load_contract_gap = audit.is_strict_load_contract_gap();
-    let state = if strict_load_contract_gap {
+    let requires_operator_review = world_compat_requires_operator_review(audit);
+    let state = if requires_operator_review {
         RuntimeObservabilityState::Failing
     } else {
         RuntimeObservabilityState::Healthy
@@ -122,6 +128,15 @@ pub(crate) fn set_world_compat_observability_status(
     let detail = if strict_load_contract_gap {
         format!(
             "strict world load contract fell back to generation: entry={}, decision={}, failure={}",
+            audit.entry.as_str(),
+            audit.decision.as_str(),
+            audit.failure_kind.as_str()
+        )
+    } else if audit.entry == server::CompatEntryKindV1::LoadLegacy {
+        format!(
+            "transitional compat import path remains in use: entry={}, decision={}, failure={}; \
+             explicit operator review required until the world is migrated to a strict load \
+             contract",
             audit.entry.as_str(),
             audit.decision.as_str(),
             audit.failure_kind.as_str()
