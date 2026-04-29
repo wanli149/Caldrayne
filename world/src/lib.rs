@@ -316,6 +316,21 @@ fn starting_site_position_score(center: Vec2<i32>, world_size: Vec2<u32>) -> f32
 }
 
 impl World {
+    fn default_chunk_output_for_missing_runtime_chunk_product(
+        &self,
+        generation_mode: ChunkGenerationMode,
+    ) -> ChunkGenerationOutput {
+        match generation_mode {
+            ChunkGenerationMode::StaticSnapshot => ChunkGenerationOutput::StaticSnapshot(
+                self.sim().default_chunk_for_missing_world_bounds(),
+            ),
+            ChunkGenerationMode::RuntimeFinalized => ChunkGenerationOutput::RuntimeFinalized {
+                chunk: self.sim().default_chunk_for_missing_world_bounds(),
+                supplement: ChunkSupplement::default(),
+            },
+        }
+    }
+
     pub fn empty() -> (Self, IndexOwned) {
         let index = Index::new(0);
         (
@@ -362,6 +377,16 @@ impl World {
     pub fn sim(&self) -> &sim::WorldSim { &self.sim }
 
     pub fn civs(&self) -> &civ::Civs { &self.civs }
+
+    pub fn query_chunk_key_aabr(&self) -> Aabr<i32> { self.sim.query_chunk_key_aabr() }
+
+    pub fn runtime_chunk_product_key_aabr(&self) -> Aabr<i32> {
+        self.sim.runtime_chunk_product_key_aabr()
+    }
+
+    pub fn runtime_topology_descriptor(&self) -> world_msg::RuntimeTopologyDescriptor {
+        self.sim.runtime_topology_descriptor()
+    }
 
     pub fn tick(&self, _dt: Duration) {
         // TODO
@@ -620,38 +645,29 @@ impl World {
 
         let mut sampler = self.sample_blocks();
 
-        let (base_z, sim_chunk) = match self
+        let generation_anchor = match self
             .sim
             /*.get_interpolated(
                 chunk_pos.map2(chunk_size2d, |e, sz: u32| e * sz as i32 + sz as i32 / 2),
                 |chunk| chunk.get_base_z(),
             )
             .and_then(|base_z| self.sim.get(chunk_pos).map(|sim_chunk| (base_z, sim_chunk))) */
-            .get_base_z(chunk_pos)
+            .generation_chunk_anchor(chunk_pos)
         {
-            Some(base_z) => (base_z as i32, self.sim.get(chunk_pos).unwrap()),
-            // Some((base_z, sim_chunk)) => (base_z as i32, sim_chunk),
+            Some(generation_anchor) => generation_anchor,
             None => {
                 // NOTE: This is necessary in order to generate a handful of chunks at the
                 // edges of the map.
-                return Ok(match generation_mode {
-                    ChunkGenerationMode::StaticSnapshot => {
-                        ChunkGenerationOutput::StaticSnapshot(self.sim().generate_oob_chunk())
-                    },
-                    ChunkGenerationMode::RuntimeFinalized => {
-                        ChunkGenerationOutput::RuntimeFinalized {
-                            chunk: self.sim().generate_oob_chunk(),
-                            supplement: ChunkSupplement::default(),
-                        }
-                    },
-                });
+                return Ok(
+                    self.default_chunk_output_for_missing_runtime_chunk_product(generation_mode)
+                );
             },
         };
         let (base_build, static_artifacts) = self.build_chunk_static_stage(
             index,
             chunk_pos,
-            base_z,
-            sim_chunk,
+            generation_anchor.base_z,
+            generation_anchor.sim_chunk,
             &mut sampler,
             calendar,
             &mut should_abort,
@@ -659,7 +675,7 @@ impl World {
         Ok(self.finalize_chunk_generation_mode(
             generation_mode,
             base_build,
-            sim_chunk,
+            generation_anchor.sim_chunk,
             static_artifacts,
             index,
             generation_context,
@@ -1287,7 +1303,7 @@ impl World {
                     kind: model,
                     pos: (wpos2d - min_wpos)
                         .map(|e| e as i16)
-                        .with_z(self.sim().get_alt_approx(wpos2d).unwrap_or(0.0) as i16),
+                        .with_z(self.sim().alt_approx_or(wpos2d, sim::ApproxFallback::Zero) as i16),
                     flags: if column.snow_cover {
                         lod::InstFlags::SNOW_COVERED
                     } else {
@@ -1311,12 +1327,16 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::{Error, World};
-    use crate::sim::{CompatMode, FileOpts, WorldOpts};
+    use crate::{
+        CONFIG,
+        sim::{CompatMode, FileOpts, WorldOpts},
+    };
     use rayon::ThreadPoolBuilder;
     use std::{
         fs,
         time::{SystemTime, UNIX_EPOCH},
     };
+    use vek::Vec2;
 
     #[test]
     fn generate_returns_structured_error_for_enforced_missing_load() {
@@ -1352,5 +1372,110 @@ mod tests {
         }
 
         let _ = fs::remove_file(missing_path);
+    }
+
+    #[test]
+    fn generate_returns_structured_error_for_enforced_asset_recipe_reject() {
+        let pool = ThreadPoolBuilder::new().build().unwrap();
+
+        let result = World::generate(
+            42,
+            WorldOpts {
+                world_file: FileOpts::LoadAsset("world.map.veloren_0_16_0_0".to_owned()),
+                compat_mode: CompatMode::Enforce,
+                ..WorldOpts::default()
+            },
+            &pool,
+            &|_| {},
+        );
+
+        match result {
+            Err(Error::CompatEnforce { audit }) => {
+                assert_eq!(audit.entry.as_str(), "load_asset");
+                assert_eq!(audit.resolution.as_str(), "reject");
+                assert_eq!(audit.failure_kind.as_str(), "missing_input");
+                assert_eq!(audit.failure_subject.as_str(), "recipe");
+            },
+            Ok(_) => panic!("expected compat enforce error, got successful world generation"),
+            Err(other) => panic!("expected compat enforce error, got {other}"),
+        }
+    }
+
+    #[test]
+    fn generate_returns_structured_error_for_missing_legacy_import_in_record_mode() {
+        let pool = ThreadPoolBuilder::new().build().unwrap();
+        let missing_path = std::env::temp_dir().join(format!(
+            "caldrayne-world-legacy-import-missing-{}.bin",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos()
+        ));
+        let _ = fs::remove_file(&missing_path);
+
+        let result = World::generate(
+            42,
+            WorldOpts {
+                world_file: FileOpts::LoadLegacy(missing_path.clone()),
+                compat_mode: CompatMode::Record,
+                ..WorldOpts::default()
+            },
+            &pool,
+            &|_| {},
+        );
+
+        match result {
+            Err(Error::CompatEnforce { audit }) => {
+                assert_eq!(audit.entry.as_str(), "load_legacy");
+                assert_eq!(audit.resolution.as_str(), "reject");
+                assert_eq!(audit.failure_kind.as_str(), "missing_input");
+                assert_eq!(audit.failure_subject.as_str(), "world");
+            },
+            Ok(_) => panic!("expected compat import rejection, got successful world generation"),
+            Err(other) => panic!("expected compat import rejection, got {other}"),
+        }
+
+        let _ = fs::remove_file(missing_path);
+    }
+
+    #[test]
+    fn default_chunk_output_for_missing_runtime_chunk_product_preserves_bounded_ocean_product() {
+        let (world, _) = World::empty();
+
+        match world.default_chunk_output_for_missing_runtime_chunk_product(
+            super::ChunkGenerationMode::StaticSnapshot,
+        ) {
+            super::ChunkGenerationOutput::StaticSnapshot(chunk) => {
+                assert_eq!(chunk.get_min_z(), CONFIG.sea_level as i32);
+            },
+            super::ChunkGenerationOutput::RuntimeFinalized { .. } => {
+                panic!("static snapshot default chunk output should not produce runtime output")
+            },
+        }
+
+        match world.default_chunk_output_for_missing_runtime_chunk_product(
+            super::ChunkGenerationMode::RuntimeFinalized,
+        ) {
+            super::ChunkGenerationOutput::RuntimeFinalized { chunk, supplement } => {
+                assert_eq!(chunk.get_min_z(), CONFIG.sea_level as i32);
+                assert!(supplement.entity_spawns.is_empty());
+            },
+            super::ChunkGenerationOutput::StaticSnapshot(_) => {
+                panic!("runtime default chunk output should not produce static snapshot output")
+            },
+        }
+    }
+
+    #[test]
+    fn bounded_runtime_chunk_product_domain_is_stricter_than_query_domain() {
+        let (world, _) = World::empty();
+
+        let query_chunk_key_aabr = world.query_chunk_key_aabr();
+        let runtime_chunk_product_key_aabr = world.runtime_chunk_product_key_aabr();
+
+        assert_eq!(query_chunk_key_aabr.min, Vec2::zero());
+        assert_eq!(runtime_chunk_product_key_aabr.min, Vec2::one());
+        assert!(query_chunk_key_aabr.max.x > runtime_chunk_product_key_aabr.max.x);
+        assert!(query_chunk_key_aabr.max.y > runtime_chunk_product_key_aabr.max.y);
     }
 }

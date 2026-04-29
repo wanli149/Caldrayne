@@ -6,6 +6,7 @@ mod map;
 pub(crate) mod marine_semantics;
 pub(crate) mod site_suitability;
 pub(crate) mod subterranean_semantics;
+mod topology;
 mod util;
 mod way;
 
@@ -24,6 +25,7 @@ use self::{
     marine_semantics::{
         AquaticFaunaProfile, MarineEcologyProfile, WaterAccessClass, WaterBodyKind,
     },
+    topology::WorldTopology,
 };
 pub(crate) use self::{
     erosion::{
@@ -31,8 +33,7 @@ pub(crate) use self::{
         get_multi_rec, get_rivers,
     },
     util::{
-        InverseCdf, cdf_irwin_hall, downhill, get_oceans, local_cells, map_edge_factor,
-        uniform_noise, uphill,
+        InverseCdf, cdf_irwin_hall, downhill, get_oceans, map_edge_factor, uniform_noise, uphill,
     },
 };
 
@@ -44,7 +45,7 @@ use crate::{
     column::ColumnGen,
     recipe::{
         CompatAuditV1, CompatFailureDetailV1, CompatFailureKindV1, CompatFailureSubjectV1,
-        RecipeManifestV1,
+        RecipeManifestV1, TopologyId,
     },
     site::Site,
     util::{
@@ -73,7 +74,7 @@ use common::{
     vol::RectVolSize,
 };
 use common_base::prof_span;
-use common_net::msg::WorldMapMsg;
+use common_net::msg::{WorldMapMsg, world_msg};
 use noise::{
     BasicMulti, Billow, Fbm, HybridMulti, MultiFractal, NoiseFn, Perlin, RidgedMulti, SuperSimplex,
     core::worley::distance_functions,
@@ -625,10 +626,10 @@ pub enum FileOpts {
         #[serde(default)]
         overwrite: bool,
     },
-    /// If set, load the world file from this path in legacy format (errors if
-    /// path not found).  This option may be removed at some point, since it
-    /// only applies to maps generated before map saving was merged into
-    /// master.
+    /// If set, explicitly import a legacy or sidecarless external world file
+    /// from this path using weak compat inference instead of strict sidecar
+    /// enforcement. This option is transitional and may be removed once the
+    /// compat-import tail is retired.
     LoadLegacy(PathBuf),
     /// If set, load the world file from this path (errors if path not found).
     Load(PathBuf),
@@ -646,25 +647,51 @@ impl Default for FileOpts {
 
 struct FileLoadContent {
     parsed_world_file: Option<ModernMap>,
+    loaded_recipe_manifest: Option<RecipeManifestV1>,
     map_size_lg: MapSizeLg,
     gen_opts: GenOpts,
     compat_audit: CompatAuditV1,
+}
+
+struct LoadedMapContent {
+    map: ModernMap,
+    recipe_manifest: Option<RecipeManifestV1>,
+    inferred_gen_opts: Option<GenOpts>,
 }
 
 impl FileOpts {
     fn load_content(
         &self,
         compat_mode: CompatMode,
+        world_seed: u32,
+        seed_elements: bool,
     ) -> Result<FileLoadContent, compat::CompatResolveError> {
+        let requested_gen_opts = self.gen_opts();
+        let requested_recipe_manifest = requested_gen_opts
+            .as_ref()
+            .map(|gen_opts| RecipeManifestV1::record_only(world_seed, gen_opts, seed_elements));
         let compat_resolution = compat::resolve(
             compat_mode,
             compat::entry_kind(self),
-            self.try_load_map_raw(),
+            self.try_load_map_raw(requested_recipe_manifest.as_ref()),
         )?;
-        let parsed_world_file = compat_resolution.parsed_world_file;
+        let loaded_recipe_manifest = compat_resolution
+            .parsed_world_file
+            .as_ref()
+            .and_then(|loaded| loaded.recipe_manifest.clone());
+        let loaded_inferred_gen_opts = compat_resolution
+            .parsed_world_file
+            .as_ref()
+            .and_then(|loaded| loaded.inferred_gen_opts.clone());
+        let parsed_world_file = compat_resolution.parsed_world_file.map(|loaded| loaded.map);
         let compat_audit = compat_resolution.compat_audit;
 
-        let mut gen_opts = self.gen_opts().unwrap_or_default();
+        let mut gen_opts = loaded_recipe_manifest
+            .as_ref()
+            .map(|recipe_manifest| recipe_manifest.world_recipe.gen_opts.clone())
+            .or(loaded_inferred_gen_opts)
+            .or(requested_gen_opts)
+            .unwrap_or_default();
 
         let map_size_lg = if let Some(map) = &parsed_world_file {
             MapSizeLg::new(map.map_size_lg)
@@ -687,6 +714,7 @@ impl FileOpts {
 
         Ok(FileLoadContent {
             parsed_world_file,
+            loaded_recipe_manifest,
             map_size_lg,
             gen_opts,
             compat_audit,
@@ -734,7 +762,7 @@ impl FileOpts {
     fn load_or_generate_contract_outcome(
         overwrite: bool,
         failure: compat::RawCompatFailure,
-    ) -> compat::RawLoadOutcome<ModernMap> {
+    ) -> compat::RawLoadOutcome<LoadedMapContent> {
         if overwrite {
             compat::RawLoadOutcome::Failed(failure)
         } else {
@@ -742,36 +770,283 @@ impl FileOpts {
         }
     }
 
+    fn recipe_sidecar_path_for_map_path(map_path: &std::path::Path) -> PathBuf {
+        let mut sidecar_path = map_path.as_os_str().to_owned();
+        sidecar_path.push(".recipe.ron");
+        PathBuf::from(sidecar_path)
+    }
+
+    fn recipe_sidecar_path(&self) -> Option<PathBuf> {
+        self.map_path()
+            .map(|path| Self::recipe_sidecar_path_for_map_path(path.as_path()))
+    }
+
+    fn load_recipe_sidecar(
+        map_path: &std::path::Path,
+    ) -> Result<Option<RecipeManifestV1>, compat::RawCompatFailure> {
+        let sidecar_path = Self::recipe_sidecar_path_for_map_path(map_path);
+        let file = match File::open(&sidecar_path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => {
+                warn!(
+                    ?e,
+                    ?sidecar_path,
+                    "Couldn't read adjacent world recipe sidecar"
+                );
+                return Err(Self::structured_load_failure(
+                    CompatFailureKindV1::MissingInput,
+                    CompatFailureSubjectV1::Recipe,
+                    CompatFailureDetailV1::default(),
+                ));
+            },
+        };
+
+        let reader = BufReader::new(file);
+        match ron::de::from_reader::<_, RecipeManifestV1>(reader) {
+            Ok(recipe_manifest) => {
+                if !recipe_manifest.validates_record_only_contract() {
+                    warn!(
+                        ?sidecar_path,
+                        "Parsed adjacent world recipe sidecar failed internal contract validation"
+                    );
+                    return Err(Self::structured_load_failure(
+                        CompatFailureKindV1::InvalidWorld,
+                        CompatFailureSubjectV1::Recipe,
+                        CompatFailureDetailV1::default(),
+                    ));
+                }
+
+                Ok(Some(recipe_manifest))
+            },
+            Err(e) => {
+                warn!(
+                    ?e,
+                    ?sidecar_path,
+                    "Couldn't parse adjacent world recipe sidecar"
+                );
+                Err(Self::structured_load_failure(
+                    CompatFailureKindV1::ParseError,
+                    CompatFailureSubjectV1::Recipe,
+                    CompatFailureDetailV1::default(),
+                ))
+            },
+        }
+    }
+
+    // Built-in asset manifests describe the runtime contract we enforce for
+    // read-only asset loads; they are not retroactive provenance for arbitrary
+    // third-party or historical asset worlds. In particular, the default asset
+    // keeps its longstanding runtime biome seed while using the asset's
+    // recorded world-shape gen opts.
+    fn fixed_asset_recipe_manifest(specifier: &str) -> Option<RecipeManifestV1> {
+        match specifier {
+            DEFAULT_WORLD_MAP => Some(RecipeManifestV1::record_only(
+                DEFAULT_WORLD_SEED,
+                &default_world_asset_gen_opts(),
+                true,
+            )),
+            _ => None,
+        }
+    }
+
+    fn load_asset_recipe_manifest(
+        specifier: &str,
+        map: &ModernMap,
+    ) -> Result<RecipeManifestV1, compat::RawCompatFailure> {
+        let recipe_manifest = match Self::fixed_asset_recipe_manifest(specifier) {
+            Some(recipe_manifest) => recipe_manifest,
+            None => {
+                warn!(
+                    ?specifier,
+                    compat_failure = %CompatFailureKindV1::MissingInput.as_str(),
+                    compat_subject = %CompatFailureSubjectV1::Recipe.as_str(),
+                    "LoadAsset(asset) requires a fixed asset recipe manifest; refusing strict asset load"
+                );
+                return Err(Self::structured_load_failure(
+                    CompatFailureKindV1::MissingInput,
+                    CompatFailureSubjectV1::Recipe,
+                    CompatFailureDetailV1::default(),
+                ));
+            },
+        };
+
+        if !recipe_manifest.validates_record_only_contract() {
+            warn!(
+                ?specifier,
+                compat_failure = %CompatFailureKindV1::InvalidWorld.as_str(),
+                compat_subject = %CompatFailureSubjectV1::Recipe.as_str(),
+                "Fixed asset recipe manifest failed internal contract validation"
+            );
+            return Err(Self::structured_load_failure(
+                CompatFailureKindV1::InvalidWorld,
+                CompatFailureSubjectV1::Recipe,
+                CompatFailureDetailV1::default(),
+            ));
+        }
+
+        let failure = Self::recipe_manifest_world_contract_failure(map, &recipe_manifest);
+        if failure.detail.world_size_mismatch || failure.detail.world_scale_mismatch {
+            let stored_gen_opts = &recipe_manifest.world_recipe.gen_opts;
+            warn!(
+                ?specifier,
+                stored_world_recipe_hash = %recipe_manifest.world_recipe_hash,
+                stored_topology_id = %recipe_manifest.world_recipe.topology_id.as_str(),
+                world_file_size = ?map.map_size_lg,
+                recipe_size = ?Vec2::new(stored_gen_opts.x_lg, stored_gen_opts.y_lg),
+                world_file_scale = map.continent_scale_hack,
+                recipe_scale = stored_gen_opts.scale,
+                "LoadAsset(asset) found fixed recipe manifest that does not match the asset world file"
+            );
+            return Err(failure);
+        }
+
+        Ok(recipe_manifest)
+    }
+
+    fn recipe_manifest_world_contract_failure(
+        map: &ModernMap,
+        recipe_manifest: &RecipeManifestV1,
+    ) -> compat::RawCompatFailure {
+        let stored_gen_opts = &recipe_manifest.world_recipe.gen_opts;
+        let world_size_mismatch =
+            map.map_size_lg != Vec2::new(stored_gen_opts.x_lg, stored_gen_opts.y_lg);
+        let world_scale_mismatch = map.continent_scale_hack != stored_gen_opts.scale;
+        Self::structured_load_failure(
+            CompatFailureKindV1::OptionMismatch,
+            CompatFailureSubjectV1::Recipe,
+            CompatFailureDetailV1::option_mismatch(world_size_mismatch, world_scale_mismatch),
+        )
+    }
+
+    fn inferred_gen_opts_from_map(map: &ModernMap) -> GenOpts {
+        GenOpts {
+            x_lg: map.map_size_lg.x,
+            y_lg: map.map_size_lg.y,
+            scale: map.continent_scale_hack,
+            ..GenOpts::default()
+        }
+    }
+
     // TODO: This should probably return a Result, so that caller can choose
     // whether to log error
-    fn try_load_map_raw(&self) -> compat::RawLoadOutcome<ModernMap> {
+    fn try_load_map_raw(
+        &self,
+        requested_recipe_manifest: Option<&RecipeManifestV1>,
+    ) -> compat::RawLoadOutcome<LoadedMapContent> {
         let map = match self {
             Self::LoadLegacy(path) => {
                 let file = match File::open(path) {
                     Ok(file) => file,
                     Err(e) => {
                         warn!(?e, ?path, "Couldn't read path for maps");
-                        return compat::RawLoadOutcome::Failed(Self::basic_load_failure(
+                        return compat::RawLoadOutcome::Rejected(Self::structured_load_failure(
                             CompatFailureKindV1::MissingInput,
+                            CompatFailureSubjectV1::World,
+                            CompatFailureDetailV1::default(),
                         ));
                     },
                 };
 
-                let mut reader = BufReader::new(file);
-                let map: WorldFileLegacy = match decode_from_std_read(&mut reader, legacy()) {
-                    Ok(map) => map,
-                    Err(e) => {
-                        warn!(
-                            ?e,
-                            "Couldn't parse legacy map.  Maybe you meant to try a regular load?"
-                        );
-                        return compat::RawLoadOutcome::Failed(Self::basic_load_failure(
-                            CompatFailureKindV1::ParseError,
-                        ));
+                let mut modern_reader = BufReader::new(file);
+                match decode_from_std_read::<WorldFile, _, _>(&mut modern_reader, legacy()) {
+                    Ok(map) => match map {
+                        WorldFile::Veloren0_7_0(map) => {
+                            warn!(
+                                ?path,
+                                "LoadLegacy(path) imported modern world file through explicit \
+                                 compat import path"
+                            );
+                            Ok(LoadedMapContent {
+                                inferred_gen_opts: Some(Self::inferred_gen_opts_from_map(&map)),
+                                map,
+                                recipe_manifest: None,
+                            })
+                        },
+                        WorldFile::Veloren0_5_0(map) => match map.into_modern() {
+                            Ok(map) => Ok(LoadedMapContent {
+                                inferred_gen_opts: Some(Self::inferred_gen_opts_from_map(&map)),
+                                map,
+                                recipe_manifest: None,
+                            }),
+                            Err(e) => {
+                                warn!(
+                                    ?path,
+                                    ?e,
+                                    "LoadLegacy(path) parsed a legacy world file, but it failed \
+                                     explicit compat import validation"
+                                );
+                                return compat::RawLoadOutcome::Rejected(
+                                    Self::structured_load_failure(
+                                        CompatFailureKindV1::InvalidWorld,
+                                        CompatFailureSubjectV1::World,
+                                        CompatFailureDetailV1::default(),
+                                    ),
+                                );
+                            },
+                        },
                     },
-                };
+                    Err(modern_err) => {
+                        let file = match File::open(path) {
+                            Ok(file) => file,
+                            Err(e) => {
+                                warn!(?e, ?path, "Couldn't reopen path for legacy compat import");
+                                return compat::RawLoadOutcome::Rejected(
+                                    Self::structured_load_failure(
+                                        CompatFailureKindV1::MissingInput,
+                                        CompatFailureSubjectV1::World,
+                                        CompatFailureDetailV1::default(),
+                                    ),
+                                );
+                            },
+                        };
 
-                map.into_modern()
+                        let mut legacy_reader = BufReader::new(file);
+                        let map: WorldFileLegacy =
+                            match decode_from_std_read(&mut legacy_reader, legacy()) {
+                                Ok(map) => map,
+                                Err(legacy_err) => {
+                                    warn!(
+                                        ?path,
+                                        ?modern_err,
+                                        ?legacy_err,
+                                        "LoadLegacy(path) could not parse modern or legacy world \
+                                         file"
+                                    );
+                                    return compat::RawLoadOutcome::Rejected(
+                                        Self::structured_load_failure(
+                                            CompatFailureKindV1::ParseError,
+                                            CompatFailureSubjectV1::World,
+                                            CompatFailureDetailV1::default(),
+                                        ),
+                                    );
+                                },
+                            };
+
+                        match map.into_modern() {
+                            Ok(map) => Ok(LoadedMapContent {
+                                inferred_gen_opts: Some(Self::inferred_gen_opts_from_map(&map)),
+                                map,
+                                recipe_manifest: None,
+                            }),
+                            Err(e) => {
+                                warn!(
+                                    ?path,
+                                    ?e,
+                                    "LoadLegacy(path) parsed a legacy world file, but it failed \
+                                     explicit compat import validation"
+                                );
+                                return compat::RawLoadOutcome::Rejected(
+                                    Self::structured_load_failure(
+                                        CompatFailureKindV1::InvalidWorld,
+                                        CompatFailureSubjectV1::World,
+                                        CompatFailureDetailV1::default(),
+                                    ),
+                                );
+                            },
+                        }
+                    },
+                }
             },
             Self::Load(path) => {
                 let file = match File::open(path) {
@@ -798,26 +1073,132 @@ impl FileOpts {
                     },
                 };
 
-                map.into_modern()
+                let map = match map {
+                    WorldFile::Veloren0_7_0(map) => map,
+                    WorldFile::Veloren0_5_0(_) => {
+                        let failure = Self::structured_load_failure(
+                            CompatFailureKindV1::InvalidWorld,
+                            CompatFailureSubjectV1::World,
+                            CompatFailureDetailV1::legacy_world_version(),
+                        );
+                        warn!(
+                            ?path,
+                            compat_failure = %CompatFailureKindV1::InvalidWorld.as_str(),
+                            compat_subject = %CompatFailureSubjectV1::World.as_str(),
+                            "Load(path) found a legacy world file version; refusing strict modern load"
+                        );
+                        return compat::RawLoadOutcome::Rejected(failure);
+                    },
+                };
+
+                let stored_recipe_manifest = match Self::load_recipe_sidecar(path.as_path()) {
+                    Ok(Some(recipe_manifest)) => recipe_manifest,
+                    Ok(None) => {
+                        let failure = Self::structured_load_failure(
+                            CompatFailureKindV1::MissingInput,
+                            CompatFailureSubjectV1::Recipe,
+                            CompatFailureDetailV1::default(),
+                        );
+                        warn!(
+                            ?path,
+                            recipe_sidecar_path =
+                                ?Self::recipe_sidecar_path_for_map_path(path.as_path()),
+                            compat_failure = %CompatFailureKindV1::MissingInput.as_str(),
+                            compat_subject = %CompatFailureSubjectV1::Recipe.as_str(),
+                            "Load(path) requires adjacent recipe sidecar; use LoadLegacy(path) for explicit compat import of sidecarless worlds"
+                        );
+                        return compat::RawLoadOutcome::Rejected(failure);
+                    },
+                    Err(failure) => {
+                        return compat::RawLoadOutcome::Rejected(failure);
+                    },
+                };
+
+                let failure =
+                    Self::recipe_manifest_world_contract_failure(&map, &stored_recipe_manifest);
+                if failure.detail.world_size_mismatch || failure.detail.world_scale_mismatch {
+                    let stored_gen_opts = &stored_recipe_manifest.world_recipe.gen_opts;
+                    warn!(
+                        ?path,
+                        recipe_sidecar_path =
+                            ?Self::recipe_sidecar_path_for_map_path(path.as_path()),
+                        stored_world_recipe_hash = %stored_recipe_manifest.world_recipe_hash,
+                        stored_topology_id = %stored_recipe_manifest.world_recipe.topology_id.as_str(),
+                        world_file_size = ?map.map_size_lg,
+                        recipe_size = ?Vec2::new(stored_gen_opts.x_lg, stored_gen_opts.y_lg),
+                        world_file_scale = map.continent_scale_hack,
+                        recipe_scale = stored_gen_opts.scale,
+                        "Load(path) found recipe sidecar that does not match the external world file"
+                    );
+                    return compat::RawLoadOutcome::Rejected(failure);
+                }
+
+                Ok(LoadedMapContent {
+                    inferred_gen_opts: None,
+                    map,
+                    recipe_manifest: Some(stored_recipe_manifest),
+                })
             },
-            Self::LoadAsset(specifier) => match WorldFile::load_owned(specifier) {
-                Ok(map) => map.into_modern(),
-                Err(err) => {
-                    match err.reason().downcast_ref::<std::io::Error>() {
-                        Some(e) => {
-                            warn!(?e, ?specifier, "Couldn't read asset specifier for maps");
-                        },
-                        None => {
-                            warn!(
-                                ?err,
-                                "Couldn't parse modern map.  Maybe you meant to try a legacy load?"
-                            );
-                        },
-                    }
-                    return compat::RawLoadOutcome::Failed(Self::basic_load_failure(
-                        CompatFailureKindV1::ParseError,
-                    ));
-                },
+            Self::LoadAsset(specifier) => {
+                let map = match WorldFile::load_owned(specifier) {
+                    Ok(map) => map,
+                    Err(err) => {
+                        let failure_kind = match err.reason().downcast_ref::<std::io::Error>() {
+                            Some(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                                warn!(?e, ?specifier, "Couldn't find asset specifier for maps");
+                                CompatFailureKindV1::MissingInput
+                            },
+                            Some(e) => {
+                                warn!(?e, ?specifier, "Couldn't read asset specifier for maps");
+                                CompatFailureKindV1::ParseError
+                            },
+                            None => {
+                                warn!(
+                                    ?err,
+                                    ?specifier,
+                                    "Couldn't parse modern asset map.  Maybe you meant to try a \
+                                     legacy load?"
+                                );
+                                CompatFailureKindV1::ParseError
+                            },
+                        };
+                        return compat::RawLoadOutcome::Rejected(Self::structured_load_failure(
+                            failure_kind,
+                            CompatFailureSubjectV1::World,
+                            CompatFailureDetailV1::default(),
+                        ));
+                    },
+                };
+
+                let map = match map {
+                    WorldFile::Veloren0_7_0(map) => map,
+                    WorldFile::Veloren0_5_0(_) => {
+                        let failure = Self::structured_load_failure(
+                            CompatFailureKindV1::InvalidWorld,
+                            CompatFailureSubjectV1::World,
+                            CompatFailureDetailV1::legacy_world_version(),
+                        );
+                        warn!(
+                            ?specifier,
+                            compat_failure = %CompatFailureKindV1::InvalidWorld.as_str(),
+                            compat_subject = %CompatFailureSubjectV1::World.as_str(),
+                            "LoadAsset(asset) found a legacy world file version; refusing strict asset load"
+                        );
+                        return compat::RawLoadOutcome::Rejected(failure);
+                    },
+                };
+
+                let stored_recipe_manifest = match Self::load_asset_recipe_manifest(specifier, &map)
+                {
+                    Ok(recipe_manifest) => recipe_manifest,
+                    Err(failure) => return compat::RawLoadOutcome::Rejected(failure),
+                };
+
+                Ok(LoadedMapContent {
+                    inferred_gen_opts: None,
+                    map,
+                    recipe_manifest: Some(stored_recipe_manifest),
+                })
             },
             Self::LoadOrGenerate {
                 opts, overwrite, ..
@@ -883,6 +1264,70 @@ impl FileOpts {
                         return Self::load_or_generate_contract_outcome(*overwrite, failure);
                     },
                 };
+                let mut loaded_recipe_manifest = None;
+
+                if let Some(requested_recipe_manifest) = requested_recipe_manifest {
+                    match Self::load_recipe_sidecar(path.as_path()) {
+                        Ok(Some(stored_recipe_manifest)) => {
+                            if stored_recipe_manifest.world_recipe_hash
+                                != requested_recipe_manifest.world_recipe_hash
+                            {
+                                let failure = Self::structured_load_failure(
+                                    CompatFailureKindV1::OptionMismatch,
+                                    CompatFailureSubjectV1::Recipe,
+                                    CompatFailureDetailV1::default(),
+                                );
+                                if *overwrite {
+                                    warn!(
+                                        ?path,
+                                        recipe_sidecar_path = ?Self::recipe_sidecar_path_for_map_path(path.as_path()),
+                                        overwrite = *overwrite,
+                                        stored_world_seed = stored_recipe_manifest.world_recipe.world_seed,
+                                        requested_world_seed = requested_recipe_manifest.world_recipe.world_seed,
+                                        stored_world_recipe_hash = %stored_recipe_manifest.world_recipe_hash,
+                                        requested_world_recipe_hash = %requested_recipe_manifest.world_recipe_hash,
+                                        stored_topology_id = %stored_recipe_manifest.world_recipe.topology_id.as_str(),
+                                        requested_topology_id = %requested_recipe_manifest.world_recipe.topology_id.as_str(),
+                                        stored_preset_id = %stored_recipe_manifest.world_recipe.preset_id.as_str(),
+                                        requested_preset_id = %requested_recipe_manifest.world_recipe.preset_id.as_str(),
+                                        "LoadOrGenerate recipe sidecar mismatch; regenerating because overwrite=true"
+                                    );
+                                } else {
+                                    warn!(
+                                        ?path,
+                                        recipe_sidecar_path = ?Self::recipe_sidecar_path_for_map_path(path.as_path()),
+                                        overwrite = *overwrite,
+                                        stored_world_seed = stored_recipe_manifest.world_recipe.world_seed,
+                                        requested_world_seed = requested_recipe_manifest.world_recipe.world_seed,
+                                        stored_world_recipe_hash = %stored_recipe_manifest.world_recipe_hash,
+                                        requested_world_recipe_hash = %requested_recipe_manifest.world_recipe_hash,
+                                        stored_topology_id = %stored_recipe_manifest.world_recipe.topology_id.as_str(),
+                                        requested_topology_id = %requested_recipe_manifest.world_recipe.topology_id.as_str(),
+                                        stored_preset_id = %stored_recipe_manifest.world_recipe.preset_id.as_str(),
+                                        requested_preset_id = %requested_recipe_manifest.world_recipe.preset_id.as_str(),
+                                        "LoadOrGenerate recipe sidecar mismatch; rejecting because overwrite=false"
+                                    );
+                                }
+
+                                return Self::load_or_generate_contract_outcome(
+                                    *overwrite, failure,
+                                );
+                            }
+
+                            loaded_recipe_manifest = Some(stored_recipe_manifest);
+                        },
+                        Ok(None) => {
+                            debug!(
+                                ?path,
+                                recipe_sidecar_path = ?Self::recipe_sidecar_path_for_map_path(path.as_path()),
+                                "LoadOrGenerate map has no recipe sidecar; using legacy option compare"
+                            );
+                        },
+                        Err(failure) => {
+                            return Self::load_or_generate_contract_outcome(*overwrite, failure);
+                        },
+                    }
+                }
 
                 let requested_size = Vec2::new(*x_lg, *y_lg);
                 let world_scale_mismatch = map.continent_scale_hack != *scale;
@@ -919,7 +1364,13 @@ impl FileOpts {
                     return Self::load_or_generate_contract_outcome(*overwrite, failure);
                 }
 
-                map.into_modern()
+                Ok(LoadedMapContent {
+                    inferred_gen_opts: loaded_recipe_manifest
+                        .is_none()
+                        .then(|| Self::inferred_gen_opts_from_map(&map)),
+                    map,
+                    recipe_manifest: loaded_recipe_manifest,
+                })
             },
             Self::Generate(_) | Self::Save(_, _) => {
                 return compat::RawLoadOutcome::GenerateRequested;
@@ -954,7 +1405,7 @@ impl FileOpts {
         }
     }
 
-    fn save(&self, map: &WorldFile) {
+    fn save(&self, map: &WorldFile, recipe_manifest: &RecipeManifestV1) {
         let path = if let Some(path) = self.map_path() {
             path
         } else {
@@ -981,6 +1432,23 @@ impl FileOpts {
         let mut writer = BufWriter::new(file);
         if let Err(e) = encode_into_std_write(map, &mut writer, legacy()) {
             warn!(?e, "Couldn't write map");
+            return;
+        }
+        if let Some(sidecar_path) = self.recipe_sidecar_path() {
+            let rendered_recipe_manifest = match ron::ser::to_string_pretty(
+                recipe_manifest,
+                ron::ser::PrettyConfig::default(),
+            ) {
+                Ok(rendered_recipe_manifest) => rendered_recipe_manifest,
+                Err(e) => {
+                    warn!(?e, ?sidecar_path, "Couldn't serialize world recipe sidecar");
+                    return;
+                },
+            };
+
+            if let Err(e) = std::fs::write(&sidecar_path, rendered_recipe_manifest) {
+                warn!(?e, ?sidecar_path, "Couldn't write world recipe sidecar");
+            }
         }
         if let Ok(p) = std::fs::canonicalize(path) {
             info!("Map saved at {}", p.to_string_lossy());
@@ -1120,6 +1588,16 @@ pub const DEFAULT_WORLD_MAP: &str = "world.map.veloren_0_18_0_0";
 /// See DEFAULT_WORLD_MAP to get the original worldgen parameters.
 pub const DEFAULT_WORLD_SEED: u32 = 130626853;
 
+fn default_world_asset_gen_opts() -> GenOpts {
+    GenOpts {
+        x_lg: 10,
+        y_lg: 10,
+        scale: 2.157574498096227,
+        map_kind: MapKind::Circle,
+        erosion_quality: 1.0,
+    }
+}
+
 impl WorldFileLegacy {
     #[inline]
     /// Idea: each map type except the latest knows how to transform
@@ -1229,6 +1707,7 @@ pub struct WorldSim {
     pub(crate) compat_mode: CompatMode,
     pub(crate) compat_audit: CompatAuditV1,
     pub(crate) recipe_manifest: RecipeManifestV1,
+    topology: WorldTopology,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1254,6 +1733,26 @@ impl AquaticFaunaSummary {
 struct ChunkAquaticSemantics {
     aquatic_spawn_potential: AquaticSpawnPotential,
     marine_ecology_profile: MarineEcologyProfile,
+}
+
+pub(crate) struct ChunkGenerationAnchor<'a> {
+    pub(crate) base_z: i32,
+    pub(crate) sim_chunk: &'a SimChunk,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ApproxFallback {
+    Zero,
+    SeaLevel,
+}
+
+impl ApproxFallback {
+    const fn value(self) -> f32 {
+        match self {
+            Self::Zero => 0.0,
+            Self::SeaLevel => CONFIG.sea_level,
+        }
+    }
 }
 
 impl WorldSim {
@@ -1319,6 +1818,10 @@ impl WorldSim {
             compat_mode: CompatMode::Record,
             compat_audit: CompatAuditV1::default(),
             recipe_manifest: RecipeManifestV1::default(),
+            topology: WorldTopology::new(
+                TopologyId::BoundedPlaneV1,
+                MapSizeLg::new(Vec2::one()).unwrap(),
+            ),
         }
     }
 
@@ -1337,10 +1840,11 @@ impl WorldSim {
         // Parse out the contents of various map formats into the values we need.
         let FileLoadContent {
             parsed_world_file,
+            loaded_recipe_manifest,
             map_size_lg,
             gen_opts,
             compat_audit,
-        } = match world_file.load_content(compat_mode) {
+        } = match world_file.load_content(compat_mode, seed, seed_elements) {
             Ok(content) => content,
             Err(err) => {
                 error!(
@@ -1380,12 +1884,25 @@ impl WorldSim {
                 "strict load path fell back to generation; C1 keeps this behavior observable before enforce"
             );
         }
-        let recipe_manifest = RecipeManifestV1::record_only(seed, &gen_opts, seed_elements);
+        let recipe_manifest = loaded_recipe_manifest
+            .unwrap_or_else(|| RecipeManifestV1::record_only(seed, &gen_opts, seed_elements));
+        let effective_seed = recipe_manifest.world_recipe.world_seed;
+        let effective_seed_elements = recipe_manifest.world_recipe.seed_elements;
         info!(
             world_recipe_hash = %recipe_manifest.world_recipe_hash,
             chunk_recipe_hash = %recipe_manifest.chunk_recipe_hash,
             topology_id = %recipe_manifest.world_recipe.topology_id.as_str(),
             preset_id = %recipe_manifest.world_recipe.preset_id.as_str(),
+            config_hash = %recipe_manifest
+                .world_recipe
+                .config_hash
+                .as_deref()
+                .unwrap_or("unrecorded"),
+            asset_hash = %recipe_manifest
+                .world_recipe
+                .asset_hash
+                .as_deref()
+                .unwrap_or("unrecorded"),
             "recorded world recipe manifest"
         );
 
@@ -1394,7 +1911,7 @@ impl WorldSim {
         info!("Starting world generation");
 
         let (rng, gen_ctx) = Self::init_gen_ctx(
-            seed,
+            effective_seed,
             generation_tunables.continent_scale,
             generation_tunables.rock_lacunarity,
             generation_tunables.uplift_scale,
@@ -1419,6 +1936,7 @@ impl WorldSim {
             &gen_opts,
             world_file,
             fresh,
+            &recipe_manifest,
             &pre_erosion_model,
             threadpool,
             report_erosion,
@@ -1436,7 +1954,7 @@ impl WorldSim {
         );
         Ok(Self::finalize_world_from_chunk_inputs(
             GeneratedWorldFinalizeInputs {
-                seed,
+                seed: effective_seed,
                 map_size_lg,
                 gen_ctx,
                 post_erosion_chunk_inputs,
@@ -1445,7 +1963,7 @@ impl WorldSim {
                 compat_mode,
                 compat_audit,
                 recipe_manifest,
-                seed_elements,
+                seed_elements: effective_seed_elements,
             },
         ))
     }
@@ -1867,6 +2385,7 @@ impl WorldSim {
         gen_opts: &GenOpts,
         world_file: FileOpts,
         fresh: bool,
+        recipe_manifest: &RecipeManifestV1,
         model: &PreErosionModel<'_>,
         threadpool: &rayon::ThreadPool,
         report_erosion: &mut dyn FnMut(f64),
@@ -1883,6 +2402,7 @@ impl WorldSim {
             gen_opts,
             world_file,
             fresh,
+            recipe_manifest,
             alt,
             basement,
         );
@@ -1980,6 +2500,7 @@ impl WorldSim {
         gen_opts: &GenOpts,
         world_file: FileOpts,
         fresh: bool,
+        recipe_manifest: &RecipeManifestV1,
         alt: Box<[Alt]>,
         basement: Box<[Alt]>,
     ) -> (Box<[Alt]>, Box<[Alt]>) {
@@ -1992,7 +2513,7 @@ impl WorldSim {
             basement,
         });
         if fresh {
-            world_file.save(&map);
+            world_file.save(&map, recipe_manifest);
         }
 
         // Skip validation--we just performed a no-op conversion for this map, so it had
@@ -2375,6 +2896,7 @@ impl WorldSim {
             calendar,
             compat_mode,
             compat_audit,
+            topology: WorldTopology::new(recipe_manifest.world_recipe.topology_id, map_size_lg),
             recipe_manifest,
         }
     }
@@ -2396,21 +2918,39 @@ impl WorldSim {
 
     pub fn recipe_manifest(&self) -> &RecipeManifestV1 { &self.recipe_manifest }
 
+    pub(crate) const fn topology(&self) -> WorldTopology { self.topology }
+
     pub fn get_size(&self) -> Vec2<u32> { self.map_size_lg().chunks().map(u32::from) }
 
-    pub fn get_aabr(&self) -> Aabr<i32> {
-        let size = self.get_size();
-        Aabr {
-            min: Vec2 { x: 0, y: 0 },
-            max: Vec2 {
-                x: size.x as i32,
-                y: size.y as i32,
-            },
+    pub fn get_aabr(&self) -> Aabr<i32> { self.topology.chunk_aabr() }
+
+    pub fn query_chunk_key_aabr(&self) -> Aabr<i32> { self.topology.chunk_key_aabr() }
+
+    pub fn runtime_chunk_product_key_aabr(&self) -> Aabr<i32> {
+        self.topology.runtime_chunk_product_key_aabr()
+    }
+
+    pub(crate) fn runtime_topology_descriptor(&self) -> world_msg::RuntimeTopologyDescriptor {
+        world_msg::RuntimeTopologyDescriptor {
+            topology_id: self
+                .recipe_manifest
+                .world_recipe
+                .topology_id
+                .as_str()
+                .to_owned(),
+            query_chunk_key_aabr: self.query_chunk_key_aabr(),
+            runtime_chunk_product_key_aabr: self.runtime_chunk_product_key_aabr(),
+            missing_world_bounds_policy:
+                world_msg::MissingWorldBoundsPolicy::BoundedOceanDefaultChunk,
         }
     }
 
+    pub(crate) fn default_chunk_for_missing_world_bounds(&self) -> TerrainChunk {
+        self.topology.default_chunk_kind().build()
+    }
+
     pub fn generate_oob_chunk(&self) -> TerrainChunk {
-        TerrainChunk::water(CONFIG.sea_level as i32)
+        self.default_chunk_for_missing_world_bounds()
     }
 
     pub fn approx_chunk_terrain_normal(&self, chunk_pos: Vec2<i32>) -> Option<Vec3<f32>> {
@@ -2484,10 +3024,7 @@ impl WorldSim {
 
         let horizons = get_horizon_map(
             self.map_size_lg(),
-            Aabr {
-                min: Vec2::zero(),
-                max: self.map_size_lg().chunks().map(|e| e as i32),
-            },
+            self.topology.chunk_aabr(),
             CONFIG.sea_level,
             CONFIG.sea_level + self.max_height,
             |posi| {
@@ -2536,7 +3073,8 @@ impl WorldSim {
             sites: Vec::new(),                   // Will be substituted later
             pois: Vec::new(),                    // Will be substituted later
             possible_starting_sites: Vec::new(), // Will be substituted later
-            default_chunk: Arc::new(self.generate_oob_chunk()),
+            runtime_topology: self.runtime_topology_descriptor(),
+            default_chunk: Arc::new(self.default_chunk_for_missing_world_bounds()),
         }
     }
 
@@ -2747,14 +3285,9 @@ impl WorldSim {
     }
 
     pub fn get(&self, chunk_pos: Vec2<i32>) -> Option<&SimChunk> {
-        if chunk_pos
-            .map2(self.map_size_lg().chunks(), |e, sz| e >= 0 && e < sz as i32)
-            .reduce_and()
-        {
-            Some(&self.chunks[vec2_as_uniform_idx(self.map_size_lg(), chunk_pos)])
-        } else {
-            None
-        }
+        self.topology
+            .chunk_index(chunk_pos)
+            .map(|index| &self.chunks[index])
     }
 
     fn chunk_aquatic_semantics(&self, chunk_pos: Vec2<i32>) -> Option<ChunkAquaticSemantics> {
@@ -2812,50 +3345,79 @@ impl WorldSim {
         }
     }
 
+    pub(crate) fn gradient_approx_or(&self, chunk_pos: Vec2<i32>, fallback: ApproxFallback) -> f32 {
+        self.get_gradient_approx(chunk_pos)
+            .unwrap_or(fallback.value())
+    }
+
     /// Get the altitude of the surface, could be water or ground.
     pub fn get_surface_alt_approx(&self, wpos: Vec2<i32>) -> f32 {
+        self.surface_alt_approx_or(wpos, ApproxFallback::SeaLevel)
+    }
+
+    pub(crate) fn surface_alt_approx_or(&self, wpos: Vec2<i32>, fallback: ApproxFallback) -> f32 {
         self.get_interpolated(wpos, |chunk| chunk.alt)
             .zip(self.get_interpolated(wpos, |chunk| chunk.water_alt))
             .map(|(alt, water_alt)| alt.max(water_alt))
-            .unwrap_or(CONFIG.sea_level)
+            .unwrap_or(fallback.value())
     }
 
     pub fn get_alt_approx(&self, wpos: Vec2<i32>) -> Option<f32> {
         self.get_interpolated(wpos, |chunk| chunk.alt)
     }
 
-    pub fn get_wpos(&self, wpos: Vec2<i32>) -> Option<&SimChunk> {
-        self.get(wpos.map2(TerrainChunkSize::RECT_SIZE, |e, sz: u32| {
+    pub(crate) fn alt_approx_or(&self, wpos: Vec2<i32>, fallback: ApproxFallback) -> f32 {
+        self.get_alt_approx(wpos).unwrap_or(fallback.value())
+    }
+
+    pub(crate) fn chunk_pos_at_wpos(&self, wpos: Vec2<i32>) -> Vec2<i32> {
+        wpos.map2(TerrainChunkSize::RECT_SIZE, |e, sz: u32| {
             e.div_euclid(sz as i32)
-        }))
+        })
+    }
+
+    pub(crate) fn map_sample_alt_or(
+        &self,
+        wpos: Vec2<i32>,
+        is_basement: bool,
+        is_water: bool,
+        fallback: ApproxFallback,
+    ) -> f32 {
+        self.get_wpos(wpos)
+            .map(|chunk| {
+                if is_basement {
+                    chunk.basement
+                } else {
+                    chunk.alt
+                }
+                .max(if is_water {
+                    chunk.water_alt
+                } else {
+                    -f32::INFINITY
+                })
+            })
+            .unwrap_or(fallback.value())
+    }
+
+    pub fn get_wpos(&self, wpos: Vec2<i32>) -> Option<&SimChunk> {
+        self.get(self.chunk_pos_at_wpos(wpos))
     }
 
     pub fn get_mut(&mut self, chunk_pos: Vec2<i32>) -> Option<&mut SimChunk> {
-        let map_size_lg = self.map_size_lg();
-        if chunk_pos
-            .map2(map_size_lg.chunks(), |e, sz| e >= 0 && e < sz as i32)
-            .reduce_and()
-        {
-            Some(&mut self.chunks[vec2_as_uniform_idx(map_size_lg, chunk_pos)])
-        } else {
-            None
-        }
+        self.topology
+            .chunk_index(chunk_pos)
+            .map(|index| &mut self.chunks[index])
     }
 
     pub fn get_base_z(&self, chunk_pos: Vec2<i32>) -> Option<f32> {
-        let in_bounds = chunk_pos
-            .map2(self.map_size_lg().chunks(), |e, sz| {
-                e > 0 && e < sz as i32 - 2
-            })
-            .reduce_and();
-        if !in_bounds {
+        const LOCAL_GRID_RADIUS: i32 = 3;
+        if !self.topology.contains_runtime_chunk_product_key(chunk_pos) {
             return None;
         }
 
-        let chunk_idx = vec2_as_uniform_idx(self.map_size_lg(), chunk_pos);
-        local_cells(self.map_size_lg(), chunk_idx)
-            .flat_map(|neighbor_idx| {
-                let neighbor_pos = uniform_idx_as_vec2(self.map_size_lg(), neighbor_idx);
+        self.topology
+            .local_chunks(chunk_pos, LOCAL_GRID_RADIUS)
+            .flat_map(|neighbor_pos| {
                 let neighbor_chunk = self.get(neighbor_pos);
                 let river_kind = neighbor_chunk.and_then(|c| c.river.river_kind);
                 let has_water = river_kind.is_some() && river_kind != Some(RiverKind::Ocean);
@@ -2868,12 +3430,26 @@ impl WorldSim {
             .fold(None, |a: Option<f32>, x| a.map(|a| a.min(x)).or(Some(x)))
     }
 
+    pub(crate) fn generation_chunk_anchor(
+        &self,
+        chunk_pos: Vec2<i32>,
+    ) -> Option<ChunkGenerationAnchor<'_>> {
+        let base_z = self.get_base_z(chunk_pos)? as i32;
+        let sim_chunk = self.get(chunk_pos)?;
+        Some(ChunkGenerationAnchor { base_z, sim_chunk })
+    }
+
     pub fn get_interpolated<T, F>(&self, pos: Vec2<i32>, mut f: F) -> Option<T>
     where
         T: Copy + Default + Add<Output = T> + Mul<f32, Output = T>,
         F: FnMut(&SimChunk) -> T,
     {
         let pos = pos.as_::<f64>().wpos_to_cpos();
+        let sample_chunk = |offset| {
+            self.topology
+                .interpolation_chunk(pos, offset)
+                .and_then(|chunk_pos| self.get(chunk_pos))
+        };
 
         let cubic = |a: T, b: T, c: T, d: T, x: f32| -> T {
             let x2 = x * x;
@@ -2890,10 +3466,10 @@ impl WorldSim {
         let mut x = [T::default(); 4];
 
         for (x_idx, j) in (-1..3).enumerate() {
-            let y0 = f(self.get(pos.map2(Vec2::new(j, -1), |e, q| e.max(0.0) as i32 + q))?);
-            let y1 = f(self.get(pos.map2(Vec2::new(j, 0), |e, q| e.max(0.0) as i32 + q))?);
-            let y2 = f(self.get(pos.map2(Vec2::new(j, 1), |e, q| e.max(0.0) as i32 + q))?);
-            let y3 = f(self.get(pos.map2(Vec2::new(j, 2), |e, q| e.max(0.0) as i32 + q))?);
+            let y0 = f(sample_chunk(Vec2::new(j, -1))?);
+            let y1 = f(sample_chunk(Vec2::new(j, 0))?);
+            let y2 = f(sample_chunk(Vec2::new(j, 1))?);
+            let y3 = f(sample_chunk(Vec2::new(j, 2))?);
 
             x[x_idx] = cubic(y0, y1, y2, y3, pos.y.fract() as f32);
         }
@@ -2920,6 +3496,11 @@ impl WorldSim {
         // Note that these are only guaranteed monotone in one dimension; fortunately,
         // that is sufficient for our purposes.
         let pos = pos.as_::<f64>().wpos_to_cpos();
+        let sample_chunk = |offset| {
+            self.topology
+                .interpolation_chunk(pos, offset)
+                .and_then(|chunk_pos| self.get(chunk_pos))
+        };
 
         let secant = |b: T, c: T| c - b;
 
@@ -2960,10 +3541,10 @@ impl WorldSim {
         let mut x = [T::default(); 4];
 
         for (x_idx, j) in (-1..3).enumerate() {
-            let y0 = f(self.get(pos.map2(Vec2::new(j, -1), |e, q| e.max(0.0) as i32 + q))?);
-            let y1 = f(self.get(pos.map2(Vec2::new(j, 0), |e, q| e.max(0.0) as i32 + q))?);
-            let y2 = f(self.get(pos.map2(Vec2::new(j, 1), |e, q| e.max(0.0) as i32 + q))?);
-            let y3 = f(self.get(pos.map2(Vec2::new(j, 2), |e, q| e.max(0.0) as i32 + q))?);
+            let y0 = f(sample_chunk(Vec2::new(j, -1))?);
+            let y1 = f(sample_chunk(Vec2::new(j, 0))?);
+            let y2 = f(sample_chunk(Vec2::new(j, 1))?);
+            let y3 = f(sample_chunk(Vec2::new(j, 2))?);
 
             x[x_idx] = cubic(y0, y1, y2, y3, pos.y.fract() as f32);
         }
@@ -2990,23 +3571,24 @@ impl WorldSim {
         // Note that these are only guaranteed monotone in one dimension; fortunately,
         // that is sufficient for our purposes.
         let pos = pos.as_::<f64>().wpos_to_cpos();
+        let sample_chunk = |offset| {
+            self.topology
+                .interpolation_chunk(pos, offset)
+                .and_then(|chunk_pos| self.get(chunk_pos))
+        };
 
         // Orient the chunk in the direction of the most downhill point of the four.  If
         // there is no "most downhill" point, then we don't care.
-        let x0 = pos.map2(Vec2::new(0, 0), |e, q| e.max(0.0) as i32 + q);
-        let p0 = self.get(x0)?;
+        let p0 = sample_chunk(Vec2::new(0, 0))?;
         let y0 = f(p0);
 
-        let x1 = pos.map2(Vec2::new(1, 0), |e, q| e.max(0.0) as i32 + q);
-        let p1 = self.get(x1)?;
+        let p1 = sample_chunk(Vec2::new(1, 0))?;
         let y1 = f(p1);
 
-        let x2 = pos.map2(Vec2::new(0, 1), |e, q| e.max(0.0) as i32 + q);
-        let p2 = self.get(x2)?;
+        let p2 = sample_chunk(Vec2::new(0, 1))?;
         let y2 = f(p2);
 
-        let x3 = pos.map2(Vec2::new(1, 1), |e, q| e.max(0.0) as i32 + q);
-        let p3 = self.get(x3)?;
+        let p3 = sample_chunk(Vec2::new(1, 1))?;
         let y3 = f(p3);
 
         let z0 = y0
@@ -3024,9 +3606,7 @@ impl WorldSim {
         wpos: Vec2<i32>,
         get_way: &'a impl Fn(&SimChunk) -> Option<(Way, M)>,
     ) -> impl Iterator<Item = NearestWaysData<M, impl FnOnce() -> Vec2<f32>>> + 'a {
-        let chunk_pos = wpos.map2(TerrainChunkSize::RECT_SIZE, |e, sz: u32| {
-            e.div_euclid(sz as i32)
-        });
+        let chunk_pos = self.chunk_pos_at_wpos(wpos);
         let get_chunk_centre = |chunk_pos: Vec2<i32>| {
             chunk_pos.map2(TerrainChunkSize::RECT_SIZE, |e, sz: u32| {
                 e * sz as i32 + sz as i32 / 2
@@ -3131,8 +3711,38 @@ impl WorldSim {
             )
     }
 
-    pub fn get_nearest_path(&self, wpos: Vec2<i32>) -> Option<(f32, Vec2<f32>, Path, Vec2<f32>)> {
+    fn supports_nearest_path_query(&self, wpos: Vec2<i32>) -> bool { self.get_wpos(wpos).is_some() }
+
+    fn get_nearest_path_best_effort(
+        &self,
+        wpos: Vec2<i32>,
+    ) -> Option<(f32, Vec2<f32>, Path, Vec2<f32>)> {
         self.get_nearest_way(wpos, |chunk| Some(chunk.path))
+    }
+
+    /// Best-effort path proximity query.
+    ///
+    /// On bounded topologies this keeps the historical behavior where a query
+    /// just outside the world can still match an in-bounds border path if the
+    /// LOCALITY scan reaches valid chunks.
+    pub fn get_nearest_path(&self, wpos: Vec2<i32>) -> Option<(f32, Vec2<f32>, Path, Vec2<f32>)> {
+        self.get_nearest_path_best_effort(wpos)
+    }
+
+    /// Path proximity query gated by the topology-valid sim query domain.
+    ///
+    /// This is the strict sibling of `get_nearest_path(...)`: it rejects wpos
+    /// requests that do not resolve to a valid sim chunk under the active
+    /// topology before running the historical best-effort path search.
+    pub fn get_nearest_path_if_queryable(
+        &self,
+        wpos: Vec2<i32>,
+    ) -> Option<(f32, Vec2<f32>, Path, Vec2<f32>)> {
+        if !self.supports_nearest_path_query(wpos) {
+            return None;
+        }
+
+        self.get_nearest_path_best_effort(wpos)
     }
 
     /// Create a [`Lottery<Option<ForestKind>>`] that generates [`ForestKind`]s
@@ -3595,8 +4205,13 @@ impl SimChunk {
 
 #[cfg(test)]
 mod compat_tests {
-    use super::{CompatMode, FileOpts, GenOpts, WorldFile, WorldMap_0_5_0, WorldMap_0_7_0};
-    use crate::recipe::{CompatDecisionV1, CompatFailureKindV1, CompatFailureSubjectV1};
+    use super::{
+        CompatMode, DEFAULT_WORLD_MAP, DEFAULT_WORLD_SEED, FileOpts, GenOpts, WorldFile,
+        WorldMap_0_5_0, WorldMap_0_7_0, default_world_asset_gen_opts,
+    };
+    use crate::recipe::{
+        CompatDecisionV1, CompatFailureKindV1, CompatFailureSubjectV1, RecipeManifestV1,
+    };
     use bincode::{config::legacy, serde::encode_into_std_write};
     use std::{
         fs::{self, File},
@@ -3605,6 +4220,9 @@ mod compat_tests {
         time::{SystemTime, UNIX_EPOCH},
     };
     use vek::Vec2;
+
+    const TEST_WORLD_SEED: u32 = 42;
+    const TEST_SEED_ELEMENTS: bool = true;
 
     struct TempLoadOrGenerateTarget {
         file_path: PathBuf,
@@ -3631,10 +4249,31 @@ mod compat_tests {
             encode_into_std_write(world_file, &mut writer, legacy())
                 .expect("temp world file should serialize");
         }
+
+        fn recipe_sidecar_path(&self) -> PathBuf {
+            FileOpts::recipe_sidecar_path_for_map_path(self.file_path.as_path())
+        }
+
+        fn write_recipe_manifest(&self, recipe_manifest: &RecipeManifestV1) {
+            let sidecar_path = self.recipe_sidecar_path();
+            let rendered_recipe_manifest =
+                ron::ser::to_string_pretty(recipe_manifest, ron::ser::PrettyConfig::default())
+                    .expect("recipe manifest should serialize");
+            fs::write(sidecar_path, rendered_recipe_manifest)
+                .expect("recipe sidecar should be writable");
+        }
+
+        fn write_invalid_recipe_sidecar(&self) {
+            fs::write(self.recipe_sidecar_path(), "not valid ron")
+                .expect("invalid recipe sidecar should be writable");
+        }
     }
 
     impl Drop for TempLoadOrGenerateTarget {
-        fn drop(&mut self) { let _ = fs::remove_file(&self.file_path); }
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.file_path);
+            let _ = fs::remove_file(self.recipe_sidecar_path());
+        }
     }
 
     fn load_or_generate_opts(name: String, overwrite: bool) -> FileOpts {
@@ -3645,10 +4284,23 @@ mod compat_tests {
         }
     }
 
+    fn load_legacy_opts(path: PathBuf) -> FileOpts { FileOpts::LoadLegacy(path) }
+
+    fn load_path_opts(path: PathBuf) -> FileOpts { FileOpts::Load(path) }
+
+    fn load_asset_opts(specifier: &str) -> FileOpts { FileOpts::LoadAsset(specifier.to_owned()) }
+
     fn legacy_world_file() -> WorldFile {
         WorldFile::Veloren0_5_0(WorldMap_0_5_0 {
             alt: vec![0.0].into_boxed_slice(),
             basement: vec![0.0].into_boxed_slice(),
+        })
+    }
+
+    fn invalid_legacy_world_file() -> WorldFile {
+        WorldFile::Veloren0_5_0(WorldMap_0_5_0 {
+            alt: vec![0.0; 3].into_boxed_slice(),
+            basement: vec![0.0; 3].into_boxed_slice(),
         })
     }
 
@@ -3661,11 +4313,320 @@ mod compat_tests {
         })
     }
 
+    fn matching_world_file() -> WorldFile {
+        let opts = GenOpts::default();
+        let map_cell_count = 1usize << (opts.x_lg + opts.y_lg);
+        WorldFile::Veloren0_7_0(WorldMap_0_7_0 {
+            map_size_lg: Vec2::new(opts.x_lg, opts.y_lg),
+            continent_scale_hack: opts.scale,
+            alt: vec![0.0; map_cell_count].into_boxed_slice(),
+            basement: vec![0.0; map_cell_count].into_boxed_slice(),
+        })
+    }
+
+    fn recipe_manifest_for_seed(world_seed: u32) -> RecipeManifestV1 {
+        RecipeManifestV1::record_only(world_seed, &GenOpts::default(), TEST_SEED_ELEMENTS)
+    }
+
     fn assert_same_path(lhs: &Path, rhs: &Path) {
         assert_eq!(
             lhs, rhs,
             "expected temp load_or_generate path to stay stable during the test"
         );
+    }
+
+    #[test]
+    fn save_writes_recipe_sidecar_for_managed_worlds() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("recipe-sidecar-save");
+        let recipe_manifest = recipe_manifest_for_seed(TEST_WORLD_SEED);
+        let save_opts = FileOpts::Save(temp_target.file_path.clone(), GenOpts::default());
+
+        save_opts.save(&matching_world_file(), &recipe_manifest);
+
+        let sidecar_file =
+            File::open(temp_target.recipe_sidecar_path()).expect("recipe sidecar should exist");
+        let stored_recipe_manifest: RecipeManifestV1 =
+            ron::de::from_reader(sidecar_file).expect("recipe sidecar should deserialize");
+
+        assert_eq!(
+            stored_recipe_manifest.world_recipe_hash,
+            recipe_manifest.world_recipe_hash
+        );
+        assert_eq!(
+            stored_recipe_manifest.chunk_recipe_hash,
+            recipe_manifest.chunk_recipe_hash
+        );
+    }
+
+    #[test]
+    fn load_path_legacy_world_rejects_strict_modern_load() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("load-path-legacy-reject");
+        temp_target.write_world_file(&legacy_world_file());
+
+        let err = match load_path_opts(temp_target.file_path.clone()).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("Load(path) should reject legacy world versions"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::InvalidWorld);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::World);
+        assert!(err.audit.failure_detail.legacy_world_version);
+    }
+
+    #[test]
+    fn load_path_requires_recipe_sidecar() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("load-path-sidecar-missing");
+        temp_target.write_world_file(&matching_world_file());
+
+        let err = match load_path_opts(temp_target.file_path.clone()).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("Load(path) should reject when recipe sidecar is missing"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::MissingInput);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Recipe);
+    }
+
+    #[test]
+    fn load_path_loads_existing_world_with_recipe_sidecar() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("load-path-sidecar-match");
+        let recipe_manifest = recipe_manifest_for_seed(TEST_WORLD_SEED + 17);
+        temp_target.write_world_file(&matching_world_file());
+        temp_target.write_recipe_manifest(&recipe_manifest);
+
+        let content = load_path_opts(temp_target.file_path.clone())
+            .load_content(CompatMode::Record, TEST_WORLD_SEED, TEST_SEED_ELEMENTS)
+            .expect("Load(path) should accept matching strict world + sidecar");
+
+        assert!(content.parsed_world_file.is_some());
+        assert_eq!(
+            content.compat_audit.decision,
+            CompatDecisionV1::LoadedExisting
+        );
+        assert_eq!(
+            content
+                .loaded_recipe_manifest
+                .as_ref()
+                .expect("loaded recipe manifest should be present")
+                .world_recipe
+                .world_seed,
+            recipe_manifest.world_recipe.world_seed
+        );
+        assert_eq!(
+            content.gen_opts.x_lg,
+            recipe_manifest.world_recipe.gen_opts.x_lg
+        );
+        assert_eq!(
+            content.gen_opts.y_lg,
+            recipe_manifest.world_recipe.gen_opts.y_lg
+        );
+        assert_eq!(
+            content.gen_opts.scale,
+            recipe_manifest.world_recipe.gen_opts.scale
+        );
+    }
+
+    #[test]
+    fn load_path_rejects_recipe_sidecar_world_mismatch() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("load-path-sidecar-mismatch");
+        temp_target.write_world_file(&mismatched_world_file());
+        temp_target.write_recipe_manifest(&recipe_manifest_for_seed(TEST_WORLD_SEED));
+
+        let err = match load_path_opts(temp_target.file_path.clone()).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("Load(path) should reject when sidecar and world file disagree"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::OptionMismatch);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Recipe);
+        assert!(err.audit.failure_detail.world_size_mismatch);
+        assert!(err.audit.failure_detail.world_scale_mismatch);
+    }
+
+    #[test]
+    fn load_path_rejects_corrupt_recipe_sidecar() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("load-path-sidecar-corrupt");
+        temp_target.write_world_file(&matching_world_file());
+        temp_target.write_invalid_recipe_sidecar();
+
+        let err = match load_path_opts(temp_target.file_path.clone()).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("Load(path) should reject corrupt recipe sidecars"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::ParseError);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Recipe);
+    }
+
+    #[test]
+    fn load_path_rejects_internally_invalid_recipe_sidecar() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("load-path-sidecar-invalid");
+        let mut recipe_manifest = recipe_manifest_for_seed(TEST_WORLD_SEED);
+        recipe_manifest.world_recipe_hash = "tampered-world-recipe-hash".to_owned();
+        temp_target.write_world_file(&matching_world_file());
+        temp_target.write_recipe_manifest(&recipe_manifest);
+
+        let err = match load_path_opts(temp_target.file_path.clone()).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("Load(path) should reject internally inconsistent recipe sidecars"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::InvalidWorld);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Recipe);
+    }
+
+    #[test]
+    fn load_legacy_imports_sidecarless_modern_world_with_inferred_gen_opts() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("load-legacy-modern-import");
+        temp_target.write_world_file(&mismatched_world_file());
+
+        let content = load_legacy_opts(temp_target.file_path.clone())
+            .load_content(CompatMode::Record, TEST_WORLD_SEED, TEST_SEED_ELEMENTS)
+            .expect("LoadLegacy(path) should import sidecarless modern worlds explicitly");
+
+        assert!(content.parsed_world_file.is_some());
+        assert!(content.loaded_recipe_manifest.is_none());
+        assert_eq!(
+            content.compat_audit.decision,
+            CompatDecisionV1::LoadedExisting
+        );
+        assert_eq!(content.gen_opts.x_lg, 9);
+        assert_eq!(content.gen_opts.y_lg, 9);
+        assert_eq!(content.gen_opts.scale, 3.0);
+    }
+
+    #[test]
+    fn load_legacy_rejects_missing_file_without_fallback() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("load-legacy-missing");
+
+        let err = match load_legacy_opts(temp_target.file_path.clone()).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("LoadLegacy(path) should reject a missing compat-import target"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::MissingInput);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::World);
+    }
+
+    #[test]
+    fn load_legacy_rejects_invalid_legacy_world_without_fallback() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("load-legacy-invalid-world");
+        temp_target.write_world_file(&invalid_legacy_world_file());
+
+        let err = match load_legacy_opts(temp_target.file_path.clone()).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("LoadLegacy(path) should reject invalid compat-import inputs"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::InvalidWorld);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::World);
+    }
+
+    #[test]
+    fn load_asset_default_world_uses_fixed_recipe_manifest() {
+        let requested_seed = TEST_WORLD_SEED + 91;
+        let default_asset_gen_opts = default_world_asset_gen_opts();
+
+        let content = load_asset_opts(DEFAULT_WORLD_MAP)
+            .load_content(CompatMode::Record, requested_seed, false)
+            .expect("LoadAsset(default asset) should accept the fixed asset contract");
+
+        assert!(content.parsed_world_file.is_some());
+        assert_eq!(
+            content.compat_audit.decision,
+            CompatDecisionV1::LoadedExisting
+        );
+
+        let recipe_manifest = content
+            .loaded_recipe_manifest
+            .as_ref()
+            .expect("default asset should surface a fixed recipe manifest");
+        assert_eq!(recipe_manifest.world_recipe.world_seed, DEFAULT_WORLD_SEED);
+        assert!(recipe_manifest.world_recipe.seed_elements);
+        assert_eq!(
+            recipe_manifest.world_recipe.gen_opts.x_lg,
+            default_asset_gen_opts.x_lg
+        );
+        assert_eq!(
+            recipe_manifest.world_recipe.gen_opts.y_lg,
+            default_asset_gen_opts.y_lg
+        );
+        assert_eq!(
+            recipe_manifest.world_recipe.gen_opts.scale,
+            default_asset_gen_opts.scale
+        );
+        assert_eq!(content.gen_opts.x_lg, default_asset_gen_opts.x_lg);
+        assert_eq!(content.gen_opts.y_lg, default_asset_gen_opts.y_lg);
+        assert_eq!(content.gen_opts.scale, default_asset_gen_opts.scale);
+    }
+
+    #[test]
+    fn load_asset_missing_specifier_rejects_without_fallback() {
+        let err = match load_asset_opts("world.map.does_not_exist").load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("LoadAsset(asset) should reject a missing asset specifier"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::MissingInput);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::World);
+    }
+
+    #[test]
+    fn load_asset_requires_fixed_recipe_manifest() {
+        let err = match load_asset_opts("world.map.veloren_0_16_0_0").load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => {
+                panic!("LoadAsset(asset) should reject built-in assets without a fixed manifest")
+            },
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::MissingInput);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Recipe);
     }
 
     #[test]
@@ -3682,10 +4643,11 @@ mod compat_tests {
                 .expect("load_or_generate path should always exist"),
         );
 
-        let err = match file_opts.load_content(CompatMode::Record) {
-            Ok(_) => panic!("legacy load_or_generate world should reject without overwrite"),
-            Err(err) => err,
-        };
+        let err =
+            match file_opts.load_content(CompatMode::Record, TEST_WORLD_SEED, TEST_SEED_ELEMENTS) {
+                Ok(_) => panic!("legacy load_or_generate world should reject without overwrite"),
+                Err(err) => err,
+            };
 
         assert!(err.audit.is_rejected());
         assert_eq!(err.audit.failure_kind, CompatFailureKindV1::InvalidWorld);
@@ -3698,7 +4660,11 @@ mod compat_tests {
         let (name, temp_target) = TempLoadOrGenerateTarget::new("mismatch-reject");
         temp_target.write_world_file(&mismatched_world_file());
 
-        let err = match load_or_generate_opts(name, false).load_content(CompatMode::Record) {
+        let err = match load_or_generate_opts(name, false).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
             Ok(_) => panic!("existing world mismatch should reject when overwrite=false"),
             Err(err) => err,
         };
@@ -3716,7 +4682,7 @@ mod compat_tests {
         temp_target.write_world_file(&mismatched_world_file());
 
         let content = load_or_generate_opts(name, true)
-            .load_content(CompatMode::Record)
+            .load_content(CompatMode::Record, TEST_WORLD_SEED, TEST_SEED_ELEMENTS)
             .expect("overwrite=true mismatch should stay recoverable");
 
         assert!(content.parsed_world_file.is_none());
@@ -3732,13 +4698,154 @@ mod compat_tests {
         assert!(content.compat_audit.failure_detail.world_size_mismatch);
         assert!(content.compat_audit.failure_detail.world_scale_mismatch);
     }
+
+    #[test]
+    fn load_or_generate_matching_recipe_sidecar_loads_existing_world() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("recipe-match-load");
+        temp_target.write_world_file(&matching_world_file());
+        temp_target.write_recipe_manifest(&recipe_manifest_for_seed(TEST_WORLD_SEED));
+
+        let content = load_or_generate_opts(name, false)
+            .load_content(CompatMode::Record, TEST_WORLD_SEED, TEST_SEED_ELEMENTS)
+            .expect("matching managed world recipe should load existing world");
+
+        assert!(content.parsed_world_file.is_some());
+        assert_eq!(
+            content.compat_audit.decision,
+            CompatDecisionV1::LoadedExisting
+        );
+        assert_eq!(
+            content.compat_audit.failure_subject,
+            CompatFailureSubjectV1::None
+        );
+    }
+
+    #[test]
+    fn load_or_generate_missing_recipe_sidecar_falls_back_to_legacy_option_compare() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("recipe-sidecar-missing");
+        temp_target.write_world_file(&matching_world_file());
+
+        let content = load_or_generate_opts(name, false)
+            .load_content(CompatMode::Record, TEST_WORLD_SEED, TEST_SEED_ELEMENTS)
+            .expect("missing recipe sidecar should still fall back to legacy option compare");
+
+        assert!(content.parsed_world_file.is_some());
+        assert_eq!(
+            content.compat_audit.decision,
+            CompatDecisionV1::LoadedExisting
+        );
+        assert_eq!(
+            content.compat_audit.failure_subject,
+            CompatFailureSubjectV1::None
+        );
+    }
+
+    #[test]
+    fn load_or_generate_recipe_mismatch_rejects_without_overwrite() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("recipe-mismatch-reject");
+        temp_target.write_world_file(&matching_world_file());
+        temp_target.write_recipe_manifest(&recipe_manifest_for_seed(TEST_WORLD_SEED + 1));
+
+        let err = match load_or_generate_opts(name, false).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("managed world recipe mismatch should reject when overwrite=false"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::OptionMismatch);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Recipe);
+        assert!(!err.audit.failure_detail.world_size_mismatch);
+        assert!(!err.audit.failure_detail.world_scale_mismatch);
+    }
+
+    #[test]
+    fn load_or_generate_recipe_mismatch_recovers_with_overwrite() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("recipe-mismatch-overwrite");
+        temp_target.write_world_file(&matching_world_file());
+        temp_target.write_recipe_manifest(&recipe_manifest_for_seed(TEST_WORLD_SEED + 1));
+
+        let content = load_or_generate_opts(name, true)
+            .load_content(CompatMode::Record, TEST_WORLD_SEED, TEST_SEED_ELEMENTS)
+            .expect("managed world recipe mismatch should stay recoverable when overwrite=true");
+
+        assert!(content.parsed_world_file.is_none());
+        assert_eq!(
+            content.compat_audit.decision,
+            CompatDecisionV1::FallbackGenerate
+        );
+        assert!(!content.compat_audit.is_rejected());
+        assert_eq!(
+            content.compat_audit.failure_subject,
+            CompatFailureSubjectV1::Recipe
+        );
+        assert!(!content.compat_audit.failure_detail.world_size_mismatch);
+        assert!(!content.compat_audit.failure_detail.world_scale_mismatch);
+    }
+
+    #[test]
+    fn load_or_generate_corrupt_recipe_sidecar_rejects_without_overwrite() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("recipe-sidecar-parse-reject");
+        temp_target.write_world_file(&matching_world_file());
+        temp_target.write_invalid_recipe_sidecar();
+
+        let err = match load_or_generate_opts(name, false).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => {
+                panic!("corrupt managed world recipe sidecar should reject when overwrite=false")
+            },
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::ParseError);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Recipe);
+    }
+
+    #[test]
+    fn load_or_generate_corrupt_recipe_sidecar_recovers_with_overwrite() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("recipe-sidecar-parse-overwrite");
+        temp_target.write_world_file(&matching_world_file());
+        temp_target.write_invalid_recipe_sidecar();
+
+        let content = load_or_generate_opts(name, true)
+            .load_content(CompatMode::Record, TEST_WORLD_SEED, TEST_SEED_ELEMENTS)
+            .expect(
+                "corrupt managed world recipe sidecar should stay recoverable when overwrite=true",
+            );
+
+        assert!(content.parsed_world_file.is_none());
+        assert_eq!(
+            content.compat_audit.decision,
+            CompatDecisionV1::FallbackGenerate
+        );
+        assert!(!content.compat_audit.is_rejected());
+        assert_eq!(
+            content.compat_audit.failure_kind,
+            CompatFailureKindV1::ParseError
+        );
+        assert_eq!(
+            content.compat_audit.failure_subject,
+            CompatFailureSubjectV1::Recipe
+        );
+    }
 }
 
 #[cfg(test)]
 mod environment_tests {
-    use super::{RiverData, RiverKind, SimChunk};
+    use super::{ApproxFallback, Path, RiverData, RiverKind, SimChunk, Way, WorldSim};
     use crate::{all::ForestKind, config::CONFIG};
-    use common::{spot::Spot, terrain::BiomeKind};
+    use common::{
+        spot::Spot,
+        terrain::{BiomeKind, TerrainChunkSize},
+        vol::RectVolSize,
+    };
     use vek::{Vec2, Vec3};
 
     fn river_data(kind: Option<RiverKind>) -> RiverData {
@@ -3838,5 +4945,102 @@ mod environment_tests {
             cross_section: Vec2::one(),
         }));
         assert_eq!(river.get_biome(), BiomeKind::Forest);
+    }
+
+    #[test]
+    fn alt_approx_or_uses_named_fallbacks_for_oob_queries() {
+        let sim = WorldSim::empty();
+        let oob_wpos = Vec2::new(4096, 4096);
+
+        assert_eq!(sim.alt_approx_or(oob_wpos, ApproxFallback::Zero), 0.0);
+        assert_eq!(
+            sim.alt_approx_or(oob_wpos, ApproxFallback::SeaLevel),
+            CONFIG.sea_level
+        );
+    }
+
+    #[test]
+    fn gradient_approx_or_uses_named_fallbacks_for_oob_queries() {
+        let sim = WorldSim::empty();
+        let oob_chunk = Vec2::new(4096, 4096);
+
+        assert_eq!(sim.gradient_approx_or(oob_chunk, ApproxFallback::Zero), 0.0);
+        assert_eq!(
+            sim.gradient_approx_or(oob_chunk, ApproxFallback::SeaLevel),
+            CONFIG.sea_level
+        );
+    }
+
+    #[test]
+    fn map_sample_alt_or_uses_named_sea_level_fallback_for_oob_queries() {
+        let sim = WorldSim::empty();
+        let oob_wpos = Vec2::new(4096, 4096);
+
+        assert_eq!(
+            sim.map_sample_alt_or(oob_wpos, false, true, ApproxFallback::SeaLevel),
+            CONFIG.sea_level
+        );
+    }
+
+    fn empty_test_sim_chunk() -> SimChunk {
+        SimChunk {
+            chaos: 0.0,
+            alt: 0.0,
+            basement: 0.0,
+            water_alt: 0.0,
+            downhill: None,
+            flux: 0.0,
+            temp: 0.0,
+            humidity: 0.0,
+            rockiness: 0.0,
+            tree_density: 0.0,
+            forest_kind: ForestKind::Dead,
+            spawn_rate: 0.0,
+            river: RiverData::default(),
+            surface_veg: 0.0,
+            sites: vec![],
+            place: None,
+            poi: None,
+            path: Default::default(),
+            cliff_height: 0.0,
+            spot: None,
+            contains_waypoint: false,
+        }
+    }
+
+    #[test]
+    fn nearest_path_queryable_gate_preserves_best_effort_border_pull() {
+        let mut sim = WorldSim::empty();
+        sim.chunks = vec![
+            empty_test_sim_chunk(),
+            empty_test_sim_chunk(),
+            empty_test_sim_chunk(),
+            empty_test_sim_chunk(),
+        ];
+        sim.get_mut(Vec2::new(0, 0)).unwrap().path = (
+            Way {
+                offset: Vec2::zero(),
+                neighbors: 1 << 0,
+            },
+            Path::default(),
+        );
+        sim.get_mut(Vec2::new(1, 0)).unwrap().path = (
+            Way {
+                offset: Vec2::zero(),
+                neighbors: 1 << 4,
+            },
+            Path::default(),
+        );
+
+        let just_left_of_world = Vec2::new(-1, TerrainChunkSize::RECT_SIZE.y as i32 / 2);
+        let in_world = Vec2::new(0, TerrainChunkSize::RECT_SIZE.y as i32 / 2);
+
+        assert!(sim.get_nearest_path(just_left_of_world).is_some());
+        assert!(
+            sim.get_nearest_path_if_queryable(just_left_of_world)
+                .is_none()
+        );
+        assert!(sim.get_nearest_path(in_world).is_some());
+        assert!(sim.get_nearest_path_if_queryable(in_world).is_some());
     }
 }
