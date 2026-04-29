@@ -239,7 +239,12 @@ fn migrate_old_singleplayer(from: &Path, to: &Path) {
                         FileOpts::Generate(opts) => {
                             (None, Some(opts), SingleplayerWorldSource::Generated, None)
                         },
-                        FileOpts::LoadLegacy(_) => return None,
+                        FileOpts::LoadLegacy(path) => (
+                            Some(path),
+                            None,
+                            SingleplayerWorldSource::LegacyMigrated,
+                            None,
+                        ),
                         FileOpts::Load(path) => (
                             Some(path),
                             None,
@@ -828,6 +833,52 @@ mod tests {
         assert!(meta.contains("compat_audit: None"));
 
         let _ = fs::remove_dir_all(world_dir);
+    }
+
+    #[test]
+    fn migrating_old_singleplayer_preserves_load_legacy_worlds() {
+        let root =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-migrate-{}", Uuid::new_v4()));
+        let old_world = root.join("singleplayer");
+        let migrated_world = root.join("singleplayer_worlds").join("singleplayer");
+        fs::create_dir_all(old_world.join("server_config")).unwrap();
+        fs::create_dir_all(root.join("singleplayer_worlds")).unwrap();
+
+        let legacy_map_path = root.join("legacy-source-world.bin");
+        let legacy_map_bytes = b"legacy-world-map";
+        fs::write(&legacy_map_path, legacy_map_bytes).unwrap();
+
+        let mut settings = server::Settings::default();
+        settings.world_seed = 424242;
+        settings.day_length = 37.5;
+        settings.map_file = Some(FileOpts::LoadLegacy(legacy_map_path.clone()));
+        let settings_ron = ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default())
+            .expect("settings should serialize");
+        fs::write(old_world.join("server_config/settings.ron"), settings_ron).unwrap();
+
+        migrate_old_singleplayer(&old_world, &migrated_world);
+
+        let migrated = load_map(&migrated_world).expect("migrated world should load");
+        assert!(!old_world.exists());
+        assert!(migrated_world.exists());
+        assert_eq!(migrated.seed, 424242);
+        assert_eq!(migrated.day_length, 37.5);
+        assert!(matches!(
+            migrated.world_source,
+            SingleplayerWorldSource::LegacyMigrated
+        ));
+        assert_eq!(migrated.source_ref, None);
+        assert!(migrated.is_generated);
+        assert_eq!(
+            fs::read(migrated_world.join("map.bin")).unwrap(),
+            legacy_map_bytes
+        );
+
+        let meta = fs::read_to_string(migrated_world.join("meta.ron")).unwrap();
+        assert!(meta.contains("world_source: legacy_migrated"));
+        assert!(meta.contains("compat_audit: None"));
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
