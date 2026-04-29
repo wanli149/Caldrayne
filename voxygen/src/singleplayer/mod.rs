@@ -107,7 +107,13 @@ impl SingleplayerState {
             {
                 server::FileOpts::Save(world.map_path.clone(), gen_opts.clone())
             } else {
-                if !world.is_generated && world.gen_opts.is_none() {
+                if !world.is_generated
+                    && world.gen_opts.is_none()
+                    && matches!(
+                        world.world_source,
+                        singleplayer_world::SingleplayerWorldSource::DefaultAsset
+                    )
+                {
                     world.copy_default_world();
                 }
                 server::FileOpts::Load(world.map_path.clone())
