@@ -5,10 +5,15 @@ use iced::{
     button, scrollable, slider, text_input,
 };
 use rand::RngExt;
+use std::{fmt::Write, path::Path};
 use vek::Rgba;
 
 use crate::{
     menu::main::ui::{FILL_FRAC_TWO, WorldsChange},
+    singleplayer::{
+        SingleplayerLegacyInventory, SingleplayerLegacyOrigin, SingleplayerWorld,
+        SingleplayerWorldSource,
+    },
     ui::{
         fonts::IcedFonts,
         ice::{
@@ -32,6 +37,13 @@ const INPUT_TEXT_SIZE: u16 = 20;
 pub enum Confirmation {
     Regenerate(usize),
     Delete(usize),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LegacyMetadataGapState {
+    MissingTypedOrigin,
+    MissingCompatAudit,
+    MissingTypedOriginAndCompatAudit,
 }
 
 #[derive(Default)]
@@ -149,19 +161,50 @@ impl Screen {
                     .map(|(i, w)| (Some(i), &w.name)),
             )
             .map(|(state, (i, map))| {
+                let world = &worlds.worlds[i.expect("list item index should exist")];
                 let color = if i == worlds.current {
                     (97, 255, 18)
                 } else {
                     (97, 97, 25)
                 };
+                let mut label_children = vec![
+                    Text::new(map)
+                        .width(Length::FillPortion(95))
+                        .size(fonts.cyri.scale(25))
+                        .vertical_alignment(iced::VerticalAlignment::Center)
+                        .into(),
+                ];
+                if Self::should_show_legacy_gap_badge(i, worlds.current) {
+                    if let Some(legacy_gap_badge_text) = Self::legacy_gap_badge_text(world, i18n) {
+                        label_children.push(
+                            Text::new(legacy_gap_badge_text)
+                                .width(Length::Shrink)
+                                .size(fonts.cyri.scale(16))
+                                .color([0.84, 0.74, 0.50])
+                                .vertical_alignment(iced::VerticalAlignment::Center)
+                                .into(),
+                        );
+                    }
+                    if let Some(managed_recipe_sidecar_missing_badge_text) =
+                        Self::managed_recipe_sidecar_missing_badge_text(world, i18n)
+                    {
+                        label_children.push(
+                            Text::new(managed_recipe_sidecar_missing_badge_text)
+                                .width(Length::Shrink)
+                                .size(fonts.cyri.scale(16))
+                                .color([0.84, 0.74, 0.50])
+                                .vertical_alignment(iced::VerticalAlignment::Center)
+                                .into(),
+                        );
+                    }
+                }
                 let button = Button::new(
                     state,
                     Row::with_children(vec![
                         Space::new(Length::FillPortion(5), Length::Units(0)).into(),
-                        Text::new(map)
+                        Row::with_children(label_children)
+                            .spacing(8)
                             .width(Length::FillPortion(95))
-                            .size(fonts.cyri.scale(25))
-                            .vertical_alignment(iced::VerticalAlignment::Center)
                             .into(),
                     ]),
                 )
@@ -204,20 +247,31 @@ impl Screen {
         .center_x()
         .max_width(200);
 
-        let content = Column::with_children(vec![
-            title.into(),
-            list.into(),
-            new_button.into(),
-            back_button.into(),
-        ])
-        .spacing(8)
-        .width(Length::Fill)
-        .height(Length::FillPortion(38))
-        .align_items(Align::Center)
-        .padding(iced::Padding {
-            bottom: 25,
-            ..iced::Padding::new(0)
-        });
+        let mut selection_menu_content = vec![title.into(), list.into()];
+
+        if let Some(legacy_inventory_text) = Self::legacy_inventory_summary_text(worlds, i18n) {
+            selection_menu_content.push(
+                Text::new(legacy_inventory_text)
+                    .size(fonts.cyri.scale(16))
+                    .width(Length::Fill)
+                    .color([0.72, 0.69, 0.58])
+                    .horizontal_alignment(iced::HorizontalAlignment::Center)
+                    .into(),
+            );
+        }
+
+        selection_menu_content.push(new_button.into());
+        selection_menu_content.push(back_button.into());
+
+        let content = Column::with_children(selection_menu_content)
+            .spacing(8)
+            .width(Length::Fill)
+            .height(Length::FillPortion(38))
+            .align_items(Align::Center)
+            .padding(iced::Padding {
+                bottom: 25,
+                ..iced::Padding::new(0)
+            });
 
         let selection_menu = BackgroundContainer::new(
             CompoundGraphic::from_graphics(vec![
@@ -334,6 +388,41 @@ impl Screen {
             }
 
             gen_content.push(Row::with_children(seed_content).into());
+
+            if let Some(provenance_text) = Self::provenance_text(world, i18n) {
+                gen_content.push(
+                    Text::new(provenance_text)
+                        .size(fonts.cyri.scale(18))
+                        .width(Length::Fill)
+                        .color([0.78, 0.75, 0.62])
+                        .horizontal_alignment(iced::HorizontalAlignment::Center)
+                        .into(),
+                );
+            }
+
+            if let Some(legacy_gap_text) = Self::legacy_metadata_gap_text(world, i18n) {
+                gen_content.push(
+                    Text::new(legacy_gap_text)
+                        .size(fonts.cyri.scale(16))
+                        .width(Length::Fill)
+                        .color([0.81, 0.73, 0.57])
+                        .horizontal_alignment(iced::HorizontalAlignment::Center)
+                        .into(),
+                );
+            }
+
+            if let Some(managed_residual_text) =
+                Self::managed_recipe_sidecar_missing_text(world, i18n)
+            {
+                gen_content.push(
+                    Text::new(managed_residual_text)
+                        .size(fonts.cyri.scale(16))
+                        .width(Length::Fill)
+                        .color([0.81, 0.73, 0.57])
+                        .horizontal_alignment(iced::HorizontalAlignment::Center)
+                        .into(),
+                );
+            }
 
             if let Some(gen_opts) = world.gen_opts.as_ref() {
                 // Day length setting label
@@ -739,5 +828,712 @@ impl Screen {
             MapKind::Circle => "main-singleplayer-map_shape-circle",
             MapKind::Square => "main-singleplayer-map_shape-square",
         }
+    }
+
+    fn provenance_text(world: &SingleplayerWorld, i18n: &Localization) -> Option<String> {
+        let source = if let Some(origin) = world.legacy_origin.as_ref() {
+            Self::provenance_origin_text(origin, i18n)
+        } else {
+            let fallback_key = Self::provenance_world_source_msg_key(&world.world_source)?;
+            i18n.get_msg(fallback_key).into_owned()
+        };
+
+        Some(
+            i18n.get_msg_ctx("main-singleplayer-provenance", &i18n::fluent_args! {
+                "source" => source,
+            })
+            .into_owned(),
+        )
+    }
+
+    fn provenance_origin_text(origin: &SingleplayerLegacyOrigin, i18n: &Localization) -> String {
+        match origin {
+            SingleplayerLegacyOrigin::LoadPath(path) => i18n
+                .get_msg_ctx(
+                    Self::provenance_origin_msg_key(origin),
+                    &i18n::fluent_args! {
+                        "name" => Self::provenance_path_display_name(path),
+                    },
+                )
+                .into_owned(),
+            SingleplayerLegacyOrigin::LoadLegacyPath(path) => i18n
+                .get_msg_ctx(
+                    Self::provenance_origin_msg_key(origin),
+                    &i18n::fluent_args! {
+                        "name" => Self::provenance_path_display_name(path),
+                    },
+                )
+                .into_owned(),
+            SingleplayerLegacyOrigin::LoadAsset(asset) => i18n
+                .get_msg_ctx(
+                    Self::provenance_origin_msg_key(origin),
+                    &i18n::fluent_args! {
+                        "asset" => asset.as_str(),
+                    },
+                )
+                .into_owned(),
+            SingleplayerLegacyOrigin::LoadOrGenerate { name, overwrite } => i18n
+                .get_msg_ctx(
+                    Self::provenance_origin_msg_key(origin),
+                    &i18n::fluent_args! {
+                        "name" => name.as_str(),
+                        "overwrite" => i18n.get_msg(Self::provenance_overwrite_msg_key(*overwrite)),
+                    },
+                )
+                .into_owned(),
+        }
+    }
+
+    fn provenance_world_source_msg_key(
+        world_source: &SingleplayerWorldSource,
+    ) -> Option<&'static str> {
+        match world_source {
+            SingleplayerWorldSource::LegacyUnknown => {
+                Some("main-singleplayer-provenance-legacy_unknown")
+            },
+            SingleplayerWorldSource::LegacyMigrated => {
+                Some("main-singleplayer-provenance-legacy_migrated")
+            },
+            SingleplayerWorldSource::Generated | SingleplayerWorldSource::DefaultAsset => None,
+        }
+    }
+
+    fn provenance_origin_msg_key(origin: &SingleplayerLegacyOrigin) -> &'static str {
+        match origin {
+            SingleplayerLegacyOrigin::LoadPath(_) => "main-singleplayer-provenance-load_path",
+            SingleplayerLegacyOrigin::LoadLegacyPath(_) => {
+                "main-singleplayer-provenance-load_legacy_path"
+            },
+            SingleplayerLegacyOrigin::LoadAsset(_) => "main-singleplayer-provenance-load_asset",
+            SingleplayerLegacyOrigin::LoadOrGenerate { .. } => {
+                "main-singleplayer-provenance-load_or_generate"
+            },
+        }
+    }
+
+    fn provenance_overwrite_msg_key(overwrite: bool) -> &'static str {
+        if overwrite {
+            "main-singleplayer-provenance-overwrite-true"
+        } else {
+            "main-singleplayer-provenance-overwrite-false"
+        }
+    }
+
+    fn provenance_path_display_name(path: &str) -> String {
+        Path::new(path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or(path)
+            .to_owned()
+    }
+
+    fn legacy_metadata_gap_text(world: &SingleplayerWorld, i18n: &Localization) -> Option<String> {
+        let gap_state = Self::legacy_metadata_gap_state(
+            &world.world_source,
+            world.legacy_origin.is_some(),
+            world.compat_audit.is_some(),
+        )?;
+
+        if world.legacy_origin.is_none()
+            && Self::provenance_world_source_msg_key(&world.world_source).is_some()
+        {
+            return match gap_state {
+                LegacyMetadataGapState::MissingTypedOrigin => None,
+                LegacyMetadataGapState::MissingTypedOriginAndCompatAudit => Some(
+                    i18n.get_msg("main-singleplayer-legacy_gap-missing_compat_audit")
+                        .into_owned(),
+                ),
+                LegacyMetadataGapState::MissingCompatAudit => Some(
+                    i18n.get_msg(Self::legacy_metadata_gap_msg_key(gap_state))
+                        .into_owned(),
+                ),
+            };
+        }
+
+        Some(
+            i18n.get_msg(Self::legacy_metadata_gap_msg_key(gap_state))
+                .into_owned(),
+        )
+    }
+
+    fn legacy_gap_badge_text(world: &SingleplayerWorld, i18n: &Localization) -> Option<String> {
+        let gap_state = Self::legacy_metadata_gap_state(
+            &world.world_source,
+            world.legacy_origin.is_some(),
+            world.compat_audit.is_some(),
+        )?;
+
+        Some(
+            i18n.get_msg(Self::legacy_gap_badge_msg_key(gap_state))
+                .into_owned(),
+        )
+    }
+
+    fn managed_recipe_sidecar_missing_text(
+        world: &SingleplayerWorld,
+        i18n: &Localization,
+    ) -> Option<String> {
+        Self::managed_recipe_sidecar_missing_msg_key(world)
+            .map(|key| i18n.get_msg(key).into_owned())
+    }
+
+    fn managed_recipe_sidecar_missing_badge_text(
+        world: &SingleplayerWorld,
+        i18n: &Localization,
+    ) -> Option<String> {
+        Self::managed_recipe_sidecar_missing_msg_key(world)
+            .map(|_| i18n.get_msg("main-singleplayer-managed_recipe_sidecar_missing-badge"))
+            .map(|message| message.into_owned())
+    }
+
+    fn managed_recipe_sidecar_missing_msg_key(world: &SingleplayerWorld) -> Option<&'static str> {
+        world
+            .managed_recipe_sidecar_missing
+            .then_some("main-singleplayer-managed_recipe_sidecar_missing")
+    }
+
+    fn should_show_legacy_gap_badge(
+        item_index: Option<usize>,
+        current_index: Option<usize>,
+    ) -> bool {
+        item_index != current_index
+    }
+
+    fn legacy_metadata_gap_state(
+        world_source: &SingleplayerWorldSource,
+        has_typed_origin: bool,
+        has_compat_audit: bool,
+    ) -> Option<LegacyMetadataGapState> {
+        if !Self::is_legacy_world_source(world_source) {
+            return None;
+        }
+
+        match (has_typed_origin, has_compat_audit) {
+            (false, false) => Some(LegacyMetadataGapState::MissingTypedOriginAndCompatAudit),
+            (false, true) => Some(LegacyMetadataGapState::MissingTypedOrigin),
+            (true, false) => Some(LegacyMetadataGapState::MissingCompatAudit),
+            (true, true) => None,
+        }
+    }
+
+    const fn legacy_metadata_gap_msg_key(gap_state: LegacyMetadataGapState) -> &'static str {
+        match gap_state {
+            LegacyMetadataGapState::MissingTypedOrigin => {
+                "main-singleplayer-legacy_gap-missing_typed_origin"
+            },
+            LegacyMetadataGapState::MissingCompatAudit => {
+                "main-singleplayer-legacy_gap-missing_compat_audit"
+            },
+            LegacyMetadataGapState::MissingTypedOriginAndCompatAudit => {
+                "main-singleplayer-legacy_gap-missing_typed_origin_and_compat_audit"
+            },
+        }
+    }
+
+    const fn legacy_gap_badge_msg_key(gap_state: LegacyMetadataGapState) -> &'static str {
+        match gap_state {
+            LegacyMetadataGapState::MissingTypedOrigin => {
+                "main-singleplayer-legacy_gap-badge-missing_typed_origin"
+            },
+            LegacyMetadataGapState::MissingCompatAudit => {
+                "main-singleplayer-legacy_gap-badge-missing_compat_audit"
+            },
+            LegacyMetadataGapState::MissingTypedOriginAndCompatAudit => {
+                "main-singleplayer-legacy_gap-badge-missing_typed_origin_and_compat_audit"
+            },
+        }
+    }
+
+    const fn is_legacy_world_source(world_source: &SingleplayerWorldSource) -> bool {
+        matches!(
+            world_source,
+            SingleplayerWorldSource::LegacyUnknown | SingleplayerWorldSource::LegacyMigrated
+        )
+    }
+
+    fn legacy_inventory_summary_text(
+        worlds: &crate::singleplayer::SingleplayerWorlds,
+        i18n: &Localization,
+    ) -> Option<String> {
+        let summary = Self::legacy_inventory_summary(&worlds.legacy_inventory())?;
+        let mut text = i18n
+            .get_msg_ctx(
+                "main-singleplayer-legacy_stock-total",
+                &i18n::fluent_args! {
+                    "legacy" => summary.legacy_worlds,
+                },
+            )
+            .into_owned();
+
+        for detail in summary.residual_details {
+            let detail_text = i18n
+                .get_msg_ctx(detail.message_key, &i18n::fluent_args! {
+                    "count" => detail.count,
+                })
+                .into_owned();
+            let _ = write!(text, "; {detail_text}");
+        }
+
+        Some(text)
+    }
+
+    fn legacy_inventory_summary(
+        inventory: &SingleplayerLegacyInventory,
+    ) -> Option<LegacyInventorySummary<'static>> {
+        (inventory.legacy_worlds > 0).then_some(LegacyInventorySummary {
+            legacy_worlds: inventory.legacy_worlds,
+            residual_details: Self::legacy_inventory_summary_details(inventory),
+        })
+    }
+
+    fn legacy_inventory_summary_details(
+        inventory: &SingleplayerLegacyInventory,
+    ) -> Vec<LegacyInventorySummaryDetail<'static>> {
+        let mut details = Vec::new();
+        let residual_missing_typed_origin = inventory
+            .legacy_worlds_without_typed_origin
+            .saturating_sub(inventory.legacy_unknown_worlds);
+        Self::push_legacy_inventory_summary_detail(
+            &mut details,
+            inventory.legacy_unknown_worlds,
+            "main-singleplayer-legacy_stock-unknown",
+        );
+        Self::push_legacy_inventory_summary_detail(
+            &mut details,
+            residual_missing_typed_origin,
+            "main-singleplayer-legacy_stock-missing_typed_origin",
+        );
+        Self::push_legacy_inventory_summary_detail(
+            &mut details,
+            inventory.legacy_worlds_without_compat_audit,
+            "main-singleplayer-legacy_stock-missing_compat_audit",
+        );
+        Self::push_legacy_inventory_summary_detail(
+            &mut details,
+            inventory.legacy_worlds_with_sidecarless_managed_residual,
+            "main-singleplayer-legacy_stock-sidecarless_managed_residual",
+        );
+        details
+    }
+
+    fn push_legacy_inventory_summary_detail(
+        details: &mut Vec<LegacyInventorySummaryDetail<'static>>,
+        count: usize,
+        message_key: &'static str,
+    ) {
+        if count > 0 {
+            details.push(LegacyInventorySummaryDetail { message_key, count });
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct LegacyInventorySummary<'a> {
+    legacy_worlds: usize,
+    residual_details: Vec<LegacyInventorySummaryDetail<'a>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LegacyInventorySummaryDetail<'a> {
+    message_key: &'a str,
+    count: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LegacyInventorySummaryDetail, LegacyMetadataGapState, Screen};
+    use crate::singleplayer::{
+        SingleplayerLegacyInventory, SingleplayerLegacyOrigin, SingleplayerWorld,
+        SingleplayerWorldSource,
+    };
+    use common::uuid::Uuid;
+    use server::{CompatAuditV1, CompatEntryKindV1};
+
+    fn test_world(
+        world_source: SingleplayerWorldSource,
+        legacy_origin: Option<SingleplayerLegacyOrigin>,
+        compat_audit: bool,
+        managed_recipe_sidecar_missing: bool,
+    ) -> SingleplayerWorld {
+        SingleplayerWorld {
+            world_id: Uuid::nil(),
+            realm_id: Uuid::nil(),
+            name: "test".to_string(),
+            gen_opts: None,
+            day_length: 0.0,
+            seed: 0,
+            world_source,
+            source_ref: None,
+            legacy_origin,
+            compat_audit: compat_audit
+                .then(|| CompatAuditV1::loaded_existing(CompatEntryKindV1::LoadLegacy)),
+            managed_recipe_sidecar_missing,
+            world_recipe_hash: None,
+            topology_id: None,
+            is_generated: false,
+            path: std::path::PathBuf::from("test-world"),
+            map_path: std::path::PathBuf::from("test-world/map.bin"),
+        }
+    }
+
+    #[test]
+    fn provenance_origin_msg_keys_match_expected_variants() {
+        assert_eq!(
+            Screen::provenance_origin_msg_key(&SingleplayerLegacyOrigin::LoadPath(
+                "C:/maps/world.bin".to_string()
+            )),
+            "main-singleplayer-provenance-load_path"
+        );
+        assert_eq!(
+            Screen::provenance_origin_msg_key(&SingleplayerLegacyOrigin::LoadLegacyPath(
+                "C:/maps/legacy.bin".to_string()
+            )),
+            "main-singleplayer-provenance-load_legacy_path"
+        );
+        assert_eq!(
+            Screen::provenance_origin_msg_key(&SingleplayerLegacyOrigin::LoadAsset(
+                "world.test.asset".to_string()
+            )),
+            "main-singleplayer-provenance-load_asset"
+        );
+        assert_eq!(
+            Screen::provenance_origin_msg_key(&SingleplayerLegacyOrigin::LoadOrGenerate {
+                name: "managed".to_string(),
+                overwrite: true,
+            }),
+            "main-singleplayer-provenance-load_or_generate"
+        );
+    }
+
+    #[test]
+    fn provenance_world_source_msg_keys_cover_legacy_worlds_only() {
+        assert_eq!(
+            Screen::provenance_world_source_msg_key(&SingleplayerWorldSource::LegacyUnknown),
+            Some("main-singleplayer-provenance-legacy_unknown")
+        );
+        assert_eq!(
+            Screen::provenance_world_source_msg_key(&SingleplayerWorldSource::LegacyMigrated),
+            Some("main-singleplayer-provenance-legacy_migrated")
+        );
+        assert_eq!(
+            Screen::provenance_world_source_msg_key(&SingleplayerWorldSource::Generated),
+            None
+        );
+        assert_eq!(
+            Screen::provenance_world_source_msg_key(&SingleplayerWorldSource::DefaultAsset),
+            None
+        );
+    }
+
+    #[test]
+    fn provenance_path_display_name_prefers_file_name() {
+        assert_eq!(
+            Screen::provenance_path_display_name("C:/maps/world.bin"),
+            "world.bin"
+        );
+        assert_eq!(
+            Screen::provenance_path_display_name("legacy-world.bin"),
+            "legacy-world.bin"
+        );
+    }
+
+    #[test]
+    fn provenance_overwrite_msg_keys_match_expected_variants() {
+        assert_eq!(
+            Screen::provenance_overwrite_msg_key(true),
+            "main-singleplayer-provenance-overwrite-true"
+        );
+        assert_eq!(
+            Screen::provenance_overwrite_msg_key(false),
+            "main-singleplayer-provenance-overwrite-false"
+        );
+    }
+
+    #[test]
+    fn legacy_metadata_gap_msg_keys_match_expected_variants() {
+        assert_eq!(
+            Screen::legacy_metadata_gap_msg_key(LegacyMetadataGapState::MissingTypedOrigin),
+            "main-singleplayer-legacy_gap-missing_typed_origin"
+        );
+        assert_eq!(
+            Screen::legacy_metadata_gap_msg_key(LegacyMetadataGapState::MissingCompatAudit),
+            "main-singleplayer-legacy_gap-missing_compat_audit"
+        );
+        assert_eq!(
+            Screen::legacy_metadata_gap_msg_key(
+                LegacyMetadataGapState::MissingTypedOriginAndCompatAudit
+            ),
+            "main-singleplayer-legacy_gap-missing_typed_origin_and_compat_audit"
+        );
+    }
+
+    #[test]
+    fn legacy_gap_badge_msg_keys_match_expected_variants() {
+        assert_eq!(
+            Screen::legacy_gap_badge_msg_key(LegacyMetadataGapState::MissingTypedOrigin),
+            "main-singleplayer-legacy_gap-badge-missing_typed_origin"
+        );
+        assert_eq!(
+            Screen::legacy_gap_badge_msg_key(LegacyMetadataGapState::MissingCompatAudit),
+            "main-singleplayer-legacy_gap-badge-missing_compat_audit"
+        );
+        assert_eq!(
+            Screen::legacy_gap_badge_msg_key(
+                LegacyMetadataGapState::MissingTypedOriginAndCompatAudit
+            ),
+            "main-singleplayer-legacy_gap-badge-missing_typed_origin_and_compat_audit"
+        );
+    }
+
+    #[test]
+    fn legacy_metadata_gap_state_only_surfaces_real_legacy_gaps() {
+        assert_eq!(
+            Screen::legacy_metadata_gap_state(
+                &SingleplayerWorldSource::LegacyUnknown,
+                false,
+                false
+            ),
+            Some(LegacyMetadataGapState::MissingTypedOriginAndCompatAudit)
+        );
+        assert_eq!(
+            Screen::legacy_metadata_gap_state(
+                &SingleplayerWorldSource::LegacyMigrated,
+                false,
+                true
+            ),
+            Some(LegacyMetadataGapState::MissingTypedOrigin)
+        );
+        assert_eq!(
+            Screen::legacy_metadata_gap_state(
+                &SingleplayerWorldSource::LegacyMigrated,
+                true,
+                false
+            ),
+            Some(LegacyMetadataGapState::MissingCompatAudit)
+        );
+        assert_eq!(
+            Screen::legacy_metadata_gap_state(&SingleplayerWorldSource::LegacyMigrated, true, true),
+            None
+        );
+        assert_eq!(
+            Screen::legacy_metadata_gap_state(&SingleplayerWorldSource::Generated, false, false),
+            None
+        );
+    }
+
+    #[test]
+    fn legacy_gap_badge_text_only_surfaces_real_legacy_gaps() {
+        let missing_both = test_world(SingleplayerWorldSource::LegacyUnknown, None, false, false);
+        assert_eq!(
+            Screen::legacy_metadata_gap_state(
+                &missing_both.world_source,
+                missing_both.legacy_origin.is_some(),
+                missing_both.compat_audit.is_some()
+            ),
+            Some(LegacyMetadataGapState::MissingTypedOriginAndCompatAudit)
+        );
+
+        let missing_audit = test_world(
+            SingleplayerWorldSource::LegacyMigrated,
+            Some(SingleplayerLegacyOrigin::LoadLegacyPath(
+                "C:/maps/legacy.bin".to_string(),
+            )),
+            false,
+            false,
+        );
+        assert_eq!(
+            Screen::legacy_metadata_gap_state(
+                &missing_audit.world_source,
+                missing_audit.legacy_origin.is_some(),
+                missing_audit.compat_audit.is_some()
+            ),
+            Some(LegacyMetadataGapState::MissingCompatAudit)
+        );
+
+        let generated = test_world(SingleplayerWorldSource::Generated, None, false, false);
+        assert_eq!(
+            Screen::legacy_metadata_gap_state(
+                &generated.world_source,
+                generated.legacy_origin.is_some(),
+                generated.compat_audit.is_some()
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn legacy_inventory_summary_hides_when_no_legacy_worlds_remain() {
+        assert_eq!(
+            Screen::legacy_inventory_summary(&SingleplayerLegacyInventory::default()),
+            None
+        );
+    }
+
+    #[test]
+    fn legacy_inventory_summary_preserves_non_zero_residual_truth() {
+        let summary = Screen::legacy_inventory_summary(&SingleplayerLegacyInventory {
+            total_worlds: 6,
+            legacy_worlds: 3,
+            legacy_unknown_worlds: 1,
+            legacy_worlds_without_typed_origin: 2,
+            legacy_worlds_without_compat_audit: 2,
+            legacy_worlds_with_sidecarless_managed_residual: 1,
+            ..SingleplayerLegacyInventory::default()
+        })
+        .expect("legacy summary should exist");
+
+        assert_eq!(summary.legacy_worlds, 3);
+        assert_eq!(summary.residual_details, vec![
+            LegacyInventorySummaryDetail {
+                message_key: "main-singleplayer-legacy_stock-unknown",
+                count: 1,
+            },
+            LegacyInventorySummaryDetail {
+                message_key: "main-singleplayer-legacy_stock-missing_typed_origin",
+                count: 1,
+            },
+            LegacyInventorySummaryDetail {
+                message_key: "main-singleplayer-legacy_stock-missing_compat_audit",
+                count: 2,
+            },
+            LegacyInventorySummaryDetail {
+                message_key: "main-singleplayer-legacy_stock-sidecarless_managed_residual",
+                count: 1,
+            },
+        ]);
+    }
+
+    #[test]
+    fn legacy_inventory_summary_hides_missing_typed_origin_when_fully_explained_by_unknown() {
+        let summary = Screen::legacy_inventory_summary(&SingleplayerLegacyInventory {
+            total_worlds: 4,
+            legacy_worlds: 2,
+            legacy_unknown_worlds: 1,
+            legacy_worlds_without_typed_origin: 1,
+            legacy_worlds_without_compat_audit: 0,
+            ..SingleplayerLegacyInventory::default()
+        })
+        .expect("legacy summary should exist");
+
+        assert_eq!(summary.legacy_worlds, 2);
+        assert_eq!(summary.residual_details, vec![
+            LegacyInventorySummaryDetail {
+                message_key: "main-singleplayer-legacy_stock-unknown",
+                count: 1,
+            }
+        ]);
+    }
+
+    #[test]
+    fn legacy_inventory_summary_omits_zero_residual_buckets() {
+        let summary = Screen::legacy_inventory_summary(&SingleplayerLegacyInventory {
+            total_worlds: 6,
+            legacy_worlds: 3,
+            legacy_unknown_worlds: 0,
+            legacy_worlds_without_typed_origin: 0,
+            legacy_worlds_without_compat_audit: 2,
+            legacy_worlds_with_sidecarless_managed_residual: 0,
+            ..SingleplayerLegacyInventory::default()
+        })
+        .expect("legacy summary should exist");
+
+        assert_eq!(summary.legacy_worlds, 3);
+        assert_eq!(summary.residual_details, vec![
+            LegacyInventorySummaryDetail {
+                message_key: "main-singleplayer-legacy_stock-missing_compat_audit",
+                count: 2,
+            }
+        ]);
+    }
+
+    #[test]
+    fn current_selection_suppresses_list_badge_duplication() {
+        assert!(!Screen::should_show_legacy_gap_badge(Some(2), Some(2)));
+        assert!(Screen::should_show_legacy_gap_badge(Some(1), Some(2)));
+        assert!(Screen::should_show_legacy_gap_badge(Some(1), None));
+    }
+
+    #[test]
+    fn legacy_unknown_without_typed_origin_still_maps_to_real_gap_states() {
+        let missing_both = Screen::legacy_metadata_gap_state(
+            &SingleplayerWorldSource::LegacyUnknown,
+            false,
+            false,
+        );
+        assert_eq!(
+            missing_both,
+            Some(LegacyMetadataGapState::MissingTypedOriginAndCompatAudit)
+        );
+
+        let missing_origin_only =
+            Screen::legacy_metadata_gap_state(&SingleplayerWorldSource::LegacyUnknown, false, true);
+        assert_eq!(
+            missing_origin_only,
+            Some(LegacyMetadataGapState::MissingTypedOrigin)
+        );
+
+        assert_eq!(
+            Screen::provenance_world_source_msg_key(&SingleplayerWorldSource::LegacyUnknown),
+            Some("main-singleplayer-provenance-legacy_unknown")
+        );
+    }
+
+    #[test]
+    fn managed_recipe_sidecar_missing_text_only_surfaces_runtime_residual_truth() {
+        let sidecarless_managed_world = test_world(
+            SingleplayerWorldSource::Generated,
+            Some(SingleplayerLegacyOrigin::LoadOrGenerate {
+                name: "managed".to_string(),
+                overwrite: false,
+            }),
+            true,
+            true,
+        );
+        assert_eq!(
+            Screen::managed_recipe_sidecar_missing_msg_key(&sidecarless_managed_world),
+            Some("main-singleplayer-managed_recipe_sidecar_missing")
+        );
+
+        let strict_world = test_world(
+            SingleplayerWorldSource::Generated,
+            Some(SingleplayerLegacyOrigin::LoadOrGenerate {
+                name: "managed".to_string(),
+                overwrite: false,
+            }),
+            true,
+            false,
+        );
+        assert_eq!(
+            Screen::managed_recipe_sidecar_missing_msg_key(&strict_world),
+            None
+        );
+    }
+
+    #[test]
+    fn managed_recipe_sidecar_missing_badge_tracks_same_runtime_truth() {
+        let sidecarless_managed_world = test_world(
+            SingleplayerWorldSource::Generated,
+            Some(SingleplayerLegacyOrigin::LoadOrGenerate {
+                name: "managed".to_string(),
+                overwrite: false,
+            }),
+            true,
+            true,
+        );
+        assert!(
+            Screen::managed_recipe_sidecar_missing_msg_key(&sidecarless_managed_world).is_some()
+        );
+
+        let strict_world = test_world(
+            SingleplayerWorldSource::Generated,
+            Some(SingleplayerLegacyOrigin::LoadOrGenerate {
+                name: "managed".to_string(),
+                overwrite: false,
+            }),
+            true,
+            false,
+        );
+        assert!(Screen::managed_recipe_sidecar_missing_msg_key(&strict_world).is_none());
     }
 }

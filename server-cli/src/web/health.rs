@@ -27,6 +27,7 @@ pub(super) struct MetricsState {
 }
 
 mod observability;
+pub(crate) use observability::set_chunk_lifecycle_observability_status;
 #[cfg(feature = "worldgen")]
 pub(crate) use observability::set_world_compat_observability_status;
 pub(in crate::web) use observability::{
@@ -174,6 +175,7 @@ impl HealthState {
         query_hint: veloren_query_server::proto::ServerInfo,
     ) -> CompatibilityContractReport {
         let authoritative_compatibility = common_net::msg::ServerCompatibility::current();
+        let world_compat = self.world_compat_report();
         let authoritative_auth_provider = self.authoritative_auth_provider.clone();
         let authoritative_auth_mode = runtime_auth_mode(authoritative_auth_provider.as_deref());
         let public_entry_handoff = self.public_entry_handoff_report(
@@ -272,6 +274,7 @@ impl HealthState {
                     "re-expose the query surface only after version parity is restored",
                 ],
             },
+            world_compat,
             public_entry_handoff,
             environment_matches,
             compatibility_matches,
@@ -533,9 +536,9 @@ impl HealthState {
         )
     }
 
-    fn world_compat_preflight_component(&self) -> (PreflightComponentReport, Option<String>) {
-        let report = self.world_compat_report();
-
+    fn world_compat_preflight_component_from_report(
+        report: WorldCompatReport,
+    ) -> (PreflightComponentReport, Option<String>) {
         match report.status {
             "world-compat-clear" => (
                 PreflightComponentReport {
@@ -566,6 +569,130 @@ impl HealthState {
                     requires_operator_review: true,
                 },
                 Some(report.detail),
+            ),
+        }
+    }
+
+    fn format_world_compat_preflight_review_detail(report: &WorldCompatReport) -> String {
+        fn join_fields(fields: &[&'static str]) -> String {
+            if fields.is_empty() {
+                "none".to_owned()
+            } else {
+                fields.join(", ")
+            }
+        }
+
+        fn follow_up_hint(report: &WorldCompatReport) -> &'static str {
+            match report.review_result_status_hint {
+                Some("exception-accepted") if report.transition_window_open == Some(true) => {
+                    "if this accepted transition window later closes under load_legacy_mode = deny \
+                     and load_or_generate_sidecarless_mode = deny, append an explicit approved \
+                     follow-up on the same release-review-record instead of silently rewriting the \
+                     archived exception section; do not treat that posture change as \
+                     correction-only metadata clarification, and preserve or directly reference \
+                     archive_reference/source_record_state/post_archive_verification_reference in \
+                     that follow-up history; source_record_state must stay aligned with the \
+                     current approved terminal result_status recorded for that follow-up, while \
+                     prior_result_statuses remains the same-section history proof that the \
+                     superseded terminal state was exception-accepted"
+                },
+                Some("approved") => {
+                    "if this approved deny-rehearsal later rolls back or reopens the compat \
+                     window, append an explicit rolled-back follow-up on the same \
+                     release-review-record instead of silently rewriting the archived approved \
+                     section; do not treat that posture change as correction-only metadata \
+                     clarification, and preserve or directly reference \
+                     archive_reference/source_record_state/post_archive_verification_reference in \
+                     that follow-up history; source_record_state must stay aligned with the \
+                     current rolled-back terminal result_status recorded for that follow-up, while \
+                     prior_result_statuses remains the same-section history proof that the \
+                     superseded terminal state was approved"
+                },
+                _ => {
+                    "preserve any later world-compat decision changes as append-only follow-up \
+                     history on the same release-review-record instead of rewriting archived \
+                     terminal sections; archived follow-up history must preserve or directly \
+                     reference archive_reference/source_record_state/\
+                     post_archive_verification_reference; source_record_state stays aligned with \
+                     the current follow-up terminal result_status, while same-section \
+                     prior_result_statuses provides the history proof for any superseded terminal \
+                     state"
+                },
+            }
+        }
+
+        let result_status_hint = report
+            .review_result_status_hint
+            .unwrap_or("hint-unavailable");
+        let same_section_archive_receipt_required = report
+            .same_section_archive_receipt_required
+            .map(|required| required.to_string())
+            .unwrap_or_else(|| "unknown".to_owned());
+        let same_section_post_archive_verification_required = report
+            .same_section_post_archive_verification_required
+            .map(|required| required.to_string())
+            .unwrap_or_else(|| "unknown".to_owned());
+
+        format!(
+            "review dedicated world compatibility status in /health/world-compat before rollout: \
+             {}; result_status_hint={}; terminal_record_fields=[{}]; \
+             archive_receipt_fields_when_terminal=[{}]; \
+             post_archive_writeback_fields_after_archive=[{}]; \
+             archive_correlation_dimensions_when_terminal=[{}]; \
+             same_section_archive_receipt_required={}; \
+             same_section_post_archive_verification_required={}; follow_up_action={}",
+            report.detail,
+            result_status_hint,
+            join_fields(&report.required_terminal_record_fields),
+            join_fields(&report.required_archive_receipt_fields_when_terminal),
+            join_fields(&report.required_post_archive_writeback_fields_after_archive),
+            join_fields(&report.required_archive_correlation_dimensions_when_terminal),
+            same_section_archive_receipt_required,
+            same_section_post_archive_verification_required,
+            follow_up_hint(report),
+        )
+    }
+
+    fn chunk_lifecycle_preflight_component(&self) -> (PreflightComponentReport, Option<String>) {
+        let entries =
+            snapshot_runtime_observability_inventory(&self.runtime_observability_inventory);
+        let chunk_lifecycle_entry = entries
+            .into_iter()
+            .find(|entry| entry.surface == RuntimeObservabilitySurface::ChunkLifecycle);
+
+        match chunk_lifecycle_entry {
+            Some(entry) if entry.state == RuntimeObservabilityState::Healthy => (
+                PreflightComponentReport {
+                    signal: "chunk-lifecycle",
+                    endpoint: "/health/observability",
+                    status: "chunk-lifecycle-clear",
+                    blocking: false,
+                    requires_operator_review: false,
+                },
+                None,
+            ),
+            Some(entry) => (
+                PreflightComponentReport {
+                    signal: "chunk-lifecycle",
+                    endpoint: "/health/observability",
+                    status: "chunk-lifecycle-review-required",
+                    blocking: false,
+                    requires_operator_review: true,
+                },
+                Some(entry.detail),
+            ),
+            None => (
+                PreflightComponentReport {
+                    signal: "chunk-lifecycle",
+                    endpoint: "/health/observability",
+                    status: "chunk-lifecycle-unrecorded",
+                    blocking: false,
+                    requires_operator_review: true,
+                },
+                Some(
+                    "dedicated runtime did not publish a chunk lifecycle observability surface"
+                        .to_owned(),
+                ),
             ),
         }
     }
@@ -694,9 +821,9 @@ impl HealthState {
                     signal: "world-compat",
                     success_status: StatusCode::OK.as_u16(),
                     failure_status: None,
-                    semantics: "machine-readable runtime world file compatibility audit and \
-                                recipe contract status, including strict load fallback review \
-                                signals for dedicated startup",
+                    semantics: "machine-readable runtime world compatibility posture and \
+                                effective recipe fingerprint surface, including strict load \
+                                fallback and transitional review signals for dedicated startup",
                 },
                 HealthEndpointContract {
                     path: "/health/preflight",
@@ -899,26 +1026,59 @@ impl HealthState {
                 .into_iter()
                 .map(|entry| {
                     let (
+                        recent_abnormal_count,
+                        latest_chunk_key,
+                        latest_terminal,
+                        latest_tick,
                         configured_mode,
+                        load_legacy_mode,
+                        load_or_generate_sidecarless_mode,
                         compat_entry,
                         compat_decision,
                         compat_failure,
                         strict_load_contract_gap,
+                        managed_recipe_sidecar_missing,
                         world_recipe_hash,
                         chunk_recipe_hash,
                         topology_id,
                         preset_id,
                     ) = match entry.context {
-                        RuntimeObservabilityContext::None => {
-                            (None, None, None, None, None, None, None, None, None)
-                        },
+                        RuntimeObservabilityContext::None => (
+                            None, None, None, None, None, None, None, None, None, None, None, None,
+                            None, None, None, None,
+                        ),
+                        RuntimeObservabilityContext::ChunkLifecycle(context) => (
+                            Some(context.recent_abnormal_count),
+                            Some(context.latest_chunk_key),
+                            Some(context.latest_terminal),
+                            context.latest_tick,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                        ),
                         #[cfg(feature = "worldgen")]
                         RuntimeObservabilityContext::WorldCompat(context) => (
+                            None,
+                            None,
+                            None,
+                            None,
                             Some(context.configured_mode),
+                            Some(context.load_legacy_mode),
+                            Some(context.load_or_generate_sidecarless_mode),
                             Some(context.audit.entry.as_str()),
                             Some(context.audit.decision.as_str()),
                             Some(context.audit.failure_kind.as_str()),
                             Some(context.strict_load_contract_gap),
+                            Some(context.managed_recipe_sidecar_missing),
                             Some(context.world_recipe_hash),
                             Some(context.chunk_recipe_hash),
                             Some(context.topology_id),
@@ -930,11 +1090,18 @@ impl HealthState {
                         surface: entry.surface.as_str(),
                         state: entry.state.as_str(),
                         detail: entry.detail,
+                        recent_abnormal_count,
+                        latest_chunk_key,
+                        latest_terminal,
+                        latest_tick,
                         configured_mode,
+                        load_legacy_mode,
+                        load_or_generate_sidecarless_mode,
                         compat_entry,
                         compat_decision,
                         compat_failure,
                         strict_load_contract_gap,
+                        managed_recipe_sidecar_missing,
                         world_recipe_hash,
                         chunk_recipe_hash,
                         topology_id,
@@ -943,6 +1110,54 @@ impl HealthState {
                 })
                 .collect(),
         }
+    }
+
+    #[cfg(feature = "worldgen")]
+    fn world_compat_transition_window_open(
+        load_legacy_mode: &str,
+        load_or_generate_sidecarless_mode: &str,
+    ) -> bool {
+        load_legacy_mode == "allow" || load_or_generate_sidecarless_mode == "allow"
+    }
+
+    #[cfg(feature = "worldgen")]
+    fn world_compat_review_result_status_hint(
+        transition_window_open: bool,
+        requires_operator_review: bool,
+    ) -> Option<&'static str> {
+        if transition_window_open {
+            Some("exception-accepted")
+        } else if requires_operator_review {
+            None
+        } else {
+            Some("approved")
+        }
+    }
+
+    #[cfg(feature = "worldgen")]
+    fn world_compat_required_terminal_record_fields(
+        review_result_status_hint: Option<&'static str>,
+    ) -> Vec<&'static str> {
+        match review_result_status_hint {
+            Some("approved") => vec!["rollback_reference"],
+            Some("exception-accepted") => vec!["exception_reason", "rollback_reference"],
+            _ => Vec::new(),
+        }
+    }
+
+    #[cfg(feature = "worldgen")]
+    fn world_compat_required_archive_receipt_fields_when_terminal() -> Vec<&'static str> {
+        release_review_archive_receipt_field_names()
+    }
+
+    #[cfg(feature = "worldgen")]
+    fn world_compat_required_post_archive_writeback_fields_after_archive() -> Vec<&'static str> {
+        release_review_post_archive_writeback_field_names()
+    }
+
+    #[cfg(feature = "worldgen")]
+    fn world_compat_required_archive_correlation_dimensions_when_terminal() -> Vec<&'static str> {
+        release_review_archive_correlation_dimensions("world-compat")
     }
 
     pub(super) fn world_compat_report(&self) -> WorldCompatReport {
@@ -955,11 +1170,22 @@ impl HealthState {
                 detail: "world generation is disabled for this build, so no world file \
                          compatibility contract applies"
                     .to_owned(),
+                transition_window_open: None,
+                review_result_status_hint: None,
+                required_terminal_record_fields: Vec::new(),
+                required_archive_receipt_fields_when_terminal: Vec::new(),
+                required_post_archive_writeback_fields_after_archive: Vec::new(),
+                required_archive_correlation_dimensions_when_terminal: Vec::new(),
+                same_section_archive_receipt_required: None,
+                same_section_post_archive_verification_required: None,
                 configured_mode: None,
+                load_legacy_mode: None,
+                load_or_generate_sidecarless_mode: None,
                 compat_entry: None,
                 compat_decision: None,
                 compat_failure: None,
                 strict_load_contract_gap: None,
+                managed_recipe_sidecar_missing: None,
                 world_recipe_hash: None,
                 chunk_recipe_hash: None,
                 topology_id: None,
@@ -981,6 +1207,15 @@ impl HealthState {
                     RuntimeObservabilityContext::WorldCompat(context) => {
                         let requires_operator_review =
                             entry.state != RuntimeObservabilityState::Healthy;
+                        let transition_window_open = Self::world_compat_transition_window_open(
+                            &context.load_legacy_mode,
+                            &context.load_or_generate_sidecarless_mode,
+                        );
+                        let review_result_status_hint =
+                            Self::world_compat_review_result_status_hint(
+                                transition_window_open,
+                                requires_operator_review,
+                            );
 
                         WorldCompatReport {
                             status: if requires_operator_review {
@@ -991,11 +1226,31 @@ impl HealthState {
                             environment: self.environment,
                             requires_operator_review,
                             detail: entry.detail,
+                            transition_window_open: Some(transition_window_open),
+                            review_result_status_hint,
+                            required_terminal_record_fields:
+                                Self::world_compat_required_terminal_record_fields(
+                                    review_result_status_hint,
+                                ),
+                            required_archive_receipt_fields_when_terminal:
+                                Self::world_compat_required_archive_receipt_fields_when_terminal(),
+                            required_post_archive_writeback_fields_after_archive: Self::world_compat_required_post_archive_writeback_fields_after_archive(),
+                            required_archive_correlation_dimensions_when_terminal:
+                                Self::world_compat_required_archive_correlation_dimensions_when_terminal(),
+                            same_section_archive_receipt_required: Some(true),
+                            same_section_post_archive_verification_required: Some(true),
                             configured_mode: Some(context.configured_mode),
+                            load_legacy_mode: Some(context.load_legacy_mode),
+                            load_or_generate_sidecarless_mode: Some(
+                                context.load_or_generate_sidecarless_mode,
+                            ),
                             compat_entry: Some(context.audit.entry.as_str()),
                             compat_decision: Some(context.audit.decision.as_str()),
                             compat_failure: Some(context.audit.failure_kind.as_str()),
                             strict_load_contract_gap: Some(context.strict_load_contract_gap),
+                            managed_recipe_sidecar_missing: Some(
+                                context.managed_recipe_sidecar_missing,
+                            ),
                             world_recipe_hash: Some(context.world_recipe_hash),
                             chunk_recipe_hash: Some(context.chunk_recipe_hash),
                             topology_id: Some(context.topology_id),
@@ -1003,18 +1258,30 @@ impl HealthState {
                             source_surface: "world-compat",
                         }
                     },
-                    RuntimeObservabilityContext::None => WorldCompatReport {
+                    RuntimeObservabilityContext::ChunkLifecycle(_)
+                    | RuntimeObservabilityContext::None => WorldCompatReport {
                         status: "world-compat-unrecorded",
                         environment: self.environment,
                         requires_operator_review: true,
                         detail: "world compatibility runtime surface is present but did not \
                                  publish structured compatibility context"
                             .to_owned(),
+                        transition_window_open: None,
+                        review_result_status_hint: None,
+                        required_terminal_record_fields: Vec::new(),
+                        required_archive_receipt_fields_when_terminal: Vec::new(),
+                        required_post_archive_writeback_fields_after_archive: Vec::new(),
+                        required_archive_correlation_dimensions_when_terminal: Vec::new(),
+                        same_section_archive_receipt_required: None,
+                        same_section_post_archive_verification_required: None,
                         configured_mode: None,
+                        load_legacy_mode: None,
+                        load_or_generate_sidecarless_mode: None,
                         compat_entry: None,
                         compat_decision: None,
                         compat_failure: None,
                         strict_load_contract_gap: None,
+                        managed_recipe_sidecar_missing: None,
                         world_recipe_hash: None,
                         chunk_recipe_hash: None,
                         topology_id: None,
@@ -1029,11 +1296,22 @@ impl HealthState {
                     detail: "dedicated startup did not publish a world compatibility status \
                              surface"
                         .to_owned(),
+                    transition_window_open: None,
+                    review_result_status_hint: None,
+                    required_terminal_record_fields: Vec::new(),
+                    required_archive_receipt_fields_when_terminal: Vec::new(),
+                    required_post_archive_writeback_fields_after_archive: Vec::new(),
+                    required_archive_correlation_dimensions_when_terminal: Vec::new(),
+                    same_section_archive_receipt_required: None,
+                    same_section_post_archive_verification_required: None,
                     configured_mode: None,
+                    load_legacy_mode: None,
+                    load_or_generate_sidecarless_mode: None,
                     compat_entry: None,
                     compat_decision: None,
                     compat_failure: None,
                     strict_load_contract_gap: None,
+                    managed_recipe_sidecar_missing: None,
                     world_recipe_hash: None,
                     chunk_recipe_hash: None,
                     topology_id: None,
@@ -1056,7 +1334,11 @@ impl HealthState {
         let backup = self.backup_report();
         let recovery_drill = self.recovery_drill_report();
         let public_entry_handoff = compatibility_contract.public_entry_handoff.clone();
-        let (world_compat, world_compat_review_detail) = self.world_compat_preflight_component();
+        let world_compat_report = compatibility_contract.world_compat.clone();
+        let (world_compat, world_compat_review_detail) =
+            Self::world_compat_preflight_component_from_report(world_compat_report.clone());
+        let (chunk_lifecycle, chunk_lifecycle_review_detail) =
+            self.chunk_lifecycle_preflight_component();
         let (runtime_listeners, runtime_listener_failures) =
             self.runtime_listener_preflight_component();
         let management_auth = self.management_auth_report();
@@ -1098,6 +1380,7 @@ impl HealthState {
                 requires_operator_review: public_entry_handoff.requires_operator_review,
             },
             world_compat,
+            chunk_lifecycle,
             runtime_listeners,
             PreflightComponentReport {
                 signal: "management-auth",
@@ -1149,6 +1432,10 @@ impl HealthState {
                         "world-compat" => {
                             "inspect the dedicated world compatibility surface and record explicit \
                              review before rollout"
+                        },
+                        "chunk-lifecycle" => {
+                            "inspect the dedicated chunk lifecycle observability status and record \
+                             explicit review before rollout"
                         },
                         _ => {
                             "inspect advisory governance findings and record explicit review \
@@ -1231,9 +1518,23 @@ impl HealthState {
             operator_review_items.push(PreflightReviewItem {
                 kind: "world-compat-review",
                 blocking: false,
+                detail: Self::format_world_compat_preflight_review_detail(&WorldCompatReport {
+                    detail,
+                    ..world_compat_report.clone()
+                }),
+            });
+            review_decision_contracts.push(world_compat_preflight_review_decision_contract(
+                &world_compat_report,
+            ));
+        }
+
+        if let Some(detail) = chunk_lifecycle_review_detail {
+            operator_review_items.push(PreflightReviewItem {
+                kind: "chunk-lifecycle-review",
+                blocking: false,
                 detail: format!(
-                    "review dedicated world compatibility status in /health/world-compat before \
-                     rollout: {detail}"
+                    "review chunk lifecycle status in /health/observability before rollout: \
+                     {detail}"
                 ),
             });
         }
@@ -2471,6 +2772,18 @@ fn public_entry_handoff_preflight_review_decision_contract(
         review_owner: "release-operator",
         decision_scope: "bundled Public official entry server/auth pin handoff for non-local \
                          rollout",
+        current_result_status_hint: None,
+        current_terminal_record_fields: Vec::new(),
+        required_archive_receipt_fields_when_terminal: archive_handoff_contract
+            .required_archive_receipt_fields
+            .clone(),
+        required_post_archive_writeback_fields_after_archive: post_archive_writeback_fields.clone(),
+        required_archive_correlation_dimensions_when_terminal: archive_handoff_contract
+            .required_archive_correlation_dimensions
+            .clone(),
+        same_section_archive_receipt_required: archive_handoff_contract
+            .terminal_section_not_complete_without_archive_receipt,
+        same_section_post_archive_verification_required: true,
         required_decision_fields,
         required_decision_field_contracts: required_decision_field_contracts.clone(),
         exception_record_fields: external_record_field_names(&exception_record_field_contracts),
@@ -2559,6 +2872,159 @@ fn public_entry_handoff_supporting_endpoints(
         .collect()
 }
 
+fn world_compat_preflight_review_decision_contract(
+    report: &WorldCompatReport,
+) -> PreflightReviewDecisionContract {
+    fn minimum_world_compat_example_status(report: &WorldCompatReport) -> &'static str {
+        match report.review_result_status_hint {
+            Some("approved") => "rolled-back",
+            _ => "approved",
+        }
+    }
+
+    let required_decision_field_contracts = world_compat_required_decision_field_contracts();
+    let exception_record_field_contracts = world_compat_exception_field_contracts();
+    let archive_handoff_contract = release_review_record_archive_handoff_contract(
+        "world-compat",
+        "release-review-record reached a terminal world compatibility review state with the \
+         runtime audit tuple, decision, and rollback path recorded where applicable",
+        vec!["approved", "exception-accepted", "rejected", "rolled-back"],
+        vec!["approved", "exception-accepted", "rejected", "rolled-back"],
+    );
+    let post_archive_writeback_fields = release_review_post_archive_writeback_field_names();
+    let section_record_template = release_review_section_template_contract(
+        "world-compat",
+        "draft",
+        &required_decision_field_contracts,
+        &exception_record_field_contracts,
+        &archive_handoff_contract,
+        &post_archive_writeback_fields,
+        vec![
+            "keep world-compat review in the same release-review-record as the rest of the \
+             rollout unit",
+            "copy runtime world compatibility truth exactly from /health/world-compat; use \
+             unrecorded only when the runtime surface itself did not publish structured context",
+            "exception fields are only required when a world compatibility gap is explicitly \
+             accepted or when a rollback is recorded",
+        ],
+    );
+    let minimum_section_example = release_review_section_example_contract(
+        "world-compat",
+        minimum_world_compat_example_status(report),
+        &required_decision_field_contracts,
+        vec![
+            "illustrative only; replace example recipe hashes, topology ids, preset ids, and \
+             release references with the real runtime values under review",
+        ],
+    );
+    let section_execution_workflow = release_review_section_execution_workflow("world-compat");
+    let terminal_mutation_contract = release_review_terminal_mutation_contract(
+        "world-compat",
+        &archive_handoff_contract,
+        &post_archive_writeback_fields,
+    );
+    let execution_boundary_contract = release_review_record_execution_boundary_contract(
+        "world-compat",
+        &required_decision_field_contracts,
+        &exception_record_field_contracts,
+        &archive_handoff_contract,
+    );
+    let section_instance_validation_contract =
+        world_compat_section_instance_validation_contract(&required_decision_field_contracts);
+    let validator_integration_readiness_summary =
+        validator_integration_readiness_summary(&section_instance_validation_contract);
+
+    PreflightReviewDecisionContract {
+        signal: "world-compat",
+        review_owner: "release-operator",
+        decision_scope: "dedicated world compatibility runtime review and rollback posture for \
+                         the rollout world state",
+        current_result_status_hint: report.review_result_status_hint,
+        current_terminal_record_fields: report.required_terminal_record_fields.clone(),
+        required_archive_receipt_fields_when_terminal: report
+            .required_archive_receipt_fields_when_terminal
+            .clone(),
+        required_post_archive_writeback_fields_after_archive: report
+            .required_post_archive_writeback_fields_after_archive
+            .clone(),
+        required_archive_correlation_dimensions_when_terminal: report
+            .required_archive_correlation_dimensions_when_terminal
+            .clone(),
+        same_section_archive_receipt_required: report
+            .same_section_archive_receipt_required
+            .unwrap_or(
+                archive_handoff_contract.terminal_section_not_complete_without_archive_receipt,
+            ),
+        same_section_post_archive_verification_required: report
+            .same_section_post_archive_verification_required
+            .unwrap_or(true),
+        required_decision_fields: external_record_field_names(&required_decision_field_contracts),
+        required_decision_field_contracts: required_decision_field_contracts.clone(),
+        exception_record_fields: external_record_field_names(&exception_record_field_contracts),
+        exception_record_field_contracts,
+        record_lifecycle_contract: release_review_record_lifecycle_contract(
+            &required_decision_field_contracts,
+        ),
+        archive_handoff_contract,
+        retention_contract: release_review_record_retention_contract(
+            "world-compat",
+            &post_archive_writeback_fields,
+        ),
+        terminal_mutation_contract,
+        public_entry_transition_contract: None,
+        public_entry_lifecycle_transition_contract: None,
+        section_instance_validation_contract: Some(section_instance_validation_contract),
+        validator_integration_readiness_summary: Some(validator_integration_readiness_summary),
+        authority_pairing_checks: Vec::new(),
+        execution_boundary_contract,
+        result_status_model: world_compat_review_result_status_model(),
+        section_record_template,
+        minimum_section_example,
+        section_execution_workflow,
+        accepted_exception_follow_up: vec![
+            "record the explicit rollback reference before accepting a world compatibility gap",
+            "if the accepted transition window later closes under load_legacy_mode = deny and \
+             load_or_generate_sidecarless_mode = deny, append an explicit approved follow-up on \
+             the same release-review-record instead of silently rewriting the archived exception \
+             section, and preserve or directly reference archive_reference, source_record_state, \
+             and post_archive_verification_reference in that follow-up history; \
+             source_record_state must stay aligned with the current approved terminal \
+             result_status recorded for that follow-up, while prior_result_statuses remains the \
+             same-section proof that the superseded terminal state was exception-accepted",
+            "if an approved deny-rehearsal later rolls back, append an explicit rolled-back \
+             follow-up on the same release-review-record, preserve the reviewed recipe and \
+             topology fingerprint on that follow-up history, and preserve or directly reference \
+             archive_reference, source_record_state, and post_archive_verification_reference; \
+             source_record_state must stay aligned with the current rolled-back terminal \
+             result_status recorded for that follow-up, while prior_result_statuses remains the \
+             same-section proof that the superseded terminal state was approved",
+        ],
+        external_record_owner: "release-operator",
+        external_record_authority: "external-release-tracker",
+        decision_reference_kind: "release-review-record",
+        exception_reference_kind: "world-compat-exception-record",
+        local_contract_role: "minimum-schema-only",
+        supporting_endpoints: vec![
+            PreflightSupportingEndpoint {
+                signal: "world-compat",
+                endpoint: "/health/world-compat",
+                owner: "release-operator",
+                purpose: "record the dedicated world compatibility status, audit tuple, and world \
+                          recipe fingerprint before approving rollout",
+                related_findings: Vec::new(),
+            },
+            PreflightSupportingEndpoint {
+                signal: "compatibility-contract",
+                endpoint: "/health/compatibility",
+                owner: "release-operator",
+                purpose: "cross-check that the dedicated world-compat surface stays aligned with \
+                          the broader compatibility contract during rollout review",
+                related_findings: Vec::new(),
+            },
+        ],
+    }
+}
+
 fn governance_preflight_review_decision_contract(
     supporting_endpoints: Vec<PreflightSupportingEndpoint>,
 ) -> PreflightReviewDecisionContract {
@@ -2615,6 +3081,18 @@ fn governance_preflight_review_decision_contract(
         signal: "governance-audit",
         review_owner: "release-operator",
         decision_scope: "accepted runtime governance findings and explicit risk posture exceptions",
+        current_result_status_hint: None,
+        current_terminal_record_fields: Vec::new(),
+        required_archive_receipt_fields_when_terminal: archive_handoff_contract
+            .required_archive_receipt_fields
+            .clone(),
+        required_post_archive_writeback_fields_after_archive: post_archive_writeback_fields.clone(),
+        required_archive_correlation_dimensions_when_terminal: archive_handoff_contract
+            .required_archive_correlation_dimensions
+            .clone(),
+        same_section_archive_receipt_required: archive_handoff_contract
+            .terminal_section_not_complete_without_archive_receipt,
+        same_section_post_archive_verification_required: true,
         required_decision_fields: external_record_field_names(&required_decision_field_contracts),
         required_decision_field_contracts: required_decision_field_contracts.clone(),
         exception_record_fields: external_record_field_names(&exception_record_field_contracts),
@@ -2707,6 +3185,18 @@ fn management_auth_preflight_review_decision_contract() -> PreflightReviewDecisi
         review_owner: "release-operator",
         decision_scope: "remote management and observability auth posture for unaudited control \
                          or unauthenticated observability surfaces",
+        current_result_status_hint: None,
+        current_terminal_record_fields: Vec::new(),
+        required_archive_receipt_fields_when_terminal: archive_handoff_contract
+            .required_archive_receipt_fields
+            .clone(),
+        required_post_archive_writeback_fields_after_archive: post_archive_writeback_fields.clone(),
+        required_archive_correlation_dimensions_when_terminal: archive_handoff_contract
+            .required_archive_correlation_dimensions
+            .clone(),
+        same_section_archive_receipt_required: archive_handoff_contract
+            .terminal_section_not_complete_without_archive_receipt,
+        same_section_post_archive_verification_required: true,
         required_decision_fields: external_record_field_names(&required_decision_field_contracts),
         required_decision_field_contracts: required_decision_field_contracts.clone(),
         exception_record_fields: external_record_field_names(&exception_record_field_contracts),

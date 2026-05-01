@@ -1,0 +1,17 @@
+(
+    fixture_id: "rtsim_resource_thinning_fixture_v1",
+    context_variant: "baseline_night",
+    fractions: (
+        grass: 0.5,
+        flower: 0.5,
+        fruit: 1.0,
+        vegetable: 0.5,
+        mushroom: 0.5,
+        loot: 1.0,
+        plant: 0.5,
+        stone: 0.5,
+        wood: 0.5,
+        gem: 1.0,
+        ore: 0.5,
+    ),
+)

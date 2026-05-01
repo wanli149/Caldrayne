@@ -53,6 +53,8 @@ fn main() {
             // world_file: sim::FileOpts::Save(sim::SizeOpts::new(12, 12, 4.0)),
             calendar: None,
             compat_mode: Default::default(),
+            load_legacy_mode: Default::default(),
+            load_or_generate_sidecarless_mode: Default::default(),
         },
         &threadpool,
         &|_| {},

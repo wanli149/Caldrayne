@@ -1,6 +1,5 @@
-record-only recipe hashes are audit metadata and are not enforce keys yet
-chunk_stats.json records deterministic static chunk facts for the current audit path; run_id and sampled_chunks[*].generate_ms remain volatile
+recipe provenance and hashes are serialized into normalized audit artifacts, currently participate in gating compare, and are not baseline selection keys
+compare normalization drops run_id fields while preview/world_generate_ms and chunk/sampled_chunks[*].generate_ms remain volatile and non-gating
 chunk_stats.json is produced through the explicit static chunk snapshot entry; runtime supplement and rtsim thinning remain outside this contract
-runtime/runtime_matrix.json records base_runtime_chunk, empty_overlay_runtime_chunk, and fixed_overlay_runtime_chunk variants from the world runtime chunk path without time context or rtsim thinning while preview metrics remain raw
-chunk_recipe_hash is still partial until static_feature_profile is wired
+runtime/runtime_matrix.json records base no-time chunk/supplement summaries, empty/fixed overlay chunk variants, fixed night/calendar full-return variants, and a dedicated baseline-night rtsim thinning sample surface driven by a fixed fixture while preview metrics remain raw
 tiny audit world (map_size_lg=8x8) may fail civilisation bootstrap placement; this is kept in warnings.txt while the default log surface suppresses it as small-map audit noise

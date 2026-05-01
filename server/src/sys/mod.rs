@@ -16,6 +16,7 @@ pub mod subscription;
 pub mod teleporter;
 pub mod terrain;
 pub mod terrain_sync;
+#[cfg(test)] pub(crate) mod test_support;
 pub mod waypoint;
 pub mod wiring;
 

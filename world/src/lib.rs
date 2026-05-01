@@ -12,6 +12,7 @@
 mod all;
 mod block;
 pub mod canvas;
+mod chunk;
 pub mod civ;
 mod column;
 pub mod config;
@@ -39,18 +40,17 @@ pub use common::terrain::site::{DungeonKindMeta, SettlementKindMeta};
 pub use index::{IndexOwned, IndexRef};
 use sim::WorldSimStage;
 
+pub(crate) use self::chunk::pipeline::{
+    ChunkGenerationContext, ChunkGenerationMode, ChunkGenerationOutput,
+};
 use crate::{
-    column::ColumnGen,
-    index::Index,
-    layer::spot::SpotGenerate,
-    site::{SiteKind, SpawnRules},
-    util::{Grid, Sampler, seed_expan},
+    column::ColumnGen, index::Index, layer::spot::SpotGenerate, site::SiteKind, util::Sampler,
 };
 use common::{
     assets::{self, BoxedError, FileAsset, load_ron},
     calendar::Calendar,
     comp::Content,
-    generation::{ChunkSupplement, EntityInfo, EntitySpawn, SpecialEntity},
+    generation::ChunkSupplement,
     lod,
     map::{Marker, MarkerKind},
     resources::TimeOfDay,
@@ -58,16 +58,13 @@ use common::{
     spiral::Spiral2d,
     spot::Spot,
     terrain::{
-        BiomeKind, Block, BlockKind, CoordinateConversions, SpriteKind, TerrainChunk,
-        TerrainChunkMeta, TerrainChunkSize, TerrainGrid,
+        BiomeKind, CoordinateConversions, SpriteKind, TerrainChunk, TerrainChunkSize, TerrainGrid,
     },
-    vol::{ReadVol, RectVolSize, WriteVol},
+    vol::RectVolSize,
 };
 use common_base::prof_span;
 use common_net::msg::{WorldMapMsg, world_msg};
 use enum_map::EnumMap;
-use rand::{RngExt, prelude::*};
-use rand_chacha::ChaCha8Rng;
 use serde::Deserialize;
 use std::{borrow::Cow, fmt, time::Duration};
 use vek::*;
@@ -125,89 +122,6 @@ pub enum WorldGenerateStage {
     WorldCivGenerate(WorldCivStage),
     EconomySimulation,
     SpotGeneration,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ChunkGenerationMode {
-    StaticSnapshot,
-    RuntimeFinalized,
-}
-
-enum ChunkGenerationOutput {
-    StaticSnapshot(TerrainChunk),
-    RuntimeFinalized {
-        chunk: TerrainChunk,
-        supplement: ChunkSupplement,
-    },
-}
-
-struct ChunkBaseBuild<'a> {
-    chunk_pos: Vec2<i32>,
-    chunk_wpos2d: Vec2<i32>,
-    chunk_center_wpos2d: Vec2<i32>,
-    grid_border: i32,
-    zcache_grid: Grid<Option<block::ZCache<'a>>>,
-    chunk: TerrainChunk,
-}
-
-struct StaticChunkArtifacts {
-    entity_spawns: Vec<EntitySpawn>,
-    rtsim_resource_blocks: Vec<Vec3<i32>>,
-}
-
-struct RuntimeChunkArtifacts {
-    supplement: ChunkSupplement,
-    rtsim_resource_blocks: Vec<Vec3<i32>>,
-}
-
-struct WorldRuntimeContext<'a> {
-    time: Option<&'a (TimeOfDay, Calendar)>,
-}
-
-impl<'a> WorldRuntimeContext<'a> {
-    fn new(time: Option<&'a (TimeOfDay, Calendar)>) -> Self { Self { time } }
-
-    fn calendar(&self) -> Option<&'a Calendar> { self.time.map(|(_, calendar)| calendar) }
-
-    fn time(&self) -> Option<&'a (TimeOfDay, Calendar)> { self.time }
-}
-
-struct ChunkGenerationContext<'a> {
-    world_runtime: WorldRuntimeContext<'a>,
-    rtsim_resource_fractions: Option<EnumMap<TerrainResource, f32>>,
-}
-
-impl<'a> ChunkGenerationContext<'a> {
-    fn static_snapshot(time: Option<&'a (TimeOfDay, Calendar)>) -> Self {
-        Self {
-            world_runtime: WorldRuntimeContext::new(time),
-            rtsim_resource_fractions: None,
-        }
-    }
-
-    fn runtime_finalized(
-        time: Option<&'a (TimeOfDay, Calendar)>,
-        rtsim_resource_fractions: Option<EnumMap<TerrainResource, f32>>,
-    ) -> Self {
-        Self {
-            world_runtime: WorldRuntimeContext::new(time),
-            rtsim_resource_fractions,
-        }
-    }
-
-    fn calendar(&self) -> Option<&'a Calendar> { self.world_runtime.calendar() }
-}
-
-impl StaticChunkArtifacts {
-    fn into_runtime_artifacts(self) -> RuntimeChunkArtifacts {
-        RuntimeChunkArtifacts {
-            supplement: ChunkSupplement {
-                entity_spawns: self.entity_spawns,
-                rtsim_max_resources: Default::default(),
-            },
-            rtsim_resource_blocks: self.rtsim_resource_blocks,
-        }
-    }
 }
 
 pub struct World {
@@ -593,7 +507,8 @@ impl World {
         should_abort: impl FnMut() -> bool,
         time: Option<(TimeOfDay, Calendar)>,
     ) -> Result<TerrainChunk, ()> {
-        self.generate_chunk_with_mode(
+        chunk::pipeline::generate_chunk_with_mode(
+            self,
             index,
             chunk_pos,
             ChunkGenerationContext::static_snapshot(time.as_ref()),
@@ -617,7 +532,8 @@ impl World {
         should_abort: impl FnMut() -> bool,
         time: Option<(TimeOfDay, Calendar)>,
     ) -> Result<(TerrainChunk, ChunkSupplement), ()> {
-        self.generate_chunk_with_mode(
+        chunk::pipeline::generate_chunk_with_mode(
+            self,
             index,
             chunk_pos,
             ChunkGenerationContext::runtime_finalized(time.as_ref(), rtsim_resource_fractions),
@@ -630,510 +546,6 @@ impl World {
                 unreachable!("runtime chunk generation should not produce a static snapshot")
             },
         })
-    }
-
-    #[expect(clippy::result_unit_err)]
-    fn generate_chunk_with_mode(
-        &self,
-        index: IndexRef,
-        chunk_pos: Vec2<i32>,
-        generation_context: ChunkGenerationContext<'_>,
-        mut should_abort: impl FnMut() -> bool,
-        generation_mode: ChunkGenerationMode,
-    ) -> Result<ChunkGenerationOutput, ()> {
-        let calendar = generation_context.calendar();
-
-        let mut sampler = self.sample_blocks();
-
-        let generation_anchor = match self
-            .sim
-            /*.get_interpolated(
-                chunk_pos.map2(chunk_size2d, |e, sz: u32| e * sz as i32 + sz as i32 / 2),
-                |chunk| chunk.get_base_z(),
-            )
-            .and_then(|base_z| self.sim.get(chunk_pos).map(|sim_chunk| (base_z, sim_chunk))) */
-            .generation_chunk_anchor(chunk_pos)
-        {
-            Some(generation_anchor) => generation_anchor,
-            None => {
-                // NOTE: This is necessary in order to generate a handful of chunks at the
-                // edges of the map.
-                return Ok(
-                    self.default_chunk_output_for_missing_runtime_chunk_product(generation_mode)
-                );
-            },
-        };
-        let (base_build, static_artifacts) = self.build_chunk_static_stage(
-            index,
-            chunk_pos,
-            generation_anchor.base_z,
-            generation_anchor.sim_chunk,
-            &mut sampler,
-            calendar,
-            &mut should_abort,
-        )?;
-        Ok(self.finalize_chunk_generation_mode(
-            generation_mode,
-            base_build,
-            generation_anchor.sim_chunk,
-            static_artifacts,
-            index,
-            generation_context,
-        ))
-    }
-
-    #[expect(clippy::result_unit_err)]
-    fn build_chunk_static_stage<'a>(
-        &self,
-        index: IndexRef<'a>,
-        chunk_pos: Vec2<i32>,
-        base_z: i32,
-        sim_chunk: &sim::SimChunk,
-        sampler: &mut BlockGen<'a>,
-        calendar: Option<&'a Calendar>,
-        should_abort: &mut impl FnMut() -> bool,
-    ) -> Result<(ChunkBaseBuild<'a>, StaticChunkArtifacts), ()> {
-        let mut base_build = self.build_base_chunk_volume(
-            index,
-            chunk_pos,
-            base_z,
-            sim_chunk,
-            sampler,
-            calendar,
-            should_abort,
-        )?;
-        let static_artifacts = self.apply_static_passes_and_extract_artifacts(
-            &mut base_build,
-            sim_chunk,
-            index,
-            calendar,
-        );
-
-        Ok((base_build, static_artifacts))
-    }
-
-    fn finalize_chunk_generation_mode<'a>(
-        &self,
-        generation_mode: ChunkGenerationMode,
-        mut base_build: ChunkBaseBuild<'a>,
-        sim_chunk: &sim::SimChunk,
-        static_artifacts: StaticChunkArtifacts,
-        index: IndexRef<'a>,
-        generation_context: ChunkGenerationContext<'_>,
-    ) -> ChunkGenerationOutput {
-        match generation_mode {
-            ChunkGenerationMode::RuntimeFinalized => {
-                let supplement = self.run_runtime_finalizers(
-                    &mut base_build,
-                    sim_chunk,
-                    static_artifacts,
-                    index,
-                    generation_context,
-                );
-                ChunkGenerationOutput::RuntimeFinalized {
-                    chunk: base_build.chunk,
-                    supplement,
-                }
-            },
-            ChunkGenerationMode::StaticSnapshot => {
-                // Static snapshot callers compare only deterministic chunk facts and stop
-                // before runtime supplement / rtsim finalize mutate the returned
-                // value contract.
-                base_build.chunk.defragment();
-                ChunkGenerationOutput::StaticSnapshot(base_build.chunk)
-            },
-        }
-    }
-
-    #[expect(clippy::result_unit_err)]
-    fn build_base_chunk_volume<'a>(
-        &self,
-        index: IndexRef<'a>,
-        chunk_pos: Vec2<i32>,
-        base_z: i32,
-        sim_chunk: &sim::SimChunk,
-        sampler: &mut BlockGen<'a>,
-        calendar: Option<&'a Calendar>,
-        should_abort: &mut impl FnMut() -> bool,
-    ) -> Result<ChunkBaseBuild<'a>, ()> {
-        let chunk_wpos2d = chunk_pos * TerrainChunkSize::RECT_SIZE.map(|e| e as i32);
-        let chunk_center_wpos2d = chunk_wpos2d + TerrainChunkSize::RECT_SIZE.map(|e| e as i32 / 2);
-        let grid_border = 4;
-        let zcache_grid = Grid::populate_from(
-            TerrainChunkSize::RECT_SIZE.map(|e| e as i32) + grid_border * 2,
-            |offs| sampler.get_z_cache(chunk_wpos2d - grid_border + offs, index, calendar),
-        );
-
-        let air = Block::air(SpriteKind::Empty);
-        let stone = Block::new(
-            BlockKind::Rock,
-            zcache_grid
-                .get(grid_border + TerrainChunkSize::RECT_SIZE.map(|e| e as i32) / 2)
-                .and_then(|zcache| zcache.as_ref())
-                .map(|zcache| zcache.sample.stone_col)
-                .unwrap_or_else(|| index.colors.deep_stone_color.into()),
-        );
-        let meta = TerrainChunkMeta::new(
-            sim_chunk.get_location_name(&index.sites, &self.civs.pois, chunk_center_wpos2d),
-            sim_chunk.get_biome(),
-            sim_chunk.alt,
-            sim_chunk.tree_density,
-            sim_chunk.river.is_river(),
-            sim_chunk.river.near_water(),
-            sim_chunk.river.velocity,
-            sim_chunk.temp,
-            sim_chunk.humidity,
-            sim_chunk
-                .sites
-                .iter()
-                .filter(|id| {
-                    index.sites[**id]
-                        .origin
-                        .as_::<f32>()
-                        .distance_squared(chunk_center_wpos2d.as_::<f32>())
-                        <= index.sites[**id].radius().powi(2)
-                })
-                .min_by_key(|id| {
-                    index.sites[**id]
-                        .origin
-                        .as_::<i64>()
-                        .distance_squared(chunk_center_wpos2d.as_::<i64>())
-                })
-                .map(|id| index.sites[*id].meta().unwrap_or_default()),
-            self.sim.approx_chunk_terrain_normal(chunk_pos),
-            sim_chunk.rockiness,
-            sim_chunk.cliff_height,
-        );
-
-        let mut chunk = TerrainChunk::new(base_z, stone, air, meta);
-
-        for y in 0..TerrainChunkSize::RECT_SIZE.y as i32 {
-            for x in 0..TerrainChunkSize::RECT_SIZE.x as i32 {
-                if should_abort() {
-                    return Err(());
-                };
-
-                let offs = Vec2::new(x, y);
-
-                let z_cache = match zcache_grid.get(grid_border + offs) {
-                    Some(Some(z_cache)) => z_cache,
-                    _ => continue,
-                };
-
-                let (min_z, max_z) = z_cache.get_z_limits();
-
-                (base_z..min_z as i32).for_each(|z| {
-                    let _ = chunk.set(Vec3::new(x, y, z), stone);
-                });
-
-                (min_z as i32..max_z as i32).for_each(|z| {
-                    let lpos = Vec3::new(x, y, z);
-                    let wpos = Vec3::from(chunk_wpos2d) + lpos;
-
-                    if let Some(block) = sampler.get_with_z_cache(wpos, Some(z_cache)) {
-                        let _ = chunk.set(lpos, block);
-                    }
-                });
-            }
-        }
-
-        Ok(ChunkBaseBuild {
-            chunk_pos,
-            chunk_wpos2d,
-            chunk_center_wpos2d,
-            grid_border,
-            zcache_grid,
-            chunk,
-        })
-    }
-
-    fn apply_static_passes_and_extract_artifacts<'a>(
-        &self,
-        base_build: &mut ChunkBaseBuild<'a>,
-        sim_chunk: &sim::SimChunk,
-        index: IndexRef<'a>,
-        calendar: Option<&'a Calendar>,
-    ) -> StaticChunkArtifacts {
-        let static_rng_seed = seed_expan::diffuse_mult(&[
-            self.sim.seed,
-            base_build.chunk_pos.x as u32,
-            base_build.chunk_pos.y as u32,
-            0x5354_4154,
-        ]);
-        let mut static_rng = ChaCha8Rng::from_seed(seed_expan::rng_state(static_rng_seed));
-
-        // Apply layers (paths, caves, etc.)
-        let mut canvas = Canvas {
-            info: CanvasInfo {
-                chunk_pos: base_build.chunk_pos,
-                wpos: base_build.chunk_wpos2d,
-                column_grid: &base_build.zcache_grid,
-                column_grid_border: base_build.grid_border,
-                chunks: &self.sim,
-                index,
-                chunk: sim_chunk,
-                calendar,
-            },
-            chunk: &mut base_build.chunk,
-            entity_spawns: Vec::new(),
-            rtsim_resource_blocks: Vec::new(),
-        };
-
-        if index.features.train_tracks {
-            layer::apply_trains_to(
-                &mut canvas,
-                &self.sim,
-                sim_chunk,
-                base_build.chunk_center_wpos2d,
-            );
-        }
-
-        if index.features.caverns {
-            layer::apply_caverns_to(&mut canvas, &mut static_rng);
-        }
-        if index.features.caves {
-            layer::apply_caves_to(&mut canvas, &mut static_rng);
-        }
-        if index.features.rocks {
-            layer::apply_rocks_to(&mut canvas, &mut static_rng);
-        }
-        if index.features.shrubs {
-            layer::apply_shrubs_to(&mut canvas, &mut static_rng);
-        }
-        if index.features.trees {
-            layer::apply_trees_to(&mut canvas, &mut static_rng, calendar);
-        }
-        if index.features.scatter {
-            layer::apply_scatter_to(&mut canvas, &mut static_rng, calendar);
-        }
-        if index.features.paths {
-            layer::apply_paths_to(&mut canvas);
-        }
-        if index.features.spots {
-            layer::apply_spots_to(&mut canvas, &mut static_rng);
-        }
-        // layer::apply_coral_to(&mut canvas);
-
-        // Apply site generation
-        sim_chunk
-            .sites
-            .iter()
-            .for_each(|site| index.sites[*site].render(&mut canvas, &mut static_rng));
-
-        StaticChunkArtifacts {
-            rtsim_resource_blocks: std::mem::take(&mut canvas.rtsim_resource_blocks),
-            entity_spawns: std::mem::take(&mut canvas.entity_spawns),
-        }
-    }
-
-    fn run_runtime_finalizers<'a>(
-        &self,
-        base_build: &mut ChunkBaseBuild<'a>,
-        sim_chunk: &sim::SimChunk,
-        static_artifacts: StaticChunkArtifacts,
-        index: IndexRef<'a>,
-        generation_context: ChunkGenerationContext<'_>,
-    ) -> ChunkSupplement {
-        let ChunkGenerationContext {
-            world_runtime,
-            rtsim_resource_fractions,
-        } = generation_context;
-        let time = world_runtime.time();
-        let runtime_time_bits = time
-            .as_ref()
-            .map(|(time_of_day, _)| time_of_day.day().to_bits())
-            .unwrap_or_default();
-        let runtime_calendar_mask = time
-            .as_ref()
-            .map(|(_, calendar)| {
-                calendar
-                    .events()
-                    .fold(0u32, |mask, event| mask | (1u32 << (*event as u32)))
-            })
-            .unwrap_or_default();
-        let runtime_rng_seed = seed_expan::diffuse_mult(&[
-            self.sim.seed,
-            base_build.chunk_pos.x as u32,
-            base_build.chunk_pos.y as u32,
-            runtime_time_bits as u32,
-            (runtime_time_bits >> 32) as u32,
-            runtime_calendar_mask,
-            0x5255_4E54,
-        ]);
-        let mut runtime_rng = ChaCha8Rng::from_seed(seed_expan::rng_state(runtime_rng_seed));
-        let RuntimeChunkArtifacts {
-            mut supplement,
-            rtsim_resource_blocks,
-        } = static_artifacts.into_runtime_artifacts();
-        Self::finalize_world_runtime_chunk(
-            &mut base_build.chunk,
-            sim_chunk,
-            &mut supplement,
-            &mut runtime_rng,
-            base_build.chunk_wpos2d,
-            &base_build.zcache_grid,
-            base_build.grid_border,
-            index,
-            time,
-        );
-        supplement.rtsim_max_resources = Self::apply_rtsim_resource_thinning(
-            &mut base_build.chunk,
-            rtsim_resource_blocks,
-            rtsim_resource_fractions,
-            &mut runtime_rng,
-            base_build.chunk_wpos2d,
-        );
-
-        supplement
-    }
-
-    fn finalize_world_runtime_chunk(
-        chunk: &mut TerrainChunk,
-        sim_chunk: &sim::SimChunk,
-        supplement: &mut ChunkSupplement,
-        runtime_rng: &mut ChaCha8Rng,
-        chunk_wpos2d: Vec2<i32>,
-        zcache_grid: &Grid<Option<block::ZCache<'_>>>,
-        grid_border: i32,
-        index: IndexRef<'_>,
-        time: Option<&(TimeOfDay, Calendar)>,
-    ) {
-        Self::apply_world_runtime_supplement(
-            chunk,
-            supplement,
-            runtime_rng,
-            chunk_wpos2d,
-            zcache_grid,
-            grid_border,
-            index,
-            sim_chunk,
-            time,
-        );
-
-        // World-owned runtime finalize stops after supplement expansion and chunk
-        // compaction. Server-side rtsim thinning is applied as a distinct tail step.
-        chunk.defragment();
-    }
-
-    fn apply_world_runtime_supplement(
-        chunk: &TerrainChunk,
-        supplement: &mut ChunkSupplement,
-        runtime_rng: &mut ChaCha8Rng,
-        chunk_wpos2d: Vec2<i32>,
-        zcache_grid: &Grid<Option<block::ZCache<'_>>>,
-        grid_border: i32,
-        index: IndexRef<'_>,
-        sim_chunk: &sim::SimChunk,
-        time: Option<&(TimeOfDay, Calendar)>,
-    ) {
-        let sample_get = |offs| {
-            zcache_grid
-                .get(grid_border + offs)
-                .and_then(Option::as_ref)
-                .map(|zc| &zc.sample)
-        };
-
-        let gen_entity_pos = |runtime_rng: &mut ChaCha8Rng| {
-            let lpos2d = TerrainChunkSize::RECT_SIZE
-                .map(|sz| runtime_rng.random::<u32>().rem_euclid(sz) as i32);
-            let mut lpos = Vec3::new(
-                lpos2d.x,
-                lpos2d.y,
-                sample_get(lpos2d).map(|s| s.alt as i32 - 32).unwrap_or(0),
-            );
-
-            while let Some(block) = chunk.get(lpos).ok().copied().filter(Block::is_solid) {
-                lpos.z += block.solid_height().ceil() as i32;
-            }
-
-            (Vec3::from(chunk_wpos2d) + lpos).map(|e: i32| e as f32) + 0.5
-        };
-
-        if sim_chunk.contains_waypoint {
-            let waypoint_pos = gen_entity_pos(runtime_rng);
-            if sim_chunk
-                .sites
-                .iter()
-                .map(|site| index.sites[*site].spawn_rules(waypoint_pos.xy().as_()))
-                .fold(SpawnRules::default(), |a, b| a.combine(b))
-                .waypoints
-            {
-                supplement.add_entity_spawn(EntitySpawn::Entity(Box::new(
-                    EntityInfo::at(waypoint_pos).into_special(SpecialEntity::Waypoint),
-                )));
-            }
-        }
-
-        // Apply layer supplement
-        layer::wildlife::apply_wildlife_supplement(
-            runtime_rng,
-            chunk_wpos2d,
-            sample_get,
-            chunk,
-            index,
-            sim_chunk,
-            supplement,
-            time,
-        );
-
-        // Apply site supplementary information
-        sim_chunk.sites.iter().for_each(|site| {
-            index.sites[*site].apply_supplement(runtime_rng, chunk_wpos2d, supplement)
-        });
-    }
-
-    fn apply_rtsim_resource_thinning(
-        chunk: &mut TerrainChunk,
-        mut rtsim_resource_blocks: Vec<Vec3<i32>>,
-        rtsim_resource_fractions: Option<EnumMap<TerrainResource, f32>>,
-        runtime_rng: &mut ChaCha8Rng,
-        chunk_wpos2d: Vec2<i32>,
-    ) -> EnumMap<TerrainResource, usize> {
-        let mut rtsim_max_resources = EnumMap::default();
-
-        // Before we finish, we check candidate rtsim resource blocks, deduplicating
-        // positions and only keeping those that actually do have resources.
-        // Although this looks potentially very expensive, only blocks that are rtsim
-        // resources (i.e: a relatively small number of sprites) are processed here.
-        if let Some(rtsim_resource_fractions) = rtsim_resource_fractions {
-            rtsim_resource_blocks.sort_unstable_by_key(|pos| pos.into_array());
-            rtsim_resource_blocks.dedup();
-            for wpos in rtsim_resource_blocks.iter().copied() {
-                let _ = chunk.map(wpos - chunk_wpos2d.with_z(0), |block| {
-                    if let Some(res) = block.get_rtsim_resource() {
-                        // Note: this represents the upper limit, not the actual number spanwed, so
-                        // we increment this before deciding whether we're going to spawn the
-                        // resource.
-                        rtsim_max_resources[res] += 1;
-
-                        debug_assert!(
-                            0.0 <= rtsim_resource_fractions[res]
-                                && rtsim_resource_fractions[res] <= 1.0,
-                            "The rtsim resource {res:?} has the value '{}', which is not in the \
-                             expected range of 0.0..=1.0. When registering a block with the \
-                             sprite `{:?}`, with the damage `{:?}`.",
-                            rtsim_resource_fractions[res],
-                            block.get_sprite(),
-                            block.get_attr::<common::terrain::sprite::Damage>().ok(),
-                        );
-
-                        // Throw a dice to determine whether this resource should actually spawn
-                        // TODO: Don't throw a dice, try to generate the *exact* correct number
-                        if runtime_rng
-                            .random_bool(rtsim_resource_fractions[res].clamp(0.0, 1.0) as f64)
-                        {
-                            block
-                        } else {
-                            block.into_vacant()
-                        }
-                    } else {
-                        block
-                    }
-                });
-            }
-        }
-
-        rtsim_max_resources
     }
 
     // Zone coordinates
@@ -1329,14 +741,72 @@ mod tests {
     use super::{Error, World};
     use crate::{
         CONFIG,
-        sim::{CompatMode, FileOpts, WorldOpts},
+        recipe::RecipeManifestV1,
+        sim::{
+            CompatMode, FileOpts, GenOpts, LoadLegacyMode, LoadOrGenerateSidecarlessMode,
+            WorldFile, WorldMap_0_7_0, WorldOpts,
+        },
     };
+    use bincode::{config::legacy, serde::encode_into_std_write};
     use rayon::ThreadPoolBuilder;
     use std::{
         fs,
+        io::BufWriter,
+        path::{Path, PathBuf},
         time::{SystemTime, UNIX_EPOCH},
     };
     use vek::Vec2;
+
+    fn unique_managed_world_target(tag: &str) -> (String, PathBuf) {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!("caldrayne-world-{tag}-{unique}"));
+        (
+            base.to_string_lossy().into_owned(),
+            base.with_extension("bin"),
+        )
+    }
+
+    fn recipe_sidecar_path_for_map_path(map_path: &Path) -> PathBuf {
+        let mut sidecar_path = map_path.as_os_str().to_owned();
+        sidecar_path.push(".recipe.ron");
+        PathBuf::from(sidecar_path)
+    }
+
+    fn write_matching_world_file(map_path: &Path) {
+        let opts = GenOpts::default();
+        let map_cell_count = 1usize << (opts.x_lg + opts.y_lg);
+        let world_file = WorldFile::Veloren0_7_0(WorldMap_0_7_0 {
+            map_size_lg: Vec2::new(opts.x_lg, opts.y_lg),
+            continent_scale_hack: opts.scale,
+            alt: vec![0.0; map_cell_count].into_boxed_slice(),
+            basement: vec![0.0; map_cell_count].into_boxed_slice(),
+        });
+
+        if let Some(parent) = map_path.parent() {
+            fs::create_dir_all(parent).expect("managed world parent should be creatable");
+        }
+
+        let file = fs::File::create(map_path).expect("managed world file should be writable");
+        let mut writer = BufWriter::new(file);
+        encode_into_std_write(&world_file, &mut writer, legacy())
+            .expect("managed world file should serialize");
+    }
+
+    fn write_matching_recipe_sidecar(map_path: &Path, world_seed: u32) {
+        let rendered_manifest = ron::ser::to_string_pretty(
+            &RecipeManifestV1::record_only(world_seed, &GenOpts::default(), true),
+            ron::ser::PrettyConfig::default(),
+        )
+        .expect("recipe sidecar should serialize");
+        fs::write(
+            recipe_sidecar_path_for_map_path(map_path),
+            rendered_manifest,
+        )
+        .expect("recipe sidecar should be writable");
+    }
 
     #[test]
     fn generate_returns_structured_error_for_enforced_missing_load() {
@@ -1439,6 +909,129 @@ mod tests {
     }
 
     #[test]
+    fn generate_returns_structured_error_when_load_legacy_mode_denies_import() {
+        let pool = ThreadPoolBuilder::new().build().unwrap();
+        let missing_path = std::env::temp_dir().join(format!(
+            "caldrayne-world-legacy-import-denied-{}.bin",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos()
+        ));
+
+        let result = World::generate(
+            42,
+            WorldOpts {
+                world_file: FileOpts::LoadLegacy(missing_path),
+                compat_mode: CompatMode::Record,
+                load_legacy_mode: LoadLegacyMode::Deny,
+                ..WorldOpts::default()
+            },
+            &pool,
+            &|_| {},
+        );
+
+        match result {
+            Err(Error::CompatEnforce { audit }) => {
+                assert_eq!(audit.entry.as_str(), "load_legacy");
+                assert_eq!(audit.resolution.as_str(), "reject");
+                assert_eq!(audit.failure_kind.as_str(), "policy_denied");
+                assert_eq!(audit.failure_subject.as_str(), "options");
+            },
+            Ok(_) => panic!("expected load_legacy gate rejection, got successful world generation"),
+            Err(other) => panic!("expected load_legacy gate rejection, got {other}"),
+        }
+    }
+
+    #[test]
+    fn generate_returns_structured_error_when_sidecarless_load_or_generate_mode_denies_reuse() {
+        let pool = ThreadPoolBuilder::new().build().unwrap();
+        let (name, map_path) = unique_managed_world_target("managed-sidecarless-denied");
+        let sidecar_path = recipe_sidecar_path_for_map_path(&map_path);
+        let _ = fs::remove_file(&map_path);
+        let _ = fs::remove_file(&sidecar_path);
+        write_matching_world_file(&map_path);
+
+        let result = World::generate(
+            42,
+            WorldOpts {
+                world_file: FileOpts::LoadOrGenerate {
+                    name,
+                    opts: GenOpts::default(),
+                    overwrite: false,
+                },
+                compat_mode: CompatMode::Record,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
+                ..WorldOpts::default()
+            },
+            &pool,
+            &|_| {},
+        );
+
+        match result {
+            Err(Error::CompatEnforce { audit }) => {
+                assert_eq!(audit.entry.as_str(), "load_or_generate");
+                assert_eq!(audit.resolution.as_str(), "reject");
+                assert_eq!(audit.failure_kind.as_str(), "policy_denied");
+                assert_eq!(audit.failure_subject.as_str(), "options");
+            },
+            Ok(_) => {
+                panic!(
+                    "expected sidecarless load_or_generate gate rejection, got successful world \
+                     generation"
+                )
+            },
+            Err(other) => {
+                panic!("expected sidecarless load_or_generate gate rejection, got {other}")
+            },
+        }
+
+        let _ = fs::remove_file(map_path);
+        let _ = fs::remove_file(sidecar_path);
+    }
+
+    #[test]
+    fn generate_loads_strict_world_with_recipe_sidecar_under_deny_posture() {
+        let pool = ThreadPoolBuilder::new().build().unwrap();
+        let (_, map_path) = unique_managed_world_target("strict-load-deny-clear");
+        let sidecar_path = recipe_sidecar_path_for_map_path(&map_path);
+        let _ = fs::remove_file(&map_path);
+        let _ = fs::remove_file(&sidecar_path);
+        write_matching_world_file(&map_path);
+        write_matching_recipe_sidecar(&map_path, 42);
+
+        let (world, _) = World::generate(
+            42,
+            WorldOpts {
+                world_file: FileOpts::Load(map_path.clone()),
+                compat_mode: CompatMode::Record,
+                load_legacy_mode: LoadLegacyMode::Deny,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
+                ..WorldOpts::default()
+            },
+            &pool,
+            &|_| {},
+        )
+        .expect("strict Load(path) should remain admitted under deny posture");
+
+        assert_eq!(world.sim().compat_audit().entry.as_str(), "load");
+        assert_eq!(
+            world.sim().compat_audit().decision.as_str(),
+            "loaded_existing"
+        );
+        assert_eq!(world.sim().compat_audit().failure_kind.as_str(), "none");
+        assert_eq!(world.sim().load_legacy_mode().as_str(), "deny");
+        assert_eq!(
+            world.sim().load_or_generate_sidecarless_mode().as_str(),
+            "deny"
+        );
+        assert!(!world.sim().managed_recipe_sidecar_missing());
+
+        let _ = fs::remove_file(map_path);
+        let _ = fs::remove_file(sidecar_path);
+    }
+
+    #[test]
     fn default_chunk_output_for_missing_runtime_chunk_product_preserves_bounded_ocean_product() {
         let (world, _) = World::empty();
 
@@ -1477,5 +1070,36 @@ mod tests {
         assert_eq!(runtime_chunk_product_key_aabr.min, Vec2::one());
         assert!(query_chunk_key_aabr.max.x > runtime_chunk_product_key_aabr.max.x);
         assert!(query_chunk_key_aabr.max.y > runtime_chunk_product_key_aabr.max.y);
+    }
+
+    #[test]
+    fn public_chunk_generation_falls_back_to_default_output_outside_runtime_product_domain() {
+        let (world, index) = World::empty();
+        let runtime_chunk_product_key_aabr = world.runtime_chunk_product_key_aabr();
+        let chunk_pos = Vec2::new(
+            runtime_chunk_product_key_aabr.min.x - 1,
+            runtime_chunk_product_key_aabr.min.y,
+        );
+
+        let static_chunk = world
+            .generate_chunk_static_snapshot(index.as_index_ref(), chunk_pos, || false, None)
+            .expect(
+                "static chunk generation should fall back cleanly outside runtime product domain",
+            );
+        assert_eq!(static_chunk.get_min_z(), CONFIG.sea_level as i32);
+
+        let (runtime_chunk, supplement) = world
+            .generate_chunk(index.as_index_ref(), chunk_pos, None, || false, None)
+            .expect(
+                "runtime chunk generation should fall back cleanly outside runtime product domain",
+            );
+        assert_eq!(runtime_chunk.get_min_z(), CONFIG.sea_level as i32);
+        assert!(supplement.entity_spawns.is_empty());
+        assert!(
+            supplement
+                .rtsim_max_resources
+                .values()
+                .all(|count| *count == 0)
+        );
     }
 }

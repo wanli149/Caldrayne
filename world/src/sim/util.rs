@@ -206,36 +206,6 @@ pub fn uniform_noise<F: Float + Send>(
     (uniform_noise, noise.into_boxed_slice())
 }
 
-/// Iterate through all cells adjacent and including four chunks whose top-left
-/// point is posi. This isn't just the immediate neighbors of a chunk plus the
-/// center, because it is designed to cover neighbors of a point in the chunk's
-/// "interior."
-///
-/// This is what's used during cubic interpolation, for example, as it
-/// guarantees that for any point between the given chunk (on the top left) and
-/// its top-right/down-right/down neighbors, the twelve chunks surrounding this
-/// box (its "perimeter") are also inspected.
-pub fn local_cells(map_size_lg: MapSizeLg, posi: usize) -> impl Clone + Iterator<Item = usize> {
-    let pos = uniform_idx_as_vec2(map_size_lg, posi);
-    // NOTE: want to keep this such that the chunk index is in ascending order!
-    let grid_size = 3i32;
-    let grid_bounds = 2 * grid_size + 1;
-    (0..grid_bounds * grid_bounds)
-        .map(move |index| {
-            Vec2::new(
-                pos.x + (index % grid_bounds) - grid_size,
-                pos.y + (index / grid_bounds) - grid_size,
-            )
-        })
-        .filter(move |pos| {
-            pos.x >= 0
-                && pos.y >= 0
-                && pos.x < map_size_lg.chunks().x as i32
-                && pos.y < map_size_lg.chunks().y as i32
-        })
-        .map(move |e| vec2_as_uniform_idx(map_size_lg, e))
-}
-
 // Note that we should already have okay cache locality since we have a grid.
 pub fn uphill(
     map_size_lg: MapSizeLg,

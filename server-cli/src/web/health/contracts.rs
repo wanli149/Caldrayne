@@ -286,7 +286,9 @@ fn external_section_snapshot_input_contract(
             "prior_result_statuses",
             "ordered-enum-string-array",
             "records prior result_status values from the same section when lifecycle history is \
-             needed to prove that rolled-back only occurred after a prior approved terminal state",
+             needed to prove that a follow-up state preserved the prior terminal history it is \
+             superseding, such as world-compat approved after exception-accepted or rolled-back \
+             after approved",
         )],
         field_values_key: "field_values",
         always_present_field_values,
@@ -391,7 +393,8 @@ fn snapshot_template_contract(
                 "prior_result_statuses",
                 "<[prior-result-status,...]-when-required>",
                 "include only when the current result_status requires lifecycle history proof, \
-                 such as rolled-back",
+                 such as rolled-back or a world-compat follow-up that must prove which prior \
+                 terminal state it is superseding",
             ),
         ],
         field_value_entries: snapshot_template_field_value_entries(
@@ -415,6 +418,7 @@ fn snapshot_example_terminal_result_status(signal: &'static str) -> &'static str
 fn snapshot_example_prior_result_statuses(signal: &'static str) -> Option<&'static str> {
     match signal {
         "public-entry-handoff" => Some("[\"cutover-approved\"]"),
+        "world-compat" => Some("[\"exception-accepted\"]"),
         _ => None,
     }
 }
@@ -473,6 +477,8 @@ fn snapshot_example_field_value_entries(
     archive_handoff_contract: &ExternalRecordArchiveHandoffContract,
     post_archive_writeback_fields: &[&'static str],
 ) -> Vec<ExternalRecordExampleField> {
+    let result_status = snapshot_example_terminal_result_status(signal);
+
     collect_snapshot_field_value_contracts(
         signal,
         required_decision_field_contracts,
@@ -481,11 +487,26 @@ fn snapshot_example_field_value_entries(
         post_archive_writeback_fields,
     )
     .into_iter()
+    .filter(|field| snapshot_example_includes_field(signal, result_status, field.name))
     .map(|field| {
         let (value, rationale) = snapshot_field_value_example(signal, field.name);
         example_field(field.name, value, rationale)
     })
     .collect()
+}
+
+fn snapshot_example_includes_field(
+    signal: &'static str,
+    result_status: &'static str,
+    field_name: &'static str,
+) -> bool {
+    match (result_status, field_name) {
+        ("exception-accepted", _) => true,
+        ("approved", "rollback_reference") => signal == "world-compat",
+        ("rolled-back", "rollback_reference") => true,
+        ("approved" | "rolled-back", "exception_reason" | "compensating_controls") => false,
+        _ => true,
+    }
 }
 
 fn snapshot_example_contract(
@@ -517,7 +538,8 @@ fn snapshot_example_contract(
         top_level_fields.push(example_field(
             "prior_result_statuses",
             prior_statuses,
-            "illustrative lifecycle history proof for rolled-back validation input",
+            "illustrative lifecycle history proof for validation input that must prove the prior \
+             terminal state on the same section",
         ));
     }
 
@@ -1392,10 +1414,29 @@ pub(super) fn review_record_field_placeholder(
         ("public-entry-handoff", "bundled_auth_pin_review_reference") => {
             "<review-note-reference>"
         },
+        ("world-compat", "world_compat_status") => {
+            "<world-compat-clear|world-compat-review-required|world-compat-unrecorded|world-compat-not-applicable>"
+        },
+        ("world-compat", "configured_mode") => "<configured-mode-or-unrecorded>",
+        ("world-compat", "load_legacy_mode") => "<load-legacy-mode-or-unrecorded>",
+        ("world-compat", "load_or_generate_sidecarless_mode") => {
+            "<load-or-generate-sidecarless-mode-or-unrecorded>"
+        },
+        ("world-compat", "compat_entry") => "<compat-entry-or-unrecorded>",
+        ("world-compat", "compat_decision") => "<compat-decision-or-unrecorded>",
+        ("world-compat", "compat_failure") => "<compat-failure-or-unrecorded>",
+        ("world-compat", "strict_load_contract_gap") => "<true|false|unrecorded>",
+        ("world-compat", "managed_recipe_sidecar_missing") => "<true|false|unrecorded>",
+        ("world-compat", "world_recipe_hash") => "<world-recipe-hash-or-unrecorded>",
+        ("world-compat", "chunk_recipe_hash") => "<chunk-recipe-hash-or-unrecorded>",
+        ("world-compat", "topology_id") => "<topology-id-or-unrecorded>",
+        ("world-compat", "preset_id") => "<preset-id-or-unrecorded>",
         (_, "post_archive_verified_by") => "<release-operator-id>",
         (_, "post_archive_verified_at_utc") => "<utc-timestamp>",
         (_, "post_archive_verification_result") => "<verified|needs-follow-up>",
         (_, "post_archive_verification_reference") => "<archive-review-note-or-ticket>",
+        ("world-compat", "exception_reason") => "<operator-rationale>",
+        ("world-compat", "rollback_reference") => "<rollback-runbook-or-release-ref>",
         ("governance-audit", "exception_reason") => "<operator-rationale>",
         ("governance-audit", "governance_note_reference") => "<governance-note-reference>",
         ("governance-audit", "rollback_reference") => "<rollback-runbook-or-release-ref>",
@@ -1483,6 +1524,64 @@ pub(super) fn review_record_field_completion_rule(
         ("public-entry-handoff", "bundled_auth_pin_review_reference") => {
             "link the review note that justifies any auth pin exception"
         },
+        ("world-compat", "world_compat_status") => {
+            "copy the exact status published by /health/world-compat for the rollout unit under \
+             review"
+        },
+        ("world-compat", "configured_mode") => {
+            "copy configured_mode from /health/world-compat, or record unrecorded if the runtime \
+             surface did not publish structured compatibility context"
+        },
+        ("world-compat", "load_legacy_mode") => {
+            "copy load_legacy_mode from /health/world-compat, or record unrecorded if the runtime \
+             surface did not publish structured compatibility context; allow means the reviewed \
+             rollout unit still keeps the transitional LoadLegacy admission window open, while \
+             deny marks the closed-posture rehearsal/default-flip candidate that future removal \
+             review depends on"
+        },
+        ("world-compat", "load_or_generate_sidecarless_mode") => {
+            "copy load_or_generate_sidecarless_mode from /health/world-compat, or record \
+             unrecorded if the runtime surface did not publish structured compatibility context; \
+             allow means the reviewed rollout unit still keeps sidecarless managed reuse open as a \
+             transitional path, while deny marks the closed-posture rehearsal/default-flip \
+             candidate that future removal review depends on"
+        },
+        ("world-compat", "compat_entry") => {
+            "copy compat_entry from /health/world-compat, or record unrecorded if structured \
+             context is unavailable"
+        },
+        ("world-compat", "compat_decision") => {
+            "copy compat_decision from /health/world-compat, or record unrecorded if structured \
+             context is unavailable"
+        },
+        ("world-compat", "compat_failure") => {
+            "copy compat_failure from /health/world-compat, or record unrecorded if structured \
+             context is unavailable"
+        },
+        ("world-compat", "strict_load_contract_gap") => {
+            "copy strict_load_contract_gap from /health/world-compat, or record unrecorded if \
+             structured context is unavailable"
+        },
+        ("world-compat", "managed_recipe_sidecar_missing") => {
+            "copy managed_recipe_sidecar_missing from /health/world-compat, or record unrecorded \
+             if structured context is unavailable"
+        },
+        ("world-compat", "world_recipe_hash") => {
+            "copy world_recipe_hash from /health/world-compat, or record unrecorded if the runtime \
+             surface did not publish the structured recipe fingerprint"
+        },
+        ("world-compat", "chunk_recipe_hash") => {
+            "copy chunk_recipe_hash from /health/world-compat, or record unrecorded if the runtime \
+             surface did not publish the structured recipe fingerprint"
+        },
+        ("world-compat", "topology_id") => {
+            "copy topology_id from /health/world-compat, or record unrecorded if the runtime \
+             surface did not publish structured topology context"
+        },
+        ("world-compat", "preset_id") => {
+            "copy preset_id from /health/world-compat, or record unrecorded if the runtime surface \
+             did not publish structured preset context"
+        },
         (_, "post_archive_verified_by") => {
             "record who completed post-archive verification for the terminal review section"
         },
@@ -1498,6 +1597,15 @@ pub(super) fn review_record_field_completion_rule(
         },
         ("governance-audit", "exception_reason") => {
             "record why the governance exception is being accepted"
+        },
+        ("world-compat", "exception_reason") => {
+            "record why the rollout proceeds despite world compatibility review findings"
+        },
+        ("world-compat", "rollback_reference") => {
+            "record the rollback runbook or release reference used to restore the last compatible \
+             world posture; required when the world-compat terminal path either accepts a \
+             transitional allow window, records an approved deny rehearsal/default-flip candidate, \
+             or documents a rolled-back outcome"
         },
         ("governance-audit", "governance_note_reference") => {
             "link the ticket or note that backs the governance decision"
@@ -1572,6 +1680,8 @@ pub(super) fn review_record_example_value(
     name: &'static str,
 ) -> &'static str {
     match (signal, name) {
+        ("world-compat", "result_status") => "approved",
+        ("world-compat", "release_reference") => "release-2026-05-01-world-compat-01",
         (_, "reviewed_by") => "ops-release-owner",
         (_, "approval_decision") => "approved",
         (_, "decision_recorded_at_utc") => "2026-05-01T08:15:00Z",
@@ -1620,6 +1730,29 @@ pub(super) fn review_record_example_value(
         ("public-entry-handoff", "bundled_auth_pin_review_reference") => {
             "note://release-review/auth-pin-exception"
         },
+        ("world-compat", "world_compat_status") => "world-compat-clear",
+        ("world-compat", "configured_mode") => "record",
+        ("world-compat", "load_legacy_mode") => "deny",
+        ("world-compat", "load_or_generate_sidecarless_mode") => "deny",
+        ("world-compat", "compat_entry") => "load",
+        ("world-compat", "compat_decision") => "loaded_existing",
+        ("world-compat", "compat_failure") => "unrecorded",
+        ("world-compat", "strict_load_contract_gap") => "false",
+        ("world-compat", "managed_recipe_sidecar_missing") => "false",
+        ("world-compat", "world_recipe_hash") => "sha256:worldrecipeexampledeadbeef",
+        ("world-compat", "chunk_recipe_hash") => "sha256:chunkrecipeexamplecafebabe",
+        ("world-compat", "topology_id") => "toroidal-2d",
+        ("world-compat", "preset_id") => "default",
+        ("world-compat", "exception_reason") => {
+            "operator accepted a reviewed record-mode compatibility gap with rollback prepared"
+        },
+        ("world-compat", "archive_reference") => {
+            "archive://release-review/2026-05-01/public-entry-handoff-terminal"
+        },
+        ("world-compat", "post_archive_verification_reference") => {
+            "note://archive-review/release-2026-05-01"
+        },
+        ("world-compat", "rollback_reference") => "runbook://world-compat/rollback-01",
         ("governance-audit", "exception_reason") => {
             "temporary operator-approved exposure retained during scheduled migration window"
         },
@@ -1670,7 +1803,29 @@ pub(super) fn review_record_example_rationale(
         | ("public-entry-handoff", "rollback_reference") => {
             "illustrative reference format; replace with your real evidence or runbook id"
         },
+        ("world-compat", "world_recipe_hash") | ("world-compat", "chunk_recipe_hash") => {
+            "illustrative fingerprint shape only; replace with the real runtime recipe hash"
+        },
+        ("world-compat", "topology_id") | ("world-compat", "preset_id") => {
+            "illustrative world recipe identity only; replace with the real runtime topology or \
+             preset id"
+        },
+        ("world-compat", "rollback_reference") => {
+            "illustrative reference format; replace with your real rollback runbook or release id"
+        },
         _ => "illustrative value; replace with rollout-specific truth",
+    }
+}
+
+fn review_record_section_state_value(
+    signal: &'static str,
+    section_state: &'static str,
+) -> &'static str {
+    match (signal, section_state) {
+        ("world-compat", "approved") => "approved",
+        ("world-compat", "rolled-back") => "rolled-back",
+        ("world-compat", "exception-accepted") => "exception-accepted",
+        _ => section_state,
     }
 }
 
@@ -1680,23 +1835,115 @@ pub(super) fn release_review_section_example_contract(
     required_decision_field_contracts: &[ExternalRecordFieldContract],
     notes: Vec<&'static str>,
 ) -> ExternalRecordSectionExampleContract {
+    let mut example_fields: Vec<_> = required_decision_field_contracts
+        .iter()
+        .map(|contract| {
+            example_field(
+                contract.name,
+                if contract.name == "result_status" {
+                    review_record_section_state_value(signal, section_state)
+                } else {
+                    review_record_example_value(signal, contract.name)
+                },
+                review_record_example_rationale(signal, contract.name),
+            )
+        })
+        .collect();
+    for extra_field in review_record_example_extra_fields(signal, section_state) {
+        if !example_fields
+            .iter()
+            .any(|field| field.name == extra_field.name)
+        {
+            example_fields.push(extra_field);
+        }
+    }
+
     ExternalRecordSectionExampleContract {
         record_kind: "release-review-record",
         section_signal: signal,
         illustrative_only: true,
         section_state,
-        example_fields: required_decision_field_contracts
-            .iter()
-            .map(|contract| {
-                example_field(
-                    contract.name,
-                    review_record_example_value(signal, contract.name),
-                    review_record_example_rationale(signal, contract.name),
-                )
-            })
-            .collect(),
+        example_fields,
         notes,
     }
+}
+
+pub(super) fn review_record_example_extra_fields(
+    signal: &'static str,
+    section_state: &'static str,
+) -> Vec<ExternalRecordExampleField> {
+    match (signal, section_state) {
+        ("world-compat", "approved") => world_compat_follow_up_example_fields(
+            "approved",
+            "illustrative deny-rehearsal rollback evidence; if this approved section is closing a \
+             previously accepted transition window, keep the follow-up on the same \
+             release-review-record section and preserve the same-section history proof that the \
+             prior terminal state was exception-accepted",
+        ),
+        ("world-compat", "rolled-back") => world_compat_follow_up_example_fields(
+            "rolled-back",
+            "illustrative rollback evidence for a post-flip rollback follow-up; keep the \
+             follow-up on the same release-review-record section and preserve the same-section \
+             history proof that the prior terminal state was approved",
+        ),
+        ("world-compat", "exception-accepted") => vec![
+            example_field(
+                "exception_reason",
+                review_record_example_value(signal, "exception_reason"),
+                review_record_example_rationale(signal, "exception_reason"),
+            ),
+            example_field(
+                "rollback_reference",
+                review_record_example_value(signal, "rollback_reference"),
+                "illustrative rollback evidence for the accepted transitional posture; replace \
+                 with the real rollback runbook or release reference",
+            ),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+fn world_compat_follow_up_example_fields(
+    source_record_state: &'static str,
+    rollback_rationale: &'static str,
+) -> Vec<ExternalRecordExampleField> {
+    vec![
+        example_field(
+            "prior_result_statuses",
+            if source_record_state == "approved" {
+                "[\"exception-accepted\"]"
+            } else {
+                "[\"approved\"]"
+            },
+            "illustrative same-section history proof showing which prior terminal state this \
+             follow-up superseded",
+        ),
+        example_field(
+            "rollback_reference",
+            review_record_example_value("world-compat", "rollback_reference"),
+            rollback_rationale,
+        ),
+        example_field(
+            "archive_reference",
+            review_record_example_value("world-compat", "archive_reference"),
+            "illustrative archived terminal evidence carried forward on the same \
+             release-review-record section when approved or rolled-back is acting as a follow-up",
+        ),
+        example_field(
+            "source_record_state",
+            source_record_state,
+            "illustrative archive-receipt source_record_state preserved on the same section; it \
+             must stay aligned with the terminal result_status recorded for this follow-up while \
+             prior_result_statuses remains the same-section history proof for the superseded \
+             terminal state",
+        ),
+        example_field(
+            "post_archive_verification_reference",
+            review_record_example_value("world-compat", "post_archive_verification_reference"),
+            "illustrative post-archive verification evidence that remains readable on the same \
+             release-review-record section when approved or rolled-back is acting as a follow-up",
+        ),
+    ]
 }
 
 pub(super) fn release_review_section_execution_workflow(
@@ -1873,6 +2120,103 @@ pub(super) fn release_review_section_execution_workflow(
                 "append post_archive_verified_by, post_archive_verified_at_utc, \
                  post_archive_verification_result, and post_archive_verification_reference after \
                  governance archive verification completes",
+                release_review_post_archive_writeback_field_names(),
+                false,
+            ),
+        ],
+        "world-compat" => vec![
+            workflow_step(
+                1,
+                "open or locate the world-compat section inside the release-review-record",
+                "release-operator",
+                "external-release-tracker",
+                "set release_reference and result_status = draft for the world-compat section",
+                vec![
+                    "release_reference",
+                    "reviewed_by",
+                    "decision_recorded_at_utc",
+                    "result_status",
+                ],
+                true,
+            ),
+            workflow_step(
+                2,
+                "copy the dedicated world compatibility status, runtime audit tuple, and recipe \
+                 fingerprint into the section",
+                "release-operator",
+                "/health/world-compat + /health/compatibility + external-release-tracker",
+                "populate world compatibility runtime truth on the same section before recording \
+                 the final rollout decision; copied load_legacy_mode and \
+                 load_or_generate_sidecarless_mode define whether this section is still \
+                 documenting a transitional allow window or a deny rehearsal/default-flip \
+                 candidate; if the terminal path later becomes exception-accepted, append \
+                 exception_reason and rollback_reference before writing the terminal state; if \
+                 both copied gates are already deny and rollout proceeds, append \
+                 rollback_reference before writing approved so the deny rehearsal keeps an \
+                 explicit restore path; any later reopen or rollback follow-up must preserve \
+                 same-section history proof of the prior terminal result_status it is superseding",
+                vec![
+                    "world_compat_status",
+                    "configured_mode",
+                    "load_legacy_mode",
+                    "load_or_generate_sidecarless_mode",
+                    "compat_entry",
+                    "compat_decision",
+                    "compat_failure",
+                    "strict_load_contract_gap",
+                    "managed_recipe_sidecar_missing",
+                    "world_recipe_hash",
+                    "chunk_recipe_hash",
+                    "topology_id",
+                    "preset_id",
+                ],
+                true,
+            ),
+            workflow_step(
+                3,
+                "record approval_decision and terminal result_status for the reviewed world \
+                 compatibility posture",
+                "release-operator",
+                "external-release-tracker",
+                "write the terminal result_status on the world-compat section without opening a \
+                 second review record; if either copied legacy-tail gate still remains allow and \
+                 rollout proceeds, use exception-accepted on the same section so exception_reason \
+                 and rollback_reference keep the transitional posture explicit; if both copied \
+                 gates are deny and rollout proceeds, approved still requires rollback_reference \
+                 on the same section as deny-rehearsal rollback evidence; approved is reserved \
+                 for deny/clear posture, while rolled-back requires rollback_reference on the \
+                 same section; any explicit approved follow-up closing an archived \
+                 exception-accepted window must retain same-section history proof that the prior \
+                 terminal state was exception-accepted, and any rolled-back follow-up must retain \
+                 same-section history proof that the prior terminal state was approved",
+                vec!["approval_decision", "result_status"],
+                true,
+            ),
+            workflow_step(
+                4,
+                "archive the terminal world-compat section and write back the archive receipt",
+                "release-operator",
+                "external-release-tracker archive handoff",
+                "write archive receipt fields after world-compat section archiving completes and \
+                 keep the archive handoff correlated to the same release_reference, \
+                 section_signal, and terminal result_status; approved deny-rehearsal terminals \
+                 must preserve rollback_reference through the same archive handoff",
+                release_review_archive_receipt_field_names(),
+                true,
+            ),
+            workflow_step(
+                5,
+                "retrieve the archived world-compat section and append post-archive verification \
+                 fields",
+                "release-operator",
+                "external archive retrieval + external-release-tracker",
+                "append post_archive_verified_by, post_archive_verified_at_utc, \
+                 post_archive_verification_result, and post_archive_verification_reference after \
+                 world-compat archive verification completes while preserving any approved deny \
+                 rehearsal rollback_reference on the same section; if a later approved or \
+                 rolled-back follow-up is appended, keep archive_reference, source_record_state, \
+                 and post_archive_verification_reference readable on that same section so the \
+                 follow-up still points back to the archived terminal evidence it is superseding",
                 release_review_post_archive_writeback_field_names(),
                 false,
             ),
@@ -2395,6 +2739,311 @@ pub(super) fn governance_section_instance_validation_contract(
     }
 }
 
+pub(super) fn world_compat_section_instance_validation_contract(
+    required_decision_field_contracts: &[ExternalRecordFieldContract],
+) -> ExternalSectionInstanceValidationContract {
+    let workflow = release_review_section_execution_workflow("world-compat");
+    let terminal_states = vec!["approved", "exception-accepted", "rejected", "rolled-back"];
+    let archive_handoff_contract = release_review_record_archive_handoff_contract(
+        "world-compat",
+        "release-review-record reached a terminal world compatibility review state with the \
+         runtime audit tuple, decision, and rollback evidence recorded for any approved deny \
+         rehearsal/default-flip candidate, accepted transition window, or rolled-back follow-up",
+        terminal_states.clone(),
+        terminal_states.clone(),
+    );
+    let post_archive_writeback_fields = release_review_post_archive_writeback_field_names();
+    let exception_record_field_contracts = world_compat_exception_field_contracts();
+    let retention_contract =
+        release_review_record_retention_contract("world-compat", &post_archive_writeback_fields);
+    let terminal_mutation_contract = release_review_terminal_mutation_contract(
+        "world-compat",
+        &archive_handoff_contract,
+        &post_archive_writeback_fields,
+    );
+    let execution_boundary_contract = release_review_record_execution_boundary_contract(
+        "world-compat",
+        required_decision_field_contracts,
+        &exception_record_field_contracts,
+        &archive_handoff_contract,
+    );
+    let exception_terminal_fields = vec!["exception_reason", "rollback_reference"];
+    let rollback_terminal_fields = vec!["rollback_reference"];
+
+    ExternalSectionInstanceValidationContract {
+        record_kind: "release-review-record",
+        section_signal: "world-compat",
+        lifecycle_state_field: "result_status",
+        validation_scope: "validate one concrete world-compat section instance inside the \
+                           authoritative release-review-record from draft through post-archive \
+                           verification",
+        snapshot_input_contract: external_section_snapshot_input_contract(
+            "world-compat",
+            required_decision_field_contracts,
+            &exception_record_field_contracts,
+            &archive_handoff_contract,
+            &post_archive_writeback_fields,
+            vec![
+                "field_values.result_status is the authoritative current lifecycle state for the \
+                 world-compat section snapshot under validation",
+                "when field_values.result_status = approved, the same field_values map must also \
+                 retain rollback_reference because approved world-compat records act as deny \
+                 rehearsal/default-flip evidence rather than transition-window exceptions",
+                "when field_values.result_status = exception-accepted, the same field_values map \
+                 must also retain exception_reason and rollback_reference so the validator can \
+                 enforce the accepted-gap path",
+                "field_values.load_legacy_mode and field_values.load_or_generate_sidecarless_mode \
+                 mark whether the reviewed rollout unit is still inside the transitional allow \
+                 window or has already rehearsed the deny posture needed before default \
+                 flip/removal",
+                "when field_values.result_status = rolled-back, the same field_values map must \
+                 retain rollback_reference so the validator can prove the reviewed rollout has a \
+                 concrete reversal path",
+                "prior_result_statuses must preserve same-section terminal history whenever the \
+                 validator needs to prove which earlier terminal world-compat state the current \
+                 follow-up is superseding",
+                "when field_values.result_status = approved and the world-compat section is being \
+                 validated as a follow-up that closes a prior accepted transition window, \
+                 prior_result_statuses must show that the same section previously reached \
+                 exception-accepted",
+                "when field_values.result_status = rolled-back, prior_result_statuses must show \
+                 that the same section previously reached approved before the rollback follow-up \
+                 was appended",
+                "when field_values.result_status is an approved or rolled-back follow-up, the \
+                 same field_values map must preserve or directly reference archive_reference, \
+                 source_record_state, and post_archive_verification_reference so the validator \
+                 can confirm the archived terminal evidence being superseded",
+            ],
+        ),
+        snapshot_template_contract: snapshot_template_contract(
+            "world-compat",
+            required_decision_field_contracts,
+            &exception_record_field_contracts,
+            &archive_handoff_contract,
+            &post_archive_writeback_fields,
+            vec![
+                "expand field_values with the concrete world-compat section fields captured from \
+                 the external tracker",
+                "keep exception_reason absent unless the current snapshot is validating the \
+                 exception-accepted path; rollback_reference may remain present for approved deny \
+                 rehearsal, exception-accepted, or rolled-back world-compat snapshots",
+                "omit prior_result_statuses unless the current field_values.result_status \
+                 requires lifecycle history proof; world-compat follow-up snapshots should use \
+                 prior_result_statuses to prove whether approved closed a prior \
+                 exception-accepted window or rolled-back followed a prior approved state",
+                "when approved or rolled-back is acting as a follow-up, keep archive_reference, \
+                 source_record_state, and post_archive_verification_reference preserved on or \
+                 directly referenced from the same section snapshot",
+            ],
+        ),
+        minimum_snapshot_example: snapshot_example_contract(
+            "world-compat",
+            required_decision_field_contracts,
+            &exception_record_field_contracts,
+            &archive_handoff_contract,
+            &post_archive_writeback_fields,
+            vec![
+                "illustrative only; the example uses an approved world-compat follow-up so \
+                 prior_result_statuses shows how to prove the same section previously ended in \
+                 exception-accepted before the transition window closed",
+                "real approved deny-rehearsal snapshots must still keep rollback_reference on the \
+                 same section, and any follow-up snapshot must keep the same-section prior \
+                 terminal history needed to prove what it superseded",
+                "real follow-up snapshots must also preserve or directly reference the archived \
+                 evidence fields on the same section so archive_reference, source_record_state, \
+                 and post_archive_verification_reference remain reviewable",
+                "replace every recipe hash, topology id, preset id, timestamp, archive reference, \
+                 and operator identity with rollout-specific truth from the real world-compat \
+                 snapshot",
+            ],
+        ),
+        validation_result_contract: validation_result_contract("world-compat", vec![
+            "stage_status=invalid or incomplete means the world-compat section is not yet a valid \
+             authoritative review record for the rollout unit",
+        ]),
+        minimum_validation_result_example: validation_result_example("world-compat", vec![
+            "illustrative only; the sample shows a fully valid approved world-compat section \
+             after archive and post-archive verification",
+        ]),
+        draft_requirements: section_validation_stage(
+            "draft-minimum",
+            vec!["draft"],
+            &workflow,
+            1,
+            Vec::new(),
+            vec![
+                "result_status must remain draft until the dedicated world compatibility runtime \
+                 fields are linked on the same section",
+                "release_reference and section_signal must still identify the same rollout unit \
+                 and world-compat review section in the authoritative external record",
+            ],
+            "the world-compat section exists and carries the minimum identity, authorship, and \
+             initial lifecycle fields before runtime compatibility evidence is linked",
+            true,
+        ),
+        evidence_linked_requirements: section_validation_stage(
+            "runtime-linked",
+            vec!["runtime-linked"],
+            &workflow,
+            2,
+            Vec::new(),
+            vec![
+                "the dedicated world compatibility status, runtime audit tuple, and recipe \
+                 fingerprint must be linked on the same section before result_status advances to \
+                 runtime-linked",
+                "load_legacy_mode and load_or_generate_sidecarless_mode must be copied exactly \
+                 because they are the stage markers for future default-flip/removal review",
+                "if either copied gate remains allow, the section is still documenting a \
+                 transitional posture and must not be interpreted as removal-complete",
+            ],
+            "advance to runtime-linked only after the dedicated world compatibility runtime truth \
+             is recorded on the same section, including the copied legacy-tail posture fields",
+            true,
+        ),
+        terminal_requirements: section_validation_stage(
+            "terminal-decision",
+            terminal_states.clone(),
+            &workflow,
+            3,
+            vec![
+                conditional_field_requirement(
+                    vec!["approved"],
+                    rollback_terminal_fields.clone(),
+                    "approved world-compat deny-rehearsal posture also requires \
+                     rollback_reference on the same section",
+                ),
+                conditional_field_requirement(
+                    vec!["exception-accepted"],
+                    exception_terminal_fields.clone(),
+                    "exception-accepted world-compat posture also requires exception_reason and \
+                     rollback_reference on the same section",
+                ),
+                conditional_field_requirement(
+                    vec!["rolled-back"],
+                    rollback_terminal_fields.clone(),
+                    "rolled-back world-compat posture also requires rollback_reference on the \
+                     same section",
+                ),
+            ],
+            vec![
+                "approval_decision must remain aligned with the terminal world-compat \
+                 result_status recorded on the same section",
+                "if load_legacy_mode = deny and load_or_generate_sidecarless_mode = deny and \
+                 result_status = approved, rollback_reference must already be recorded on the \
+                 same section as the deny rehearsal restore path",
+                "if load_legacy_mode = allow or load_or_generate_sidecarless_mode = allow and the \
+                 rollout still proceeds, result_status should take the exception-accepted path so \
+                 exception_reason and rollback_reference remain attached to that transition window",
+                "approved is reserved for world-compat sections whose copied legacy-tail posture \
+                 no longer relies on a transitional allow window for the reviewed rollout unit",
+                "if an approved world-compat follow-up is closing a previously archived \
+                 exception-accepted window, prior_result_statuses must still prove that the same \
+                 section previously reached exception-accepted, and \
+                 archive_reference/source_record_state/post_archive_verification_reference must \
+                 remain preserved or directly referenced on the same section",
+                "rolled-back is only valid after the same rollout unit has already passed through \
+                 a prior approved terminal world-compat decision state, and prior_result_statuses \
+                 must prove that approved history on the same section; the approved terminal \
+                 archive_reference/source_record_state/post_archive_verification_reference must \
+                 likewise remain preserved or directly referenced on the same section",
+            ],
+            "a terminal world-compat section must carry the terminal decision on the same \
+             section; approved deny-rehearsal posture, exception-accepted transitional posture, \
+             and rolled-back follow-up all require rollback_reference, while exception-accepted \
+             additionally requires exception_reason; reopen/rollback follow-up validation also \
+             depends on same-section prior_result_statuses history proof instead of inferred \
+             state transitions",
+            true,
+        ),
+        archive_receipt_requirements: section_validation_stage(
+            "archive-receipt-linked",
+            terminal_states.clone(),
+            &workflow,
+            4,
+            vec![
+                conditional_field_requirement(
+                    vec!["approved"],
+                    rollback_terminal_fields.clone(),
+                    "archive-ready approved world-compat deny-rehearsal sections must still carry \
+                     rollback_reference on the same section",
+                ),
+                conditional_field_requirement(
+                    vec!["exception-accepted"],
+                    exception_terminal_fields.clone(),
+                    "archive-ready exception world-compat sections must still carry \
+                     exception_reason and rollback_reference on the same section",
+                ),
+                conditional_field_requirement(
+                    vec!["rolled-back"],
+                    rollback_terminal_fields.clone(),
+                    "archive-ready rolled-back world-compat sections must still carry \
+                     rollback_reference on the same section",
+                ),
+            ],
+            vec![
+                "source_record_state must exactly match the terminal result_status written on the \
+                 same section",
+                "archive handoff must stay correlated to the same release_reference, \
+                 section_signal, and terminal result_status for the world-compat review section",
+            ],
+            "the terminal world-compat section is not complete until archive receipt fields are \
+             written back on the same section",
+            true,
+        ),
+        post_archive_verification_requirements: section_validation_stage(
+            "post-archive-verified",
+            terminal_states,
+            &workflow,
+            5,
+            vec![
+                conditional_field_requirement(
+                    vec!["approved"],
+                    rollback_terminal_fields.clone(),
+                    "post-archive verification of approved world-compat deny-rehearsal sections \
+                     still requires the preserved rollback_reference field",
+                ),
+                conditional_field_requirement(
+                    vec!["exception-accepted"],
+                    exception_terminal_fields,
+                    "post-archive verification of exception world-compat sections still requires \
+                     the preserved exception_reason and rollback_reference fields",
+                ),
+                conditional_field_requirement(
+                    vec!["rolled-back"],
+                    rollback_terminal_fields,
+                    "post-archive verification of rolled-back world-compat sections still \
+                     requires the preserved rollback_reference field",
+                ),
+            ],
+            {
+                let mut checks = retention_contract.required_post_archive_checks.clone();
+                checks.push(
+                    "approved or rolled-back follow-up validation is incomplete if \
+                     archive_reference, source_record_state, or \
+                     post_archive_verification_reference are no longer preserved on or directly \
+                     referenced from the same section",
+                );
+                checks
+            },
+            "append post-archive verification fields on the same world-compat section after \
+             archive retrieval and retention verification complete",
+            false,
+        ),
+        required_authority_pairing_check_ids: Vec::new(),
+        required_archive_correlation_dimensions: archive_handoff_contract
+            .required_archive_correlation_dimensions
+            .clone(),
+        source_record_state_field: "source_record_state",
+        blocking_interpretation: "missing draft, runtime-linked, terminal, or archive-receipt \
+                                  requirements means the world-compat section is not yet a valid \
+                                  authoritative review record for the rollout unit; missing \
+                                  post-archive verification keeps audit closure incomplete even \
+                                  after archiving",
+        forbidden_shortcuts: execution_boundary_contract.forbidden_shortcuts,
+        forbidden_post_terminal_mutations: terminal_mutation_contract.forbidden_mutations,
+    }
+}
+
 pub(super) fn management_auth_section_instance_validation_contract(
     required_decision_field_contracts: &[ExternalRecordFieldContract],
 ) -> ExternalSectionInstanceValidationContract {
@@ -2807,6 +3456,157 @@ pub(super) fn public_entry_handoff_exception_field_contracts() -> Vec<ExternalRe
     ]
 }
 
+pub(super) fn world_compat_required_decision_field_contracts() -> Vec<ExternalRecordFieldContract> {
+    vec![
+        external_record_field_contract(
+            "reviewed_by",
+            "operator-identity",
+            "release-operator-attestation",
+            "human owner who reviewed the dedicated world compatibility status for the rollout \
+             unit",
+        ),
+        external_record_field_contract(
+            "approval_decision",
+            "approval-decision-enum",
+            "release-operator-attestation",
+            "operator decision for the world compatibility review",
+        ),
+        external_record_field_contract(
+            "decision_recorded_at_utc",
+            "utc-timestamp",
+            "release-operator-attestation",
+            "time when the world compatibility review decision was recorded",
+        ),
+        external_record_field_contract(
+            "result_status",
+            "result-status-enum",
+            "external-release-tracker",
+            "current lifecycle state for this world-compat review section; must match one of the \
+             published result_status_model states",
+        ),
+        external_record_field_contract(
+            "release_reference",
+            "release-reference",
+            "external-release-tracker",
+            "release tracker identifier tied to the world compatibility review decision",
+        ),
+        external_record_field_contract(
+            "world_compat_status",
+            "enum-string",
+            "/health/world-compat",
+            "dedicated world compatibility status published by the runtime review surface",
+        ),
+        external_record_field_contract(
+            "configured_mode",
+            "enum-string",
+            "/health/world-compat",
+            "configured world compatibility mode captured by the dedicated runtime surface, or \
+             unrecorded if structured context was unavailable",
+        ),
+        external_record_field_contract(
+            "load_legacy_mode",
+            "enum-string",
+            "/health/world-compat",
+            "configured LoadLegacy admission gate captured by the dedicated runtime surface, or \
+             unrecorded if structured context was unavailable; allow means the reviewed rollout \
+             unit still keeps the transitional compat-import window open, while deny records the \
+             closed posture required before default flip/removal can be treated as complete",
+        ),
+        external_record_field_contract(
+            "load_or_generate_sidecarless_mode",
+            "enum-string",
+            "/health/world-compat",
+            "configured managed LoadOrGenerate sidecarless admission gate captured by the \
+             dedicated runtime surface, or unrecorded if structured context was unavailable; \
+             allow means the reviewed rollout unit still keeps sidecarless managed reuse open as \
+             a transitional path, while deny records the closed posture required before default \
+             flip/removal can be treated as complete",
+        ),
+        external_record_field_contract(
+            "compat_entry",
+            "enum-string",
+            "/health/world-compat",
+            "compatibility audit entry captured by the dedicated runtime surface, or unrecorded \
+             if structured context was unavailable",
+        ),
+        external_record_field_contract(
+            "compat_decision",
+            "enum-string",
+            "/health/world-compat",
+            "compatibility audit decision captured by the dedicated runtime surface, or \
+             unrecorded if structured context was unavailable",
+        ),
+        external_record_field_contract(
+            "compat_failure",
+            "enum-string",
+            "/health/world-compat",
+            "compatibility audit failure kind captured by the dedicated runtime surface, or \
+             unrecorded if structured context was unavailable",
+        ),
+        external_record_field_contract(
+            "strict_load_contract_gap",
+            "boolean-or-enum-string",
+            "/health/world-compat",
+            "whether the runtime surfaced a strict world load contract gap, or unrecorded if \
+             structured context was unavailable",
+        ),
+        external_record_field_contract(
+            "managed_recipe_sidecar_missing",
+            "boolean-or-enum-string",
+            "/health/world-compat",
+            "whether the runtime loaded an existing managed world without an adjacent recipe \
+             sidecar, or unrecorded if structured context was unavailable",
+        ),
+        external_record_field_contract(
+            "world_recipe_hash",
+            "string",
+            "/health/world-compat",
+            "effective world recipe fingerprint published by the dedicated runtime surface, or \
+             unrecorded if unavailable",
+        ),
+        external_record_field_contract(
+            "chunk_recipe_hash",
+            "string",
+            "/health/world-compat",
+            "effective chunk recipe fingerprint published by the dedicated runtime surface, or \
+             unrecorded if unavailable",
+        ),
+        external_record_field_contract(
+            "topology_id",
+            "string",
+            "/health/world-compat",
+            "world topology id published by the dedicated runtime surface, or unrecorded if \
+             unavailable",
+        ),
+        external_record_field_contract(
+            "preset_id",
+            "string",
+            "/health/world-compat",
+            "world preset id published by the dedicated runtime surface, or unrecorded if \
+             unavailable",
+        ),
+    ]
+}
+
+pub(super) fn world_compat_exception_field_contracts() -> Vec<ExternalRecordFieldContract> {
+    vec![
+        external_record_field_contract(
+            "exception_reason",
+            "freeform-text",
+            "external-release-tracker",
+            "operator rationale for accepting a reviewed world compatibility gap",
+        ),
+        external_record_field_contract(
+            "rollback_reference",
+            "release-or-runbook-reference",
+            "external-release-tracker",
+            "rollback path linked to the world compatibility review decision; preserve it on the \
+             same section for approved deny rehearsals, exception-accepted transition windows, \
+             and rolled-back follow-up states",
+        ),
+    ]
+}
+
 pub(super) fn governance_required_decision_field_contracts() -> Vec<ExternalRecordFieldContract> {
     vec![
         external_record_field_contract(
@@ -3061,8 +3861,34 @@ pub(super) fn release_review_record_retention_contract(
                      section_signal, and terminal result_status captured for the section"
                 },
             },
+            match signal {
+                "world-compat" => {
+                    "after archive, close accepted transition windows with an explicit approved \
+                     follow-up history entry and represent post-flip rollback with an explicit \
+                     rolled-back follow-up history entry on the same release-review-record; do not \
+                     rewrite archived terminal world-compat sections in place"
+                },
+                _ => {
+                    "after terminal capture, later decision changes must remain append-only \
+                     follow-up history instead of silent archived-section rewrites"
+                },
+            },
             "after terminal capture, only append-only archive receipt or explicit superseding \
              follow-up updates are allowed; decision evidence must not be silently rewritten",
+            match signal {
+                "world-compat" => {
+                    "before any approved or rolled-back follow-up is appended, keep \
+                     archive_reference, source_record_state, and \
+                     post_archive_verification_reference preserved on or directly referenced from \
+                     the same section so the follow-up still carries the archived terminal \
+                     evidence it is superseding"
+                },
+                _ => {
+                    "before any follow-up is appended, keep previously written archive receipt and \
+                     post-archive verification evidence preserved on or directly referenced from \
+                     the same section"
+                },
+            },
         ],
         required_post_archive_writeback_fields: post_archive_writeback_fields.to_vec(),
         post_archive_writeback_target: "append post-archive verification fields to the same \
@@ -3120,6 +3946,27 @@ pub(super) fn release_review_terminal_mutation_contract(
                 "append a new explicit management-auth follow-up on the same \
                  release-review-record instead of silently rewriting archived auth posture",
             ],
+            "world-compat" => vec![
+                "append archive receipt fields and post-archive verification fields after the \
+                 terminal world-compat section is archived",
+                "append an explicit correction or superseding world-compat reference if archived \
+                 metadata must be clarified, but do not use a correction-only reference to \
+                 represent accepted-window closure or post-flip rollback posture changes",
+                "append an explicit approved follow-up on the same release-review-record when an \
+                 archived exception-accepted transition window later closes under deny/deny \
+                 posture, while preserving archive_reference, source_record_state, and \
+                 post_archive_verification_reference on the same section and keeping \
+                 prior_result_statuses as the same-section history proof that the superseded \
+                 terminal state was exception-accepted; do not represent that posture change as \
+                 metadata clarification only",
+                "append an explicit rolled-back follow-up on the same release-review-record when \
+                 an archived approved deny-rehearsal later reopens or rolls back, while \
+                 preserving archive_reference, source_record_state, and \
+                 post_archive_verification_reference on the same section and keeping \
+                 prior_result_statuses as the same-section history proof that the superseded \
+                 terminal state was approved; do not represent that posture change as metadata \
+                 clarification only",
+            ],
             _ => vec![
                 "append archive receipt fields and post-archive verification fields after the \
                  terminal review section is archived",
@@ -3139,6 +3986,25 @@ pub(super) fn release_review_terminal_mutation_contract(
                 "do not replace archived Public cutover history with a new bundle review without \
                  recording an explicit superseding follow-up",
             ],
+            "world-compat" => vec![
+                "do not overwrite release_reference, load_legacy_mode, \
+                 load_or_generate_sidecarless_mode, decision evidence, exception_reason, or \
+                 rollback_reference after terminal capture",
+                "do not change a terminal result_status in place once archive receipt is written",
+                "do not rewrite archive receipt or post-archive verification evidence in place \
+                 once it has been appended; record an explicit world-compat follow-up instead",
+                "do not drop archive_reference, source_record_state, \
+                 post_archive_verification_reference, or prior_result_statuses from the same \
+                 section when appending an approved or rolled-back world-compat follow-up",
+                "do not treat accepted-window closure or post-flip rollback as a correction-only \
+                 archived metadata clarification; record an explicit approved or rolled-back \
+                 follow-up instead",
+                "do not close an archived exception-accepted transition window by silently \
+                 replacing it with approved; append an explicit approved follow-up on the same \
+                 release-review-record instead",
+                "do not represent post-flip rollback by silently mutating an archived approved \
+                 deny-rehearsal section; append an explicit rolled-back follow-up instead",
+            ],
             _ => vec![
                 "do not overwrite release_reference, decision evidence, or exception rationale \
                  after terminal capture",
@@ -3154,6 +4020,13 @@ pub(super) fn release_review_terminal_mutation_contract(
                 "if a Public cutover decision later changes, preserve the archived terminal \
                  snapshot and record the new outcome as an explicit follow-up transition or \
                  superseding section history entry tied to the same release_reference"
+            },
+            "world-compat" => {
+                "if a terminal world-compat decision later changes, preserve the archived terminal \
+                 snapshot and record the new outcome as an explicit follow-up history entry tied \
+                 to the same release_reference; close accepted transition windows with an approved \
+                 follow-up and represent post-flip rollback with a rolled-back follow-up instead \
+                 of rewriting archived terminal history"
             },
             _ => {
                 "if a terminal review decision later changes, preserve the archived terminal \
@@ -3301,6 +4174,44 @@ pub(super) fn governance_review_result_status_model() -> Vec<ResultStatusContrac
             state: "rolled-back",
             semantics: "same release review record updated after the rollout reverted while \
                         governance review remained part of the release decision chain",
+        },
+    ]
+}
+
+pub(super) fn world_compat_review_result_status_model() -> Vec<ResultStatusContract> {
+    vec![
+        ResultStatusContract {
+            state: "draft",
+            semantics: "world-compat review section opened but runtime world compatibility truth \
+                        is not yet fully linked",
+        },
+        ResultStatusContract {
+            state: "runtime-linked",
+            semantics: "dedicated world compatibility status, runtime audit tuple, and recipe \
+                        fingerprint have been linked to the record, including whether legacy-tail \
+                        admission remains in transitional allow posture or has already moved to \
+                        deny",
+        },
+        ResultStatusContract {
+            state: "approved",
+            semantics: "world compatibility review cleared without accepted gaps and without \
+                        relying on a transitional legacy-tail allow posture for the reviewed \
+                        rollout unit; the same section keeps rollback_reference so the deny \
+                        rehearsal/default-flip candidate remains reversible",
+        },
+        ResultStatusContract {
+            state: "exception-accepted",
+            semantics: "world compatibility gap or still-open legacy-tail transition window \
+                        accepted with explicit rationale and rollback path recorded",
+        },
+        ResultStatusContract {
+            state: "rejected",
+            semantics: "world compatibility review rejected the rollout",
+        },
+        ResultStatusContract {
+            state: "rolled-back",
+            semantics: "same release review record updated after the rollout reverted due to or \
+                        after world compatibility review findings",
         },
     ]
 }

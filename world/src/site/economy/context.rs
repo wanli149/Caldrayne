@@ -312,6 +312,8 @@ mod tests {
                 //sim::FileOpts::LoadAsset("world.map.economy_8x8".into()),
                 calendar: None,
                 compat_mode: Default::default(),
+                load_legacy_mode: Default::default(),
+                load_or_generate_sidecarless_mode: Default::default(),
             };
             let mut index = crate::index::Index::new(seed);
             info!("Index created");
@@ -340,6 +342,8 @@ mod tests {
                 //sim::FileOpts::LoadAsset("world.map.economy_8x8".into()),
                 calendar: None,
                 compat_mode: Default::default(),
+                load_legacy_mode: Default::default(),
+                load_or_generate_sidecarless_mode: Default::default(),
             };
             let mut index = crate::index::Index::new(seed);
             info!("Index created");
@@ -505,6 +509,8 @@ mod tests {
                 world_file: sim::FileOpts::LoadAsset(sim::DEFAULT_WORLD_MAP.into()),
                 calendar: Default::default(),
                 compat_mode: Default::default(),
+                load_legacy_mode: Default::default(),
+                load_or_generate_sidecarless_mode: Default::default(),
             };
             let index = crate::index::Index::new(seed);
             info!("Index created");

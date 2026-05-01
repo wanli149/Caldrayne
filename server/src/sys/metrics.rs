@@ -132,6 +132,13 @@ impl<'a> System<'a> for Sys {
         export_chunk_lifecycle
             .pending_chunks_len
             .set(chunk_generator.pending_chunks().count() as i64);
+        common_base::plot!(
+            "terrain intake queue",
+            chunk_generator.terrain_intake_queue_len() as f64
+        );
+        export_chunk_lifecycle
+            .terrain_intake_queue_len
+            .set(chunk_generator.terrain_intake_queue_len() as i64);
         {
             let mut lifecycle = chunk_lifecycle.lock().expect("Poisoned");
             lifecycle.prune_stale(tick.0.saturating_sub(600));

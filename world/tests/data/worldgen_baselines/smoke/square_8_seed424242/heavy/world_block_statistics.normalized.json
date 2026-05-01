@@ -1,0 +1,232 @@
+{
+  "schema_version": "world_block_statistics_bounded_v1",
+  "contract": "bounded_runtime_chunk_block_statistics_v1",
+  "comparability": "bounded_runtime_chunk_block_statistics_non_gating",
+  "input_contract": "strict Load(path) over saved world.bin plus adjacent RecipeManifestV1 sidecar",
+  "runtime_chunk_entry": "world.generate_chunk(rtsim_resource_fractions=None,time=None,calendar=None)",
+  "selection_contract": "deterministic best-effort interior lattice over runtime chunk coordinates bounded by requested_chunk_budget",
+  "strict_determinism": true,
+  "requested_chunk_budget": 9,
+  "sampled_chunk_count": 9,
+  "map_size_chunks": [
+    256,
+    256
+  ],
+  "world_recipe_hash": "091f2ee9b1fad345daf46d375b5063d3f511032a0960ccbc2e3cd8fde1724cb3",
+  "chunk_recipe_hash": "83c600b62e071a0c4fff086c8700c8008c5bf576b39ec12091245b21d5185d03",
+  "topology_id": "bounded_plane_v1",
+  "chunk_pass_version": "chunk-static-v1-record-only",
+  "aggregate": {
+    "block_total": 212992,
+    "non_air_blocks": 111988,
+    "sprite_total": 103597,
+    "block_kind_counts": {
+      "Air": 101004,
+      "Earth": 16098,
+      "Grass": 1718,
+      "Leaves": 8300,
+      "Rock": 71071,
+      "Sand": 8499,
+      "Snow": 501,
+      "Water": 2593,
+      "WeakRock": 1768,
+      "Wood": 1440
+    },
+    "sprite_kind_counts": {
+      "Beehive": 1,
+      "Empty": 103556,
+      "MediumGrass": 3,
+      "RedSavannaGrass": 6,
+      "SavannaBush": 1,
+      "SavannaGrass": 4,
+      "ShortGrass": 1,
+      "TaigaGrass": 18,
+      "TallSavannaGrass": 6,
+      "Twigs": 1
+    }
+  },
+  "sampled_chunks": [
+    {
+      "selection_rank": 1,
+      "chunk_pos": [
+        1,
+        1
+      ],
+      "min_z": 112,
+      "max_z": 144,
+      "height": 32,
+      "block_total": 32768,
+      "non_air_blocks": 28672,
+      "sprite_total": 5136,
+      "block_kind_counts": {
+        "Air": 4096,
+        "Earth": 3545,
+        "Rock": 20247,
+        "Sand": 3840,
+        "Water": 1040
+      },
+      "sprite_kind_counts": {
+        "Empty": 5136
+      }
+    },
+    {
+      "selection_rank": 2,
+      "chunk_pos": [
+        128,
+        1
+      ],
+      "min_z": 119,
+      "max_z": 151,
+      "height": 32,
+      "block_total": 32768,
+      "non_air_blocks": 21504,
+      "sprite_total": 12271,
+      "block_kind_counts": {
+        "Air": 11264,
+        "Earth": 4103,
+        "Grass": 28,
+        "Rock": 13345,
+        "Sand": 3021,
+        "Water": 1007
+      },
+      "sprite_kind_counts": {
+        "Empty": 12269,
+        "MediumGrass": 2
+      }
+    },
+    {
+      "selection_rank": 3,
+      "chunk_pos": [
+        255,
+        1
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "height": 0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "selection_rank": 4,
+      "chunk_pos": [
+        1,
+        128
+      ],
+      "min_z": 113,
+      "max_z": 177,
+      "height": 64,
+      "block_total": 65536,
+      "non_air_blocks": 30762,
+      "sprite_total": 35320,
+      "block_kind_counts": {
+        "Air": 34774,
+        "Earth": 4023,
+        "Grass": 679,
+        "Rock": 22108,
+        "Sand": 1638,
+        "Water": 546,
+        "WeakRock": 1768
+      },
+      "sprite_kind_counts": {
+        "Empty": 35301,
+        "MediumGrass": 1,
+        "RedSavannaGrass": 6,
+        "SavannaBush": 1,
+        "SavannaGrass": 4,
+        "ShortGrass": 1,
+        "TallSavannaGrass": 6
+      }
+    },
+    {
+      "selection_rank": 5,
+      "chunk_pos": [
+        128,
+        128
+      ],
+      "min_z": 473,
+      "max_z": 553,
+      "height": 80,
+      "block_total": 81920,
+      "non_air_blocks": 31050,
+      "sprite_total": 50870,
+      "block_kind_counts": {
+        "Air": 50870,
+        "Earth": 4427,
+        "Grass": 1011,
+        "Leaves": 8300,
+        "Rock": 15371,
+        "Snow": 501,
+        "Wood": 1440
+      },
+      "sprite_kind_counts": {
+        "Beehive": 1,
+        "Empty": 50850,
+        "TaigaGrass": 18,
+        "Twigs": 1
+      }
+    },
+    {
+      "selection_rank": 6,
+      "chunk_pos": [
+        255,
+        128
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "height": 0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "selection_rank": 7,
+      "chunk_pos": [
+        1,
+        255
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "height": 0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "selection_rank": 8,
+      "chunk_pos": [
+        128,
+        255
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "height": 0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    },
+    {
+      "selection_rank": 9,
+      "chunk_pos": [
+        255,
+        255
+      ],
+      "min_z": 140,
+      "max_z": 140,
+      "height": 0,
+      "block_total": 0,
+      "non_air_blocks": 0,
+      "sprite_total": 0,
+      "block_kind_counts": {},
+      "sprite_kind_counts": {}
+    }
+  ]
+}

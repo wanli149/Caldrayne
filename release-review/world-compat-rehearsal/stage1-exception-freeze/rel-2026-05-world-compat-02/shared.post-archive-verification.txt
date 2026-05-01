@@ -1,0 +1,11 @@
+sample_kind = world-compat-stage1-shared
+sample_status = rehearsal-only
+release_reference = rel-2026-05-world-compat-02
+section_signal = world-compat
+material_kind = post-archive-verification
+post_archive_verification_reference = audit://world-compat/post-archive-check-11
+
+notes = [
+  "rehearsal sample only",
+  "replace with the real post-archive verification result for the same direct-prior terminal"
+]

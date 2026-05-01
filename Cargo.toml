@@ -71,6 +71,12 @@ debug = "line-tables-only"
 inherits = 'dev'
 debug = true
 
+# keep the workspace test profile on a single non-incremental linker path.
+# this avoids repeated MSVC test-binary PDB/link instability without asking
+# every caller or CI job to remember a profile override.
+[profile.test]
+incremental = false
+
 # used to perform things that do a *lot* of math (i.e. worldgen) but still need reasonable compilation time.  Ideally this would also
 # add -C target-cpu=native, but I don't think you can set this by profile currently.
 [profile.no_overflow]

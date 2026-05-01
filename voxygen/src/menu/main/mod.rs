@@ -32,8 +32,7 @@ use common_state::plugin::PluginMgr;
 use i18n::{LocalizationGuard, LocalizationHandle, fluent_args};
 #[cfg(feature = "singleplayer")]
 use server::{CompatEntryKindV1, CompatFailureKindV1, ServerInitStage};
-#[cfg(any(feature = "singleplayer", feature = "plugins"))]
-use specs::WorldExt;
+#[cfg(feature = "plugins")] use specs::WorldExt;
 use std::{cell::RefCell, path::Path, rc::Rc, sync::Arc};
 use tokio::runtime;
 use tracing::error;
@@ -127,6 +126,7 @@ const fn compat_failure_msg_key(failure: CompatFailureKindV1) -> &'static str {
         CompatFailureKindV1::ParseError => "main-servers-world_compat_failure-parse_error",
         CompatFailureKindV1::InvalidWorld => "main-servers-world_compat_failure-invalid_world",
         CompatFailureKindV1::OptionMismatch => "main-servers-world_compat_failure-option_mismatch",
+        CompatFailureKindV1::PolicyDenied => "main-servers-world_compat_failure-generic",
         CompatFailureKindV1::None => "main-servers-world_compat_failure-generic",
     }
 }
@@ -147,15 +147,26 @@ const fn compat_remediation_msg_key(entry: CompatEntryKindV1) -> &'static str {
 #[cfg(feature = "singleplayer")]
 const fn compat_notice_remediation_msg_key(entry: CompatEntryKindV1) -> &'static str {
     match entry {
-        CompatEntryKindV1::Load | CompatEntryKindV1::LoadLegacy => {
-            "main-servers-world_compat_notice_remediation-load"
-        },
+        CompatEntryKindV1::Load => "main-servers-world_compat_notice_remediation-load",
+        CompatEntryKindV1::LoadLegacy => "main-servers-world_compat_notice_remediation-load_legacy",
         CompatEntryKindV1::LoadAsset => "main-servers-world_compat_notice_remediation-load_asset",
         CompatEntryKindV1::Generate
         | CompatEntryKindV1::Save
         | CompatEntryKindV1::LoadOrGenerate => {
             "main-servers-world_compat_notice_remediation-generic"
         },
+    }
+}
+
+#[cfg(feature = "singleplayer")]
+const fn compat_notice_msg_key(entry: CompatEntryKindV1) -> &'static str {
+    match entry {
+        CompatEntryKindV1::LoadLegacy => "main-servers-world_compat_notice-load_legacy",
+        CompatEntryKindV1::Load
+        | CompatEntryKindV1::LoadAsset
+        | CompatEntryKindV1::Generate
+        | CompatEntryKindV1::Save
+        | CompatEntryKindV1::LoadOrGenerate => "main-servers-world_compat_notice",
     }
 }
 
@@ -179,12 +190,17 @@ fn localized_compat_world_notice(
     audit: server::CompatAuditV1,
 ) -> String {
     localization
-        .get_msg_ctx("main-servers-world_compat_notice", &fluent_args! {
+        .get_msg_ctx(compat_notice_msg_key(audit.entry), &fluent_args! {
             "entry" => localization.get_msg(compat_entry_msg_key(audit.entry)),
             "failure" => localization.get_msg(compat_failure_msg_key(audit.failure_kind)),
             "remediation" => localization.get_msg(compat_notice_remediation_msg_key(audit.entry)),
         })
         .into_owned()
+}
+
+#[cfg(feature = "singleplayer")]
+const fn compat_notice_required(audit: server::CompatAuditV1) -> bool {
+    audit.is_strict_load_contract_gap() || matches!(audit.entry, CompatEntryKindV1::LoadLegacy)
 }
 
 #[cfg(feature = "singleplayer")]
@@ -242,7 +258,7 @@ impl PlayState for MainMenuState {
 
                 match singleplayer.receiver.try_recv() {
                     Ok(Ok(init_outcome)) => {
-                        if init_outcome.compat_audit.is_strict_load_contract_gap() {
+                        if compat_notice_required(init_outcome.compat_audit) {
                             self.main_menu_ui.show_connection_notice(
                                 localized_compat_world_notice(
                                     localized_strings,
@@ -685,7 +701,10 @@ impl PlayState for MainMenuState {
                             match change {
                                 ui::WorldsChange::SetActive(world) => init.current = world,
                                 ui::WorldsChange::Delete(world) => init.remove(world),
-                                ui::WorldsChange::Regenerate(world) => init.delete_map_file(world),
+                                ui::WorldsChange::Regenerate(world) => {
+                                    init.delete_map_file(world);
+                                    init.save_world_meta(world);
+                                },
                                 ui::WorldsChange::AddNew => init.new_world(),
                                 ui::WorldsChange::CurrentWorldChange(change) => {
                                     if let Some(world) = init.current.map(|i| &mut init.worlds[i]) {
@@ -816,8 +835,11 @@ impl PlayState for MainMenuState {
 
 #[cfg(all(test, feature = "singleplayer"))]
 mod tests {
-    use super::{compat_entry_msg_key, compat_failure_msg_key, compat_remediation_msg_key};
-    use server::{CompatEntryKindV1, CompatFailureKindV1};
+    use super::{
+        compat_entry_msg_key, compat_failure_msg_key, compat_notice_msg_key,
+        compat_notice_remediation_msg_key, compat_notice_required, compat_remediation_msg_key,
+    };
+    use server::{CompatAuditV1, CompatEntryKindV1, CompatFailureKindV1};
 
     #[test]
     fn compat_entry_keys_match_expected_variants() {
@@ -865,6 +887,52 @@ mod tests {
             compat_remediation_msg_key(CompatEntryKindV1::LoadOrGenerate),
             "main-servers-world_compat_remediation-generic"
         );
+    }
+
+    #[test]
+    fn compat_notice_keys_match_expected_variants() {
+        assert_eq!(
+            compat_notice_msg_key(CompatEntryKindV1::LoadLegacy),
+            "main-servers-world_compat_notice-load_legacy"
+        );
+        assert_eq!(
+            compat_notice_msg_key(CompatEntryKindV1::Load),
+            "main-servers-world_compat_notice"
+        );
+        assert_eq!(
+            compat_notice_msg_key(CompatEntryKindV1::LoadAsset),
+            "main-servers-world_compat_notice"
+        );
+    }
+
+    #[test]
+    fn compat_notice_remediation_keys_match_expected_variants() {
+        assert_eq!(
+            compat_notice_remediation_msg_key(CompatEntryKindV1::LoadLegacy),
+            "main-servers-world_compat_notice_remediation-load_legacy"
+        );
+        assert_eq!(
+            compat_notice_remediation_msg_key(CompatEntryKindV1::Load),
+            "main-servers-world_compat_notice_remediation-load"
+        );
+        assert_eq!(
+            compat_notice_remediation_msg_key(CompatEntryKindV1::LoadAsset),
+            "main-servers-world_compat_notice_remediation-load_asset"
+        );
+    }
+
+    #[test]
+    fn compat_notice_required_covers_strict_gap_and_load_legacy() {
+        assert!(compat_notice_required(CompatAuditV1::fallback_generate(
+            CompatEntryKindV1::Load,
+            CompatFailureKindV1::MissingInput,
+        )));
+        assert!(compat_notice_required(CompatAuditV1::loaded_existing(
+            CompatEntryKindV1::LoadLegacy,
+        )));
+        assert!(!compat_notice_required(CompatAuditV1::loaded_existing(
+            CompatEntryKindV1::LoadAsset,
+        )));
     }
 }
 

@@ -9,6 +9,7 @@ mod health;
 mod routes;
 mod ui;
 
+pub(crate) use health::set_chunk_lifecycle_observability_status;
 #[cfg(feature = "worldgen")]
 pub(crate) use health::set_world_compat_observability_status;
 pub use health::{
@@ -63,4 +64,40 @@ where
         _ = shutdown => Ok(()),
     };
     res
+}
+
+#[cfg(test)]
+pub(crate) struct SmokeHttpResponse {
+    pub status_line: String,
+    pub body: String,
+}
+
+#[cfg(test)]
+pub(crate) async fn smoke_http_get(
+    bind_address: SocketAddr,
+    path: &str,
+) -> io::Result<SmokeHttpResponse> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut stream = tokio::net::TcpStream::connect(bind_address).await?;
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: {bind_address}\r\nConnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).await?;
+    stream.flush().await?;
+
+    let mut bytes = Vec::new();
+    stream.read_to_end(&mut bytes).await?;
+
+    let response = String::from_utf8(bytes).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("smoke response was not valid UTF-8: {error}"),
+        )
+    })?;
+    let mut sections = response.splitn(2, "\r\n\r\n");
+    let headers = sections.next().unwrap_or_default();
+    let body = sections.next().unwrap_or_default().to_owned();
+    let status_line = headers.lines().next().unwrap_or_default().to_owned();
+
+    Ok(SmokeHttpResponse { status_line, body })
 }

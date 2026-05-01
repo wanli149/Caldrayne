@@ -1,0 +1,19 @@
+sample_kind = world-compat-stage1-snapshot
+sample_status = rehearsal-only
+cycle = N+1
+release_reference = rel-2026-05-world-compat-02
+sample_point = T1
+sample_semantics = "config freeze complete; first successful startup under this second release_reference"
+
+world_compat_status = world-compat-clear
+configured_mode = record
+load_legacy_mode = deny
+load_or_generate_sidecarless_mode = deny
+managed_recipe_sidecar_missing = false
+transition_window_open = false
+
+boundary_notes = [
+  "copy these fields verbatim from the live /health/world-compat response",
+  "Cycle N+1 must use a different release_reference than Cycle N",
+  "the same deny/deny + clear posture must hold independently in both cycles"
+]

@@ -515,7 +515,6 @@ impl StateExt for State {
         world: &std::sync::Arc<world::World>,
         index: &world::IndexOwned,
     ) -> EcsEntityBuilder<'_> {
-        use common::{terrain::TerrainChunkSize, vol::RectVolSize};
         use std::sync::Arc;
         // Request chunks
         {
@@ -524,34 +523,33 @@ impl StateExt for State {
             let rtsim = ecs.read_resource::<RtSim>();
             let mut chunk_generator =
                 ecs.write_resource::<crate::chunk_generator::ChunkGenerator>();
+            let runtime_topology = world.runtime_topology_descriptor();
             let chunk_pos = self.terrain().pos_key(pos.0.map(|e| e as i32));
-            (-(view_distance as i32)..view_distance as i32 + 1)
-            .flat_map(|x| {
-                (-(view_distance as i32)..view_distance as i32 + 1).map(move |y| Vec2::new(x, y))
-            })
-            .map(|offset| offset + chunk_pos)
-            // Filter chunks outside the view distance
-            // Note: calculation from client chunk request filtering
-            .filter(|chunk_key| {
-                pos.0.xy().map(|e| e as f64).distance(
-                    chunk_key.map(|e| e as f64 + 0.5) * TerrainChunkSize::RECT_SIZE.map(|e| e as f64),
-                ) < (view_distance as f64 - 1.0 + 2.5 * 2.0_f64.sqrt())
-                    * TerrainChunkSize::RECT_SIZE.x as f64
-            })
+            crate::sys::terrain::canonical_request_chunk_keys_in_vd(
+                &runtime_topology,
+                pos.0.xy(),
+                view_distance,
+                (-(view_distance as i32)..view_distance as i32 + 1).flat_map(|x| {
+                    (-(view_distance as i32)..view_distance as i32 + 1)
+                        .map(move |y| chunk_pos + Vec2::new(x, y))
+                }),
+            )
+            .into_iter()
             .for_each(|chunk_key| {
-                {
-                    let time = (*ecs.read_resource::<TimeOfDay>(), (*ecs.read_resource::<Calendar>()).clone());
-                    chunk_generator.generate_chunk(
-                        None,
-                        chunk_key,
-                        &slow_jobs,
-                        Arc::clone(world),
-                        &rtsim,
-                        index.clone(),
-                        time,
-                        ecs.read_resource::<crate::Tick>().0,
-                    );
-                }
+                let time = (
+                    *ecs.read_resource::<TimeOfDay>(),
+                    (*ecs.read_resource::<Calendar>()).clone(),
+                );
+                chunk_generator.generate_chunk(
+                    None,
+                    chunk_key,
+                    &slow_jobs,
+                    Arc::clone(world),
+                    &rtsim,
+                    index.clone(),
+                    time,
+                    ecs.read_resource::<crate::Tick>().0,
+                );
             });
         }
 

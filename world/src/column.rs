@@ -2,8 +2,7 @@ use crate::{
     CONFIG, IndexRef,
     all::ForestKind,
     sim::{
-        Path, RiverKind, SimChunk, WorldSim, local_cells,
-        marine_semantics::marine_adjacent_from_ocean_distance,
+        Path, RiverKind, SimChunk, WorldSim, marine_semantics::marine_adjacent_from_ocean_distance,
     },
     site::SpawnRules,
     util::{RandomField, RandomPerm, Sampler},
@@ -12,7 +11,6 @@ use common::{
     calendar::{Calendar, CalendarEvent},
     terrain::{
         CoordinateConversions, TerrainChunkSize, quadratic_nearest_point, river_spline_coeffs,
-        uniform_idx_as_vec2, vec2_as_uniform_idx,
     },
     vol::RectVolSize,
 };
@@ -105,13 +103,13 @@ impl<'a> Sampler<'a> for ColumnGen<'a> {
         let surface_veg = sim.get_interpolated_monotone(wpos, |chunk| chunk.surface_veg)?;
         let sim_chunk = sim.get(chunk_pos)?;
         let neighbor_coef = TerrainChunkSize::RECT_SIZE.map(|e| e as f64);
-        let my_chunk_idx = vec2_as_uniform_idx(self.sim.map_size_lg(), chunk_pos);
         let neighbor_river_data =
-            local_cells(self.sim.map_size_lg(), my_chunk_idx).filter_map(|neighbor_idx: usize| {
-                let neighbor_pos = uniform_idx_as_vec2(self.sim.map_size_lg(), neighbor_idx);
-                let neighbor_chunk = sim.get(neighbor_pos)?;
-                Some((neighbor_pos, neighbor_chunk, &neighbor_chunk.river))
-            });
+            sim.topology()
+                .local_chunks(chunk_pos, 3)
+                .filter_map(|neighbor_pos| {
+                    let neighbor_chunk = sim.get(neighbor_pos)?;
+                    Some((neighbor_pos, neighbor_chunk, &neighbor_chunk.river))
+                });
         let spawn_rules = sim_chunk
             .sites
             .iter()

@@ -1,0 +1,19 @@
+sample_kind = world-compat-stage1-snapshot
+sample_status = rehearsal-only
+cycle = N
+release_reference = rel-2026-05-world-compat-01
+sample_point = T1
+sample_semantics = "config freeze complete; first successful startup under this release_reference"
+
+world_compat_status = world-compat-clear
+configured_mode = record
+load_legacy_mode = deny
+load_or_generate_sidecarless_mode = deny
+managed_recipe_sidecar_missing = false
+transition_window_open = false
+
+boundary_notes = [
+  "copy these fields verbatim from the live /health/world-compat response",
+  "do not backfill values from a prior terminal or from another release_reference",
+  "if any field here drifts from deny/deny + clear, this freeze cycle is not ready"
+]

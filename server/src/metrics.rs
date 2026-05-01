@@ -34,11 +34,15 @@ pub struct NetworkRequestMetrics {
     pub chunks_request_dropped: IntCounter,
     pub chunks_served_from_memory: IntCounter,
     pub chunks_generation_triggered: IntCounter,
+    pub chunks_generation_budget_deferred: IntCounter,
     pub chunks_served_lossy: IntCounter,
     pub chunks_served_lossless: IntCounter,
     pub chunks_send_failed_lossy: IntCounter,
     pub chunks_send_failed_lossless: IntCounter,
+    pub chunks_send_budget_deferred: IntCounter,
     pub chunks_serialize_handoff_dropped: IntCounter,
+    pub chunks_serialize_budget_deferred: IntCounter,
+    pub chunks_serialize_spawn_budget_deferred: IntCounter,
     pub chunks_serialisation_requests: IntCounter,
     pub chunks_distinct_serialisation_requests: IntCounter,
 }
@@ -53,6 +57,8 @@ pub struct ChunkGenMetrics {
 pub struct ChunkLifecycleMetrics {
     pub chunk_requests_len: IntGauge,
     pub pending_chunks_len: IntGauge,
+    pub terrain_intake_queue_len: IntGauge,
+    pub serialize_spawn_queue_len: IntGauge,
     pub send_queue_len: IntGauge,
     pub active_entries_len: IntGauge,
 }
@@ -226,6 +232,11 @@ impl NetworkRequestMetrics {
             "chunks_generation_triggered",
             "number of all chunks that were requested and needs to be generated",
         ))?;
+        let chunks_generation_budget_deferred = IntCounter::with_opts(Opts::new(
+            "chunks_generation_budget_deferred",
+            "number of queued chunk-generation requests deferred at the terrain-to-generator \
+             admission budget boundary",
+        ))?;
         let chunks_served_lossy = IntCounter::with_opts(Opts::new(
             "chunks_served_lossy",
             "number of chunk deliveries successfully sent with lossy compression",
@@ -242,9 +253,24 @@ impl NetworkRequestMetrics {
             "chunks_send_failed_lossless",
             "number of lossless chunk deliveries that failed before reaching the client",
         ))?;
+        let chunks_send_budget_deferred = IntCounter::with_opts(Opts::new(
+            "chunks_send_budget_deferred",
+            "number of serialized chunks observed at chunk_send intake and deferred at the send \
+             budget boundary",
+        ))?;
         let chunks_serialize_handoff_dropped = IntCounter::with_opts(Opts::new(
             "chunks_serialize_handoff_dropped",
             "number of serialized chunk payloads dropped before entering the chunk_send queue",
+        ))?;
+        let chunks_serialize_budget_deferred = IntCounter::with_opts(Opts::new(
+            "chunks_serialize_budget_deferred",
+            "number of distinct queued chunks deferred at the chunk_serialize admission budget \
+             boundary",
+        ))?;
+        let chunks_serialize_spawn_budget_deferred = IntCounter::with_opts(Opts::new(
+            "chunks_serialize_spawn_budget_deferred",
+            "number of admitted serializable chunks deferred at the chunk_serialize spawn budget \
+             boundary",
         ))?;
         let chunks_serialisation_requests = IntCounter::with_opts(Opts::new(
             "chunks_serialisation_requests",
@@ -258,11 +284,15 @@ impl NetworkRequestMetrics {
         registry.register(Box::new(chunks_request_dropped.clone()))?;
         registry.register(Box::new(chunks_served_from_memory.clone()))?;
         registry.register(Box::new(chunks_generation_triggered.clone()))?;
+        registry.register(Box::new(chunks_generation_budget_deferred.clone()))?;
         registry.register(Box::new(chunks_served_lossy.clone()))?;
         registry.register(Box::new(chunks_served_lossless.clone()))?;
         registry.register(Box::new(chunks_send_failed_lossy.clone()))?;
         registry.register(Box::new(chunks_send_failed_lossless.clone()))?;
+        registry.register(Box::new(chunks_send_budget_deferred.clone()))?;
         registry.register(Box::new(chunks_serialize_handoff_dropped.clone()))?;
+        registry.register(Box::new(chunks_serialize_budget_deferred.clone()))?;
+        registry.register(Box::new(chunks_serialize_spawn_budget_deferred.clone()))?;
         registry.register(Box::new(chunks_serialisation_requests.clone()))?;
         registry.register(Box::new(chunks_distinct_serialisation_requests.clone()))?;
 
@@ -270,11 +300,15 @@ impl NetworkRequestMetrics {
             chunks_request_dropped,
             chunks_served_from_memory,
             chunks_generation_triggered,
+            chunks_generation_budget_deferred,
             chunks_served_lossy,
             chunks_served_lossless,
             chunks_send_failed_lossy,
             chunks_send_failed_lossless,
+            chunks_send_budget_deferred,
             chunks_serialize_handoff_dropped,
+            chunks_serialize_budget_deferred,
+            chunks_serialize_spawn_budget_deferred,
             chunks_serialisation_requests,
             chunks_distinct_serialisation_requests,
         })
@@ -325,6 +359,16 @@ impl ChunkLifecycleMetrics {
             "pending_chunks_len",
             "number of chunks currently queued or executing in chunk generation",
         ))?;
+        let terrain_intake_queue_len = IntGauge::with_opts(Opts::new(
+            "terrain_intake_queue_len",
+            "number of completed chunk generation results waiting at terrain intake before \
+             insertion or discard",
+        ))?;
+        let serialize_spawn_queue_len = IntGauge::with_opts(Opts::new(
+            "serialize_spawn_queue_len",
+            "number of admitted serializable chunks waiting at the serialize spawn boundary \
+             before CHUNK_SERIALIZER job drain",
+        ))?;
         let send_queue_len = IntGauge::with_opts(Opts::new(
             "send_queue_len",
             "number of serialized chunks observed in the serialize-to-send handoff queue at \
@@ -337,12 +381,16 @@ impl ChunkLifecycleMetrics {
 
         registry.register(Box::new(chunk_requests_len.clone()))?;
         registry.register(Box::new(pending_chunks_len.clone()))?;
+        registry.register(Box::new(terrain_intake_queue_len.clone()))?;
+        registry.register(Box::new(serialize_spawn_queue_len.clone()))?;
         registry.register(Box::new(send_queue_len.clone()))?;
         registry.register(Box::new(active_entries_len.clone()))?;
 
         Ok(Self {
             chunk_requests_len,
             pending_chunks_len,
+            terrain_intake_queue_len,
+            serialize_spawn_queue_len,
             send_queue_len,
             active_entries_len,
         })

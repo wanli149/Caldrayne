@@ -3,7 +3,6 @@ use common::{
     terrain::{BlockKind, TerrainChunkSize},
     vol::{IntoVolIterator, RectVolSize},
 };
-use fallible_iterator::FallibleIterator;
 use fixed::{
     FixedU8,
     types::{U8F0, U32F0, extra::U0},
@@ -17,24 +16,81 @@ use rayon::{
     ThreadPoolBuilder,
     iter::{IntoParallelIterator, ParallelIterator},
 };
-use rusqlite::{Connection, ToSql, Transaction, TransactionBehavior};
-//use serde::{Serialize, Deserialize};
+use rusqlite::{
+    Connection, ToSql, Transaction, TransactionBehavior, fallible_iterator::FallibleIterator,
+};
+use serde::Serialize;
 use std::{
     cmp::Ordering,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     error::Error,
     fs::File,
     io::Write,
     ops::{Add, Mul, SubAssign},
+    path::{Path, PathBuf},
     str::FromStr,
     sync::mpsc,
     time::{SystemTime, UNIX_EPOCH},
 };
 use vek::*;
 use veloren_world::{
-    World,
+    IndexRef, World,
     sim::{DEFAULT_WORLD_MAP, DEFAULT_WORLD_SEED, FileOpts, WorldOpts},
 };
+
+#[derive(Serialize)]
+pub struct WorldBlockStatisticsBoundedFile {
+    schema_version: String,
+    contract: String,
+    comparability: String,
+    input_contract: String,
+    runtime_chunk_entry: String,
+    selection_contract: String,
+    strict_determinism: bool,
+    requested_chunk_budget: usize,
+    sampled_chunk_count: usize,
+    map_size_chunks: [u32; 2],
+    world_recipe_hash: String,
+    chunk_recipe_hash: String,
+    topology_id: String,
+    chunk_pass_version: String,
+    aggregate: WorldBlockStatisticsAggregate,
+    sampled_chunks: Vec<WorldBlockStatisticsBoundedChunk>,
+}
+
+#[derive(Serialize)]
+struct WorldBlockStatisticsAggregate {
+    block_total: u64,
+    non_air_blocks: u64,
+    sprite_total: u64,
+    block_kind_counts: BTreeMap<String, u64>,
+    sprite_kind_counts: BTreeMap<String, u64>,
+}
+
+#[derive(Serialize)]
+struct WorldBlockStatisticsBoundedChunk {
+    selection_rank: usize,
+    chunk_pos: [i32; 2],
+    min_z: i32,
+    max_z: i32,
+    height: i32,
+    block_total: u64,
+    non_air_blocks: u64,
+    sprite_total: u64,
+    block_kind_counts: BTreeMap<String, u64>,
+    sprite_kind_counts: BTreeMap<String, u64>,
+}
+
+struct ChunkVolumeSummary {
+    min_z: i32,
+    max_z: i32,
+    height: i32,
+    block_total: u64,
+    non_air_blocks: u64,
+    sprite_total: u64,
+    block_kind_counts: BTreeMap<String, u64>,
+    sprite_kind_counts: BTreeMap<String, u64>,
+}
 
 #[derive(Debug, Default, Clone, Copy, Hash, Eq, PartialEq /* , Serialize, Deserialize */)]
 struct KiddoRgb(Rgb<U8F0>);
@@ -138,7 +194,253 @@ fn block_statistics_db(db_path: &str) -> Result<Connection, Box<dyn Error>> {
     Ok(conn)
 }
 
-fn generate(db_path: &str, ymin: Option<i32>, ymax: Option<i32>) -> Result<(), Box<dyn Error>> {
+fn write_pretty_json<T: Serialize>(output_path: &Path, value: &T) -> Result<(), Box<dyn Error>> {
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let file = File::create(output_path)?;
+    serde_json::to_writer_pretty(file, value)?;
+    Ok(())
+}
+
+fn lattice_anchor_coordinate(min: i32, max: i32, index: usize, count: usize) -> f64 {
+    if count <= 1 || min >= max {
+        return f64::from(min + max) / 2.0;
+    }
+
+    let span = f64::from(max - min);
+    f64::from(min) + (index as f64 * span) / ((count - 1) as f64)
+}
+
+fn bounded_chunk_positions(size: Vec2<u32>, requested_chunk_budget: usize) -> Vec<Vec2<i32>> {
+    let x_min = if size.x > 1 { 1 } else { 0 };
+    let y_min = if size.y > 1 { 1 } else { 0 };
+    let x_max = size.x.saturating_sub(1) as i32;
+    let y_max = size.y.saturating_sub(1) as i32;
+    if x_min > x_max || y_min > y_max {
+        return vec![];
+    }
+
+    let candidate_count = ((x_max - x_min + 1) as usize) * ((y_max - y_min + 1) as usize);
+    let bounded_budget = requested_chunk_budget.max(1).min(candidate_count);
+    let column_count = (bounded_budget as f64).sqrt().ceil() as usize;
+    let row_count = bounded_budget.div_ceil(column_count);
+    let mut selected = vec![];
+    let mut selected_keys = HashSet::new();
+
+    for slot in 0..bounded_budget {
+        let row = slot / column_count;
+        let column = slot % column_count;
+        let anchor_x = lattice_anchor_coordinate(x_min, x_max, column, column_count);
+        let anchor_y = lattice_anchor_coordinate(y_min, y_max, row, row_count);
+        let mut best_chunk = None;
+        let mut best_distance = i64::MAX;
+
+        for y in y_min..=y_max {
+            for x in x_min..=x_max {
+                if selected_keys.contains(&(x, y)) {
+                    continue;
+                }
+
+                let dx = f64::from(x) - anchor_x;
+                let dy = f64::from(y) - anchor_y;
+                let distance = (dx * dx + dy * dy) * 1_000_000.0;
+                let distance_key = distance.round() as i64;
+                let candidate = (distance_key, y, x);
+                let current_best =
+                    best_chunk.map(|chunk: Vec2<i32>| (best_distance, chunk.y, chunk.x));
+                if current_best.is_none_or(|best| candidate < best) {
+                    best_distance = distance_key;
+                    best_chunk = Some(Vec2::new(x, y));
+                }
+            }
+        }
+
+        if let Some(chunk_pos) = best_chunk {
+            selected_keys.insert((chunk_pos.x, chunk_pos.y));
+            selected.push(chunk_pos);
+        }
+    }
+
+    if selected.len() < bounded_budget {
+        for y in y_min..=y_max {
+            for x in x_min..=x_max {
+                if selected_keys.insert((x, y)) {
+                    selected.push(Vec2::new(x, y));
+                    if selected.len() == bounded_budget {
+                        return selected;
+                    }
+                }
+            }
+        }
+    }
+
+    selected
+}
+
+fn summarize_runtime_chunk(
+    world: &World,
+    index_ref: IndexRef,
+    chunk_pos: Vec2<i32>,
+) -> Result<ChunkVolumeSummary, Box<dyn Error>> {
+    let (chunk, _supplement) = world
+        .generate_chunk(index_ref, chunk_pos, None, || false, None)
+        .map_err(|()| format!("runtime chunk generation failed at {:?}", chunk_pos))?;
+    let mut block_kind_counts = BTreeMap::new();
+    let mut sprite_kind_counts = BTreeMap::new();
+    let mut block_total = 0;
+    let mut non_air_blocks = 0;
+    let mut sprite_total = 0;
+    let lo = Vec3::new(0, 0, chunk.get_min_z());
+    let hi = TerrainChunkSize::RECT_SIZE.as_().with_z(chunk.get_max_z());
+
+    for (_, block) in chunk.vol_iter(lo, hi) {
+        block_total += 1;
+        if block.kind() != BlockKind::Air {
+            non_air_blocks += 1;
+        }
+        *block_kind_counts
+            .entry(format!("{:?}", block.kind()))
+            .or_insert(0) += 1;
+        if let Some(sprite) = block.get_sprite() {
+            sprite_total += 1;
+            *sprite_kind_counts
+                .entry(format!("{:?}", sprite))
+                .or_insert(0) += 1;
+        }
+    }
+
+    Ok(ChunkVolumeSummary {
+        min_z: chunk.get_min_z(),
+        max_z: chunk.get_max_z(),
+        height: chunk.get_max_z() - chunk.get_min_z(),
+        block_total,
+        non_air_blocks,
+        sprite_total,
+        block_kind_counts,
+        sprite_kind_counts,
+    })
+}
+
+pub fn build_bounded_statistics_file(
+    world: &World,
+    index_ref: IndexRef,
+    requested_chunk_budget: usize,
+) -> Result<WorldBlockStatisticsBoundedFile, Box<dyn Error>> {
+    let size = world.sim().get_size();
+    let sampled_positions = bounded_chunk_positions(size, requested_chunk_budget);
+    let mut aggregate_block_total = 0;
+    let mut aggregate_non_air_blocks = 0;
+    let mut aggregate_sprite_total = 0;
+    let mut aggregate_block_kind_counts = BTreeMap::new();
+    let mut aggregate_sprite_kind_counts = BTreeMap::new();
+    let mut sampled_chunks = Vec::with_capacity(sampled_positions.len());
+
+    for (selection_rank, chunk_pos) in sampled_positions.into_iter().enumerate() {
+        let volume = summarize_runtime_chunk(world, index_ref, chunk_pos)?;
+        aggregate_block_total += volume.block_total;
+        aggregate_non_air_blocks += volume.non_air_blocks;
+        aggregate_sprite_total += volume.sprite_total;
+        for (kind, count) in &volume.block_kind_counts {
+            *aggregate_block_kind_counts.entry(kind.clone()).or_insert(0) += *count;
+        }
+        for (kind, count) in &volume.sprite_kind_counts {
+            *aggregate_sprite_kind_counts
+                .entry(kind.clone())
+                .or_insert(0) += *count;
+        }
+
+        sampled_chunks.push(WorldBlockStatisticsBoundedChunk {
+            selection_rank: selection_rank + 1,
+            chunk_pos: [chunk_pos.x, chunk_pos.y],
+            min_z: volume.min_z,
+            max_z: volume.max_z,
+            height: volume.height,
+            block_total: volume.block_total,
+            non_air_blocks: volume.non_air_blocks,
+            sprite_total: volume.sprite_total,
+            block_kind_counts: volume.block_kind_counts,
+            sprite_kind_counts: volume.sprite_kind_counts,
+        });
+    }
+
+    let manifest = world.sim().recipe_manifest();
+    Ok(WorldBlockStatisticsBoundedFile {
+        schema_version: "world_block_statistics_bounded_v1".to_owned(),
+        contract: "bounded_runtime_chunk_block_statistics_v1".to_owned(),
+        comparability: "bounded_runtime_chunk_block_statistics_non_gating".to_owned(),
+        input_contract: "strict Load(path) over saved world.bin plus adjacent RecipeManifestV1 \
+                         sidecar"
+            .to_owned(),
+        runtime_chunk_entry: "world.generate_chunk(rtsim_resource_fractions=None,time=None,\
+                              calendar=None)"
+            .to_owned(),
+        selection_contract: "deterministic best-effort interior lattice over runtime chunk \
+                             coordinates bounded by requested_chunk_budget"
+            .to_owned(),
+        strict_determinism: true,
+        requested_chunk_budget,
+        sampled_chunk_count: sampled_chunks.len(),
+        map_size_chunks: [size.x, size.y],
+        world_recipe_hash: manifest.world_recipe_hash.clone(),
+        chunk_recipe_hash: manifest.chunk_recipe_hash.clone(),
+        topology_id: manifest.world_recipe.topology_id.as_str().to_owned(),
+        chunk_pass_version: manifest.chunk_recipe.chunk_pass_version.clone(),
+        aggregate: WorldBlockStatisticsAggregate {
+            block_total: aggregate_block_total,
+            non_air_blocks: aggregate_non_air_blocks,
+            sprite_total: aggregate_sprite_total,
+            block_kind_counts: aggregate_block_kind_counts,
+            sprite_kind_counts: aggregate_sprite_kind_counts,
+        },
+        sampled_chunks,
+    })
+}
+
+pub fn write_bounded_statistics_artifact(
+    world: &World,
+    index_ref: IndexRef,
+    requested_chunk_budget: usize,
+    output_path: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let file = build_bounded_statistics_file(world, index_ref, requested_chunk_budget)?;
+    write_pretty_json(output_path, &file)
+}
+
+fn write_bounded_statistics_from_world_file(
+    world_file: FileOpts,
+    requested_chunk_budget: usize,
+    output_path: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let pool = ThreadPoolBuilder::new().build().unwrap();
+    let (world, index) = World::generate(
+        DEFAULT_WORLD_SEED,
+        WorldOpts {
+            seed_elements: true,
+            world_file,
+            calendar: None,
+            compat_mode: Default::default(),
+            load_legacy_mode: Default::default(),
+            load_or_generate_sidecarless_mode: Default::default(),
+        },
+        &pool,
+        &|_| {},
+    )?;
+    write_bounded_statistics_artifact(
+        &world,
+        index.as_index_ref(),
+        requested_chunk_budget,
+        output_path,
+    )
+}
+
+fn generate(
+    db_path: &str,
+    world_file: FileOpts,
+    ymin: Option<i32>,
+    ymax: Option<i32>,
+) -> Result<(), Box<dyn Error>> {
     common_frontend::init_stdout(None);
     println!("Loading world");
     let pool = ThreadPoolBuilder::new().build().unwrap();
@@ -146,9 +448,11 @@ fn generate(db_path: &str, ymin: Option<i32>, ymax: Option<i32>) -> Result<(), B
         DEFAULT_WORLD_SEED,
         WorldOpts {
             seed_elements: true,
-            world_file: FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into()),
+            world_file,
             calendar: None,
             compat_mode: Default::default(),
+            load_legacy_mode: Default::default(),
+            load_or_generate_sidecarless_mode: Default::default(),
         },
         &pool,
         &|_| {},
@@ -348,6 +652,19 @@ fn palette(conn: Connection) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn resolve_world_file(matches: &clap::ArgMatches) -> FileOpts {
+    if let Some(world_path) = matches.get_one::<String>("world_path") {
+        FileOpts::Load(PathBuf::from(world_path))
+    } else {
+        FileOpts::LoadAsset(
+            matches
+                .get_one::<String>("world_asset")
+                .cloned()
+                .unwrap_or_else(|| DEFAULT_WORLD_MAP.to_owned()),
+        )
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let mut app = Command::new("world_block_statistics")
         .version(common::util::DISPLAY_VERSION.as_str())
@@ -360,8 +677,48 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Arg::new("database")
                         .required(true)
                         .help("File to generate/resume generation"),
-                    Arg::new("ymin").long("ymin"),
-                    Arg::new("ymax").long("ymax"),
+                    Arg::new("world_path")
+                        .long("world-path")
+                        .help(
+                            "Strict world.bin path to load; requires an adjacent recipe sidecar \
+                             and is intended for unified audit parity",
+                        )
+                        .conflicts_with("world_asset"),
+                    Arg::new("world_asset").long("world-asset").help(
+                        "Asset specifier to load when no strict world path is provided; defaults \
+                         to the built-in default world asset",
+                    ),
+                    Arg::new("ymin")
+                        .long("ymin")
+                        .value_parser(clap::value_parser!(i32)),
+                    Arg::new("ymax")
+                        .long("ymax")
+                        .value_parser(clap::value_parser!(i32)),
+                ]),
+        )
+        .subcommand(
+            Command::new("bounded")
+                .about("Emit bounded normalized world_block_statistics summary")
+                .args(&[
+                    Arg::new("output")
+                        .required(true)
+                        .help("Path to write heavy/world_block_statistics.normalized.json"),
+                    Arg::new("chunk_budget")
+                        .long("chunk-budget")
+                        .required(true)
+                        .value_parser(clap::value_parser!(usize))
+                        .help("Bounded runtime chunk budget for the summary surface"),
+                    Arg::new("world_path")
+                        .long("world-path")
+                        .help(
+                            "Strict world.bin path to load; requires an adjacent recipe sidecar \
+                             and is intended for unified audit parity",
+                        )
+                        .conflicts_with("world_asset"),
+                    Arg::new("world_asset").long("world-asset").help(
+                        "Asset specifier to load when no strict world path is provided; defaults \
+                         to the built-in default world asset",
+                    ),
                 ]),
         )
         .subcommand(
@@ -376,9 +733,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             let db_path = matches
                 .get_one::<String>("database")
                 .expect("database is required");
+            let world_file = resolve_world_file(matches);
             let ymin = matches.get_one::<i32>("ymin").cloned();
             let ymax = matches.get_one::<i32>("ymax").cloned();
-            generate(db_path, ymin, ymax)?;
+            generate(db_path, world_file, ymin, ymax)?;
+        },
+        Some(("bounded", matches)) => {
+            let world_file = resolve_world_file(matches);
+            let output_path = PathBuf::from(
+                matches
+                    .get_one::<String>("output")
+                    .expect("output is required"),
+            );
+            let chunk_budget = *matches
+                .get_one::<usize>("chunk_budget")
+                .expect("chunk_budget is required");
+            write_bounded_statistics_from_world_file(world_file, chunk_budget, &output_path)?;
         },
         Some(("palette", matches)) => {
             let conn = Connection::open(

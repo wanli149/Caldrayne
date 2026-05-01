@@ -66,6 +66,7 @@ pub enum CompatFailureKindV1 {
     ParseError,
     InvalidWorld,
     OptionMismatch,
+    PolicyDenied,
 }
 
 impl CompatFailureKindV1 {
@@ -76,6 +77,7 @@ impl CompatFailureKindV1 {
             Self::ParseError => "parse_error",
             Self::InvalidWorld => "invalid_world",
             Self::OptionMismatch => "option_mismatch",
+            Self::PolicyDenied => "policy_denied",
         }
     }
 }

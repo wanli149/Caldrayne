@@ -57,20 +57,16 @@ impl<'a> System<'a> for Sys {
     ) {
         let tick = tick.0;
         let max_view_distance = server_settings.max_view_distance.unwrap_or(u32::MAX);
-        #[cfg(feature = "worldgen")]
-        let world_size = world.sim().get_size();
-        #[cfg(not(feature = "worldgen"))]
-        let world_size = world.map_size_lg().chunks().as_();
+        let runtime_topology = world.runtime_topology_descriptor();
         let (presences_position_entities, _) = super::terrain::prepare_player_presences(
-            world_size,
+            &runtime_topology,
             max_view_distance,
             &entities,
             &positions,
             &presences,
             &clients,
         );
-        let real_max_view_distance =
-            super::terrain::convert_to_loaded_vd(u32::MAX, max_view_distance);
+        let max_loaded_chunk_vd = super::terrain::max_loaded_chunk_vd(max_view_distance);
 
         // Sync changed chunks
         terrain_changes.modified_chunks.par_iter().for_each_init(
@@ -83,40 +79,20 @@ impl<'a> System<'a> for Sys {
                 // range of us.  These are guaranteed in bounds due to restrictions on max view
                 // distance (namely: the square of any chunk coordinate plus the max view
                 // distance along both axes must fit in an i32).
-                let min_chunk_x = chunk_key.x - real_max_view_distance;
-                let max_chunk_x = chunk_key.x + real_max_view_distance;
-                let start = presences_position_entities
-                    .partition_point(|((pos, _), _)| i32::from(pos.x) < min_chunk_x);
-                // NOTE: We *could* just scan forward until we hit the end, but this way we save
-                // a comparison in the inner loop, since also needs to check the
-                // list length.  We could also save some time by starting from
-                // start rather than end, but the hope is that this way the
-                // compiler (and machine) can reorder things so both ends are
-                // fetched in parallel; since the vast majority of the time both fetched
-                // elements should already be in cache, this should not use any
-                // extra memory bandwidth.
-                //
-                // TODO: Benchmark and figure out whether this is better in practice than just
-                // scanning forward.
-                let end = presences_position_entities
-                    .partition_point(|((pos, _), _)| i32::from(pos.x) < max_chunk_x);
-                let interior = &presences_position_entities[start..end];
-                interior
-                    .iter()
-                    .filter(|((player_chunk_pos, player_vd_sqr), _)| {
-                        super::terrain::chunk_in_vd(*player_chunk_pos, *player_vd_sqr, chunk_key)
-                    })
-                    .for_each(|(_, entity)| {
-                        chunk_lifecycle.lock().expect("Poisoned").record_source(
-                            chunk_key,
-                            ChunkLifecycleSource::TerrainSync,
-                            tick,
-                        );
-                        chunk_send_emitter.emit(ChunkSendEntry {
-                            entity: *entity,
-                            chunk_key,
-                        });
-                    });
+                super::terrain::loaded_entities_for_chunk(
+                    &presences_position_entities,
+                    &runtime_topology,
+                    chunk_key,
+                    max_loaded_chunk_vd,
+                )
+                .for_each(|entity| {
+                    chunk_lifecycle.lock().expect("Poisoned").record_source(
+                        chunk_key,
+                        ChunkLifecycleSource::TerrainSync,
+                        tick,
+                    );
+                    chunk_send_emitter.emit(ChunkSendEntry { entity, chunk_key });
+                });
             },
         );
 
@@ -133,5 +109,107 @@ impl<'a> System<'a> for Sys {
                 lazy_msg.as_ref().map(|msg| client.send_prepared(msg));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "worldgen")]
+    use super::super::test_support::make_test_client;
+    use super::*;
+    use common::{
+        ViewDistances,
+        character::CharacterId,
+        comp::{Pos, Presence, PresenceKind},
+        vol::RectVolSize,
+    };
+    use common_ecs::{SysMetrics, run_now};
+    use specs::{Builder, WorldExt};
+    use std::sync::Arc;
+    use vek::*;
+
+    fn pos_in_chunk(chunk_key: Vec2<i32>) -> Pos {
+        let chunk_size = common::terrain::TerrainChunkSize::RECT_SIZE.map(|e| e as f32);
+        let wpos2d = chunk_key.map(|coord| coord as f32) * chunk_size + Vec2::broadcast(1.0);
+        Pos(wpos2d.with_z(0.0))
+    }
+
+    fn presence_with_vd(terrain_vd: u32, character_id: i64) -> Presence {
+        Presence::new(
+            ViewDistances {
+                terrain: terrain_vd,
+                entity: terrain_vd,
+            },
+            PresenceKind::Character(CharacterId(character_id)),
+        )
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[test]
+    fn terrain_sync_sys_sends_only_visible_modified_chunks_and_records_source() {
+        let (near_client_support, near_client) = make_test_client();
+        let (far_client_support, far_client) = make_test_client();
+        let settings = Settings::default();
+        let (world, _) = World::empty();
+        let world = Arc::new(world);
+        let target_chunk = Vec2::zero();
+        let lifecycle = crate::chunk_lifecycle::new_chunk_lifecycle_handle();
+
+        let mut ecs = specs::World::new();
+        ecs.register::<Pos>();
+        ecs.register::<Presence>();
+        ecs.register::<Client>();
+
+        ecs.insert(SysMetrics::default());
+        ecs.insert(Tick(77));
+        ecs.insert(settings);
+        ecs.insert(Arc::clone(&world));
+        ecs.insert({
+            let mut terrain_changes = TerrainChanges::default();
+            terrain_changes.modified_chunks.insert(target_chunk);
+            terrain_changes
+        });
+        ecs.insert(EventBus::<ChunkSendEntry>::default());
+        ecs.insert(lifecycle.clone());
+
+        let near_entity = ecs
+            .create_entity()
+            .with(pos_in_chunk(target_chunk))
+            .with(presence_with_vd(6, 1))
+            .with(near_client)
+            .build();
+        let _far_entity = ecs
+            .create_entity()
+            .with(pos_in_chunk(Vec2::new(12, 12)))
+            .with(presence_with_vd(1, 2))
+            .with(far_client)
+            .build();
+
+        run_now::<Sys>(&ecs);
+
+        let send_entries = ecs
+            .read_resource::<EventBus<ChunkSendEntry>>()
+            .recv_all()
+            .collect::<Vec<_>>();
+        assert_eq!(send_entries, vec![ChunkSendEntry {
+            entity: near_entity,
+            chunk_key: target_chunk,
+        }]);
+
+        let lifecycle_table = lifecycle.lock().expect("poisoned chunk lifecycle");
+        let entry = lifecycle_table
+            .entry(target_chunk)
+            .expect("terrain_sync should record source for modified chunk");
+        assert_eq!(entry.first_seen_tick, 77);
+        assert!(
+            entry
+                .source_mask
+                .contains(ChunkLifecycleSource::TerrainSync)
+        );
+
+        drop(lifecycle_table);
+        drop(ecs);
+        drop(near_client_support);
+        drop(far_client_support);
     }
 }

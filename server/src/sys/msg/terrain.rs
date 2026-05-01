@@ -1,3 +1,5 @@
+#[cfg(not(feature = "worldgen"))]
+use crate::test_world::World;
 use crate::{
     ChunkRequest, Tick,
     chunk_lifecycle::{ChunkLifecycleHandle, ChunkLifecycleSource},
@@ -5,19 +7,21 @@ use crate::{
     client::Client,
     lod::Lod,
     metrics::NetworkRequestMetrics,
+    sys::terrain::{canonical_request_chunk_key_in_vd, canonical_request_chunk_keys_in_vd},
 };
 use common::{
     comp::{Pos, Presence},
     event::{ClientDisconnectEvent, EventBus},
     spiral::Spiral2d,
-    terrain::{CoordinateConversions, TerrainChunkSize, TerrainGrid},
-    vol::RectVolSize,
+    terrain::{CoordinateConversions, TerrainGrid},
 };
 use common_ecs::{Job, Origin, ParMode, Phase, System};
 use common_net::msg::{ClientGeneral, ServerGeneral};
 use rayon::prelude::*;
 use specs::{Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteStorage};
+use std::sync::Arc;
 use tracing::{debug, trace};
+#[cfg(feature = "worldgen")] use world::World;
 
 /// This system will handle new messages from clients
 #[derive(Default)]
@@ -29,6 +33,7 @@ impl<'a> System<'a> for Sys {
         Read<'a, EventBus<ClientDisconnectEvent>>,
         Read<'a, EventBus<ChunkSendEntry>>,
         ReadExpect<'a, ChunkLifecycleHandle>,
+        ReadExpect<'a, Arc<World>>,
         ReadExpect<'a, TerrainGrid>,
         ReadExpect<'a, Lod>,
         ReadExpect<'a, NetworkRequestMetrics>,
@@ -50,6 +55,7 @@ impl<'a> System<'a> for Sys {
             client_disconnect_events,
             chunk_send_bus,
             chunk_lifecycle,
+            world,
             terrain,
             lod,
             network_metrics,
@@ -61,6 +67,7 @@ impl<'a> System<'a> for Sys {
     ) {
         job.cpu_stats.measure(ParMode::Rayon);
         let tick = tick.0;
+        let runtime_topology = world.runtime_topology_descriptor();
         let mut new_chunk_requests = (&entities, &mut clients, (&presences).maybe())
             .join()
             // NOTE: Required because Specs has very poor work splitting for sparse joins.
@@ -96,18 +103,17 @@ impl<'a> System<'a> for Sys {
                             };
                             match msg {
                                 ClientGeneral::TerrainChunkRequest { key } => {
-                                    let in_vd = if let Some(pos) = positions.get(entity) {
-                                        pos.0.xy().map(|e| e as f64).distance_squared(
-                                            key.map(|e| e as f64 + 0.5)
-                                                * TerrainChunkSize::RECT_SIZE.map(|e| e as f64),
-                                        ) < ((presence.terrain_view_distance.current() as f64 - 1.0
-                                            + 2.5 * 2.0_f64.sqrt())
-                                            * TerrainChunkSize::RECT_SIZE.x as f64)
-                                            .powi(2)
+                                    let canonical_key = if let Some(pos) = positions.get(entity) {
+                                        canonical_request_chunk_key_in_vd(
+                                            &runtime_topology,
+                                            pos.0.xy(),
+                                            presence.terrain_view_distance.current(),
+                                            key,
+                                        )
                                     } else {
-                                        true
+                                        runtime_topology.normalize_query_chunk_key(key)
                                     };
-                                    if in_vd {
+                                    if let Some(key) = canonical_key {
                                         chunk_lifecycle
                                             .lock()
                                             .expect("Poisoned")
@@ -150,13 +156,20 @@ impl<'a> System<'a> for Sys {
                     // entity simulation occurs within a minimum radius around the
                     // player.
                     if let Some(pos) = positions.get(entity) {
+                        let player_wpos2d = pos.0.xy();
                         let player_chunk = pos
                             .0
                             .xy()
                             .as_::<i32>()
                             .wpos_to_cpos();
-                        for rpos in Spiral2d::new().take((crate::MIN_VD as usize + 1).pow(2)) {
-                            let key = player_chunk + rpos;
+                        for key in canonical_request_chunk_keys_in_vd(
+                            &runtime_topology,
+                            player_wpos2d,
+                            crate::MIN_VD,
+                            Spiral2d::new()
+                                .take((crate::MIN_VD as usize + 1).pow(2))
+                                .map(|rpos| player_chunk + rpos),
+                        ) {
                             if terrain.get_key(key).is_none() {
                                 chunk_lifecycle
                                     .lock()

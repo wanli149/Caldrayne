@@ -33,13 +33,13 @@ impl<'a> Land<'a> {
     /// See `WorldSim::get_surface_alt_approx`.
     pub fn get_surface_alt_approx(&self, wpos: Vec2<i32>) -> f32 {
         self.sim
-            .map(|sim| sim.get_surface_alt_approx(wpos))
+            .map(|sim| sim.surface_alt_approx_or(wpos, sim::ApproxFallback::SeaLevel))
             .unwrap_or(0.0)
     }
 
     pub fn get_alt_approx(&self, wpos: Vec2<i32>) -> f32 {
         self.sim
-            .and_then(|sim| sim.get_alt_approx(wpos))
+            .map(|sim| sim.alt_approx_or(wpos, sim::ApproxFallback::Zero))
             .unwrap_or(0.0)
     }
 
@@ -52,7 +52,7 @@ impl<'a> Land<'a> {
 
     pub fn get_gradient_approx(&self, wpos: Vec2<i32>) -> f32 {
         self.sim
-            .and_then(|sim| sim.get_gradient_approx(self.wpos_chunk_pos(wpos)))
+            .map(|sim| sim.gradient_approx_or(self.wpos_chunk_pos(wpos), sim::ApproxFallback::Zero))
             .unwrap_or(0.0)
     }
 

@@ -1,0 +1,16 @@
+sample_kind = world-compat-stage1-follow-up-draft
+sample_status = rehearsal-only
+cycle = N+1
+release_reference = rel-2026-05-world-compat-02
+sample_point = T2
+section_signal = world-compat
+
+expected_result_status = approved
+expected_prior_result_statuses = ["exception-accepted"]
+expected_same_section_append_only = true
+
+notes = [
+  "rehearsal sample only",
+  "replace with the live same-section terminal or follow-up draft captured immediately before decision writeback",
+  "paired with T1 to form one same-release exception-freeze observation window"
+]

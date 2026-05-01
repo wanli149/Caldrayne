@@ -1,0 +1,28 @@
+sample_kind = world-compat-follow-up-bundle
+sample_status = rehearsal-only
+authoritative_record = external-release-tracker
+authoritative_owner = release-operator
+do_not_use_as_production_evidence = true
+
+packet_kind = world-compat-follow-up-bundle
+packet_scope = single-superseded-terminal
+release_reference = rel-2026-05-world-compat-01
+section_signal = world-compat
+target_terminal = terminal-02
+superseded_terminal = terminal-01
+
+included_materials = [
+  "follow-up-draft",
+  "archived-terminal-snapshot",
+  "archive-receipt",
+  "post-archive-verification",
+  "rollback-runbook-or-execution-record"
+]
+
+bundle_rule = "all included materials must point to the same direct-prior terminal on the same section"
+
+boundary_notes = [
+  "rehearsal sample only; this bundle view does not replace the authoritative external record",
+  "one bundle serves one follow-up and one direct-prior superseded terminal only",
+  "do not mix materials from a different release_reference, section, or older terminal lineage"
+]

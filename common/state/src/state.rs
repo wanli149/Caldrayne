@@ -156,7 +156,7 @@ impl State {
     pub fn client(
         pools: Pools,
         map_size_lg: MapSizeLg,
-        default_chunk: Arc<TerrainChunk>,
+        default_chunk_for_missing_world_bounds: Arc<TerrainChunk>,
         add_systems: impl Fn(&mut DispatcherBuilder),
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
     ) -> Self {
@@ -164,7 +164,7 @@ impl State {
             GameMode::Client,
             pools,
             map_size_lg,
-            default_chunk,
+            default_chunk_for_missing_world_bounds,
             add_systems,
             #[cfg(feature = "plugins")]
             plugin_mgr,
@@ -175,7 +175,7 @@ impl State {
     pub fn server(
         pools: Pools,
         map_size_lg: MapSizeLg,
-        default_chunk: Arc<TerrainChunk>,
+        default_chunk_for_missing_world_bounds: Arc<TerrainChunk>,
         add_systems: impl Fn(&mut DispatcherBuilder),
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
     ) -> Self {
@@ -183,18 +183,25 @@ impl State {
             GameMode::Server,
             pools,
             map_size_lg,
-            default_chunk,
+            default_chunk_for_missing_world_bounds,
             add_systems,
             #[cfg(feature = "plugins")]
             plugin_mgr,
         )
     }
 
+    fn terrain_grid_for_missing_world_bounds(
+        map_size_lg: MapSizeLg,
+        default_chunk_for_missing_world_bounds: Arc<TerrainChunk>,
+    ) -> TerrainGrid {
+        TerrainGrid::new(map_size_lg, default_chunk_for_missing_world_bounds).unwrap()
+    }
+
     pub fn new(
         game_mode: GameMode,
         pools: Pools,
         map_size_lg: MapSizeLg,
-        default_chunk: Arc<TerrainChunk>,
+        default_chunk_for_missing_world_bounds: Arc<TerrainChunk>,
         add_systems: impl Fn(&mut DispatcherBuilder),
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
     ) -> Self {
@@ -214,7 +221,7 @@ impl State {
                 game_mode,
                 Arc::clone(&pools),
                 map_size_lg,
-                default_chunk,
+                default_chunk_for_missing_world_bounds,
                 #[cfg(feature = "plugins")]
                 plugin_mgr,
             ),
@@ -230,7 +237,7 @@ impl State {
         game_mode: GameMode,
         thread_pool: Arc<ThreadPool>,
         map_size_lg: MapSizeLg,
-        default_chunk: Arc<TerrainChunk>,
+        default_chunk_for_missing_world_bounds: Arc<TerrainChunk>,
         #[cfg(feature = "plugins")] mut plugin_mgr: PluginMgr,
     ) -> specs::World {
         prof_span!("State::setup_ecs_world");
@@ -343,7 +350,10 @@ impl State {
         // Register unsynced resources used by the ECS.
         ecs.insert(DeltaTime(0.0));
         ecs.insert(PlayerEntity(None));
-        ecs.insert(TerrainGrid::new(map_size_lg, default_chunk).unwrap());
+        ecs.insert(Self::terrain_grid_for_missing_world_bounds(
+            map_size_lg,
+            default_chunk_for_missing_world_bounds,
+        ));
         ecs.insert(BlockChange::default());
         ecs.insert(ScheduledBlockChange::default());
         ecs.insert(crate::special_areas::AreasContainer::<BuildArea>::default());
@@ -922,4 +932,23 @@ impl<'a> MetricsGuard<'a> {
 
 impl Drop for MetricsGuard<'_> {
     fn drop(&mut self) { self.metrics.add(self.label, self.start.elapsed()); }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+    use common::terrain::{MapSizeLg, TerrainChunk};
+    use std::sync::Arc;
+    use vek::Vec2;
+
+    #[test]
+    fn terrain_grid_for_missing_world_bounds_keeps_oob_default_chunk_behavior() {
+        let grid = State::terrain_grid_for_missing_world_bounds(
+            MapSizeLg::new(Vec2::new(1, 1)).unwrap(),
+            Arc::new(TerrainChunk::water(123)),
+        );
+
+        assert_eq!(grid.get_key(Vec2::new(-1, 0)).unwrap().get_min_z(), 123);
+        assert!(grid.get_key(Vec2::new(0, 0)).is_none());
+    }
 }

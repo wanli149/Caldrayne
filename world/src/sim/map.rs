@@ -1,7 +1,7 @@
 use crate::{
     CONFIG, IndexRef,
     column::ColumnSample,
-    sim::{RiverKind, WorldSim},
+    sim::{ApproxFallback, RiverKind, WorldSim},
     site::SiteKind,
 };
 use common::{
@@ -14,6 +14,75 @@ use common::{
 };
 use std::f64;
 use vek::*;
+
+struct ChunkMapSampleRequest {
+    chunk_idx: Option<usize>,
+    alt: f32,
+    basement: f32,
+    water_alt: f32,
+    humidity: f32,
+    temperature: f32,
+    downhill: Option<Vec2<i32>>,
+    river_kind: Option<RiverKind>,
+    spline_derivative: Vec2<f32>,
+    is_path: bool,
+    is_bridge: bool,
+}
+
+impl ChunkMapSampleRequest {
+    fn fallback() -> Self {
+        Self {
+            chunk_idx: None,
+            alt: CONFIG.sea_level,
+            basement: CONFIG.sea_level,
+            water_alt: CONFIG.sea_level,
+            humidity: 0.0,
+            temperature: 0.0,
+            downhill: None,
+            river_kind: None,
+            spline_derivative: Vec2::zero(),
+            is_path: false,
+            is_bridge: false,
+        }
+    }
+}
+
+fn sample_pos_request(
+    map_size_lg: common::terrain::MapSizeLg,
+    sampler: &WorldSim,
+    index: IndexRef,
+    pos: Vec2<i32>,
+) -> ChunkMapSampleRequest {
+    sampler
+        .get(pos)
+        .map(|sample| ChunkMapSampleRequest {
+            chunk_idx: Some(vec2_as_uniform_idx(map_size_lg, pos)),
+            alt: sample.alt,
+            basement: sample.basement,
+            water_alt: sample.water_alt,
+            humidity: sample.humidity,
+            temperature: sample.temp,
+            downhill: sample.downhill,
+            river_kind: sample.river.river_kind,
+            spline_derivative: sample.river.spline_derivative,
+            is_path: sample.path.0.is_way(),
+            is_bridge: sample.sites.iter().any(|site| {
+                let site = &index.sites.get(*site);
+                match site.kind {
+                    Some(SiteKind::Bridge(_, _)) => {
+                        if let Some(plot) = site.wpos_tile(TerrainChunkSize::center_wpos(pos)).plot
+                        {
+                            matches!(site.plot(plot).kind, crate::site::PlotKind::Bridge(_))
+                        } else {
+                            false
+                        }
+                    },
+                    _ => false,
+                }
+            }),
+        })
+        .unwrap_or_else(ChunkMapSampleRequest::fallback)
+}
 
 /// A sample function that grabs the connections at a chunk.
 ///
@@ -43,16 +112,7 @@ pub fn sample_wpos(config: &MapConfig, sampler: &WorldSim, wpos: Vec2<i32>) -> f
         ..
     } = *config;
 
-    (sampler
-        .get_wpos(wpos)
-        .map(|s| {
-            if is_basement { s.basement } else { s.alt }.max(if is_water {
-                s.water_alt
-            } else {
-                -f32::INFINITY
-            })
-        })
-        .unwrap_or(CONFIG.sea_level)
+    (sampler.map_sample_alt_or(wpos, is_basement, is_water, ApproxFallback::SeaLevel)
         - focus.z as f32)
         / gain
 }
@@ -65,6 +125,10 @@ pub fn sample_wpos(config: &MapConfig, sampler: &WorldSim, wpos: Vec2<i32>) -> f
 /// are to be used for some reason, one should pass a custom function to
 /// generate instead (e.g. one that just looks up the color in a cached
 /// array).
+///
+/// This is the chunk-authoritative map request. It consumes the chunk-facing
+/// world state and only then optionally refines render data with cached column
+/// samples. `sample_wpos(...)` remains the separate height-probe contract.
 // NOTE: Deliberately not putting Rgb colors here in the config file; they
 // aren't hot reloaded anyway, and for various reasons they're probably not a
 // good idea to update in that way (for example, we currently want water colors
@@ -94,7 +158,7 @@ pub fn sample_pos(
 
     let true_sea_level = (CONFIG.sea_level as f64 - focus.z) / gain as f64;
 
-    let (
+    let ChunkMapSampleRequest {
         chunk_idx,
         alt,
         basement,
@@ -106,50 +170,7 @@ pub fn sample_pos(
         spline_derivative,
         is_path,
         is_bridge,
-    ) = sampler
-        .get(pos)
-        .map(|sample| {
-            (
-                Some(vec2_as_uniform_idx(map_size_lg, pos)),
-                sample.alt,
-                sample.basement,
-                sample.water_alt,
-                sample.humidity,
-                sample.temp,
-                sample.downhill,
-                sample.river.river_kind,
-                sample.river.spline_derivative,
-                sample.path.0.is_way(),
-                sample.sites.iter().any(|site| {
-                    let site = &index.sites.get(*site);
-                    match site.kind {
-                        Some(SiteKind::Bridge(_, _)) => {
-                            if let Some(plot) =
-                                site.wpos_tile(TerrainChunkSize::center_wpos(pos)).plot
-                            {
-                                matches!(site.plot(plot).kind, crate::site::PlotKind::Bridge(_))
-                            } else {
-                                false
-                            }
-                        },
-                        _ => false,
-                    }
-                }),
-            )
-        })
-        .unwrap_or((
-            None,
-            CONFIG.sea_level,
-            CONFIG.sea_level,
-            CONFIG.sea_level,
-            0.0,
-            0.0,
-            None,
-            None,
-            Vec2::zero(),
-            false,
-            false,
-        ));
+    } = sample_pos_request(map_size_lg, sampler, index, pos);
 
     let humidity = humidity.clamp(0.0, 1.0);
     let temperature = temperature.clamp(-1.0, 1.0) * 0.5 + 0.5;

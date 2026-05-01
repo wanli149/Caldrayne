@@ -23,6 +23,40 @@ impl CompatMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LoadLegacyMode {
+    #[default]
+    Allow,
+    Deny,
+}
+
+impl LoadLegacyMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Allow => "allow",
+            Self::Deny => "deny",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LoadOrGenerateSidecarlessMode {
+    #[default]
+    Allow,
+    Deny,
+}
+
+impl LoadOrGenerateSidecarlessMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Allow => "allow",
+            Self::Deny => "deny",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct RawCompatFailure {
     pub kind: CompatFailureKindV1,

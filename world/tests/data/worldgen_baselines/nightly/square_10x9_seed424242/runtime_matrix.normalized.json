@@ -9,27 +9,925 @@
   },
   "recipe": {
     "world_recipe_hash": "8f9a066089d1025a1e7a3e150234c8fdc27ea74f763e48d6119d0eecf50173c4",
-    "chunk_recipe_hash": "d6a12f45c3446e02368855edbcbe0ad6f229f2fc7c33dc9ba1390764430be354",
+    "chunk_recipe_hash": "5f518f86954051faa8c597bc3a1c578756232676d1957ae30b8947f267d3b6bc",
     "topology_id": "bounded_plane_v1",
     "preset_id": "custom_gen_opts_v1",
     "world_alg_version": "world-sim-v1-record-only",
+    "config_hash": "f6eab7a2620dbc1c6b444f38d88c2a00acc30a3c572df318244e0f11d5316fa9",
+    "asset_hash": "139767e1b9722892d03330eff1f4b86c749d04a49a1cdf9cf39a2ee5fe6e16e5",
     "chunk_pass_version": "chunk-static-v1-record-only",
+    "static_feature_profile": "static_feature_profile_v1(caverns=0,caves=1,rocks=1,shrubs=1,trees=1,scatter=1,paths=1,spots=1,peak_naming=1,biome_naming=1,train_tracks=0)",
     "seed_elements": false
   },
   "sample_chunks": 9,
-  "runtime_audit_mode": "sampled_runtime_overlay_matrix_v2",
+  "runtime_audit_mode": "sampled_runtime_overlay_matrix_v3",
   "strict_determinism": true,
   "runtime_chunk_contract": {
     "base_chunk_entry": "world.generate_chunk(rtsim_resource_fractions=None,time=None)",
+    "fixed_context_entry": "world.generate_chunk(rtsim_resource_fractions=None,time=baseline_night|halloween_night)",
+    "rtsim_full_density_entry": "world.generate_chunk(rtsim_resource_fractions=fixed_full_density,time=baseline_night)",
+    "rtsim_fixed_fixture_entry": "world.generate_chunk(rtsim_resource_fractions=fixed_fixture,time=baseline_night)",
     "includes_world_runtime_finalize": true,
-    "includes_time_context": false,
-    "includes_rtsim_resource_thinning": false
+    "includes_time_context": true,
+    "includes_rtsim_resource_thinning": true
+  },
+  "contexts": {
+    "baseline_night": {
+      "variant_mode": "baseline_night",
+      "time_of_day_seconds": 79200.0,
+      "day_period": "Night",
+      "calendar_events": []
+    },
+    "halloween_night": {
+      "variant_mode": "halloween_night",
+      "time_of_day_seconds": 79200.0,
+      "day_period": "Night",
+      "calendar_events": [
+        "Halloween"
+      ]
+    }
   },
   "fixed_overlay_fixture": {
     "fixture_id": "fixed_overlay_fixture_v1",
     "contract_path": "server/tests/data/terrain_overlay/fixed_overlay_fixture_v1.ron",
     "operation_count": 3
   },
+  "rtsim_resource_sampling_contract": {
+    "sampler_id": "center_spiral_nonempty_rtsim_resource_chunks_v1",
+    "edge_margin_chunks": 16,
+    "max_probes": 576,
+    "distinct_chunks": true,
+    "best_effort": true,
+    "context_variant": "baseline_night",
+    "selection_contract": "deterministic best-effort top interior chunks ranked by full-density baseline-night rtsim_max_resources upper bound, then resource-kind count, then chunk_pos"
+  },
+  "rtsim_resource_fixture": {
+    "fixture_id": "rtsim_resource_thinning_fixture_v1",
+    "contract_path": "world/tests/data/worldgen_runtime/rtsim_resource_thinning_fixture_v1.ron",
+    "context_variant": "baseline_night",
+    "fractions": {
+      "Flower": 0.5,
+      "Fruit": 1.0,
+      "Gem": 1.0,
+      "Grass": 0.5,
+      "Loot": 1.0,
+      "Mushroom": 0.5,
+      "Ore": 0.5,
+      "Plant": 0.5,
+      "Stone": 0.5,
+      "Vegetable": 0.5,
+      "Wood": 0.5
+    }
+  },
+  "rtsim_resource_samples": [
+    {
+      "chunk_pos": [
+        512,
+        267
+      ],
+      "selection_score": 193,
+      "resource_kind_count": 3,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 29,
+        "max_z": 205,
+        "sub_chunks": 11,
+        "block_total": 180224,
+        "non_air_blocks": 133678,
+        "sprite_total": 46546,
+        "block_kind_counts": {
+          "Air": 46546,
+          "ArtLeaves": 827,
+          "Earth": 4342,
+          "Grass": 1070,
+          "Leaves": 994,
+          "Misc": 19,
+          "Rock": 125272,
+          "Sand": 855,
+          "WeakRock": 241,
+          "Wood": 58
+        },
+        "sprite_kind_counts": {
+          "Bones": 1,
+          "Copper": 1,
+          "DeadBush": 1,
+          "Empty": 46344,
+          "MediumGrass": 16,
+          "RedSavannaGrass": 10,
+          "RockyMushroom": 1,
+          "Root": 7,
+          "SavannaGrass": 108,
+          "ShortGrass": 44,
+          "TallSavannaGrass": 13
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 191,
+          "Mushroom": 1,
+          "Ore": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 191,
+        "Mushroom": 1,
+        "Ore": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 29,
+        "max_z": 205,
+        "sub_chunks": 11,
+        "block_total": 180224,
+        "non_air_blocks": 133678,
+        "sprite_total": 46546,
+        "block_kind_counts": {
+          "Air": 46546,
+          "ArtLeaves": 827,
+          "Earth": 4342,
+          "Grass": 1070,
+          "Leaves": 994,
+          "Misc": 19,
+          "Rock": 125272,
+          "Sand": 855,
+          "WeakRock": 241,
+          "Wood": 58
+        },
+        "sprite_kind_counts": {
+          "Bones": 1,
+          "DeadBush": 1,
+          "Empty": 46439,
+          "MediumGrass": 11,
+          "RedSavannaGrass": 4,
+          "Root": 7,
+          "SavannaGrass": 57,
+          "ShortGrass": 20,
+          "TallSavannaGrass": 6
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 191,
+          "Mushroom": 1,
+          "Ore": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 98
+      }
+    },
+    {
+      "chunk_pos": [
+        518,
+        263
+      ],
+      "selection_score": 189,
+      "resource_kind_count": 4,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 61,
+        "max_z": 189,
+        "sub_chunks": 8,
+        "block_total": 131072,
+        "non_air_blocks": 114299,
+        "sprite_total": 16773,
+        "block_kind_counts": {
+          "Air": 16773,
+          "ArtLeaves": 50,
+          "Earth": 4306,
+          "Grass": 1091,
+          "Rock": 108716,
+          "WeakRock": 129,
+          "Wood": 7
+        },
+        "sprite_kind_counts": {
+          "DeadBush": 1,
+          "Empty": 16575,
+          "JungleLeafyPlant": 5,
+          "LeafyPlant": 3,
+          "LongGrass": 14,
+          "LushMushroom": 1,
+          "MediumGrass": 73,
+          "RedSavannaGrass": 2,
+          "SavannaGrass": 6,
+          "ShortGrass": 90,
+          "Tin": 1,
+          "Twigs": 1,
+          "Wood": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 185,
+          "Mushroom": 1,
+          "Ore": 1,
+          "Wood": 2
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 185,
+        "Mushroom": 1,
+        "Ore": 1,
+        "Wood": 2
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 61,
+        "max_z": 189,
+        "sub_chunks": 8,
+        "block_total": 131072,
+        "non_air_blocks": 114299,
+        "sprite_total": 16773,
+        "block_kind_counts": {
+          "Air": 16773,
+          "ArtLeaves": 50,
+          "Earth": 4306,
+          "Grass": 1091,
+          "Rock": 108716,
+          "WeakRock": 129,
+          "Wood": 7
+        },
+        "sprite_kind_counts": {
+          "DeadBush": 1,
+          "Empty": 16658,
+          "JungleLeafyPlant": 5,
+          "LeafyPlant": 3,
+          "LongGrass": 8,
+          "LushMushroom": 1,
+          "MediumGrass": 38,
+          "RedSavannaGrass": 1,
+          "SavannaGrass": 4,
+          "ShortGrass": 53,
+          "Tin": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 185,
+          "Mushroom": 1,
+          "Ore": 1,
+          "Wood": 2
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 104,
+        "Mushroom": 1,
+        "Ore": 1
+      }
+    },
+    {
+      "chunk_pos": [
+        521,
+        250
+      ],
+      "selection_score": 181,
+      "resource_kind_count": 1,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 174,
+        "max_z": 254,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 36486,
+        "sprite_total": 45434,
+        "block_kind_counts": {
+          "Air": 45434,
+          "Earth": 4326,
+          "Grass": 1092,
+          "Leaves": 10688,
+          "Misc": 35,
+          "Rock": 18926,
+          "Wood": 1419
+        },
+        "sprite_kind_counts": {
+          "Empty": 45244,
+          "JungleLeafyPlant": 5,
+          "LeafyPlant": 4,
+          "LongGrass": 55,
+          "MediumGrass": 87,
+          "ShortGrass": 39
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 181
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 181
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 174,
+        "max_z": 254,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 36486,
+        "sprite_total": 45434,
+        "block_kind_counts": {
+          "Air": 45434,
+          "Earth": 4326,
+          "Grass": 1092,
+          "Leaves": 10688,
+          "Misc": 35,
+          "Rock": 18926,
+          "Wood": 1419
+        },
+        "sprite_kind_counts": {
+          "Empty": 45339,
+          "JungleLeafyPlant": 5,
+          "LeafyPlant": 4,
+          "LongGrass": 24,
+          "MediumGrass": 45,
+          "ShortGrass": 17
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 181
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 86
+      }
+    },
+    {
+      "chunk_pos": [
+        502,
+        249
+      ],
+      "selection_score": 168,
+      "resource_kind_count": 3,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 254,
+        "max_z": 318,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 32287,
+        "sprite_total": 33249,
+        "block_kind_counts": {
+          "Air": 33249,
+          "Earth": 4608,
+          "Grass": 1268,
+          "Leaves": 1103,
+          "Rock": 24958,
+          "Wood": 350
+        },
+        "sprite_kind_counts": {
+          "Apple": 1,
+          "Empty": 33074,
+          "JungleLeafyPlant": 4,
+          "LeafyPlant": 3,
+          "LongGrass": 17,
+          "MediumGrass": 37,
+          "ShortGrass": 112,
+          "Wood": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Fruit": 1,
+          "Grass": 166,
+          "Wood": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Fruit": 1,
+        "Grass": 166,
+        "Wood": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 254,
+        "max_z": 318,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 32287,
+        "sprite_total": 33249,
+        "block_kind_counts": {
+          "Air": 33249,
+          "Earth": 4608,
+          "Grass": 1268,
+          "Leaves": 1103,
+          "Rock": 24958,
+          "Wood": 350
+        },
+        "sprite_kind_counts": {
+          "Apple": 1,
+          "Empty": 33152,
+          "JungleLeafyPlant": 4,
+          "LeafyPlant": 3,
+          "LongGrass": 11,
+          "MediumGrass": 20,
+          "ShortGrass": 57,
+          "Wood": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Fruit": 1,
+          "Grass": 166,
+          "Wood": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Fruit": 1,
+        "Grass": 88,
+        "Wood": 1
+      }
+    },
+    {
+      "chunk_pos": [
+        517,
+        252
+      ],
+      "selection_score": 166,
+      "resource_kind_count": 3,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 180,
+        "max_z": 260,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 38370,
+        "sprite_total": 43550,
+        "block_kind_counts": {
+          "Air": 43550,
+          "Earth": 4255,
+          "Grass": 1083,
+          "Leaves": 9397,
+          "Rock": 18712,
+          "Wood": 4923
+        },
+        "sprite_kind_counts": {
+          "Cotton": 6,
+          "Empty": 43368,
+          "JungleLeafyPlant": 9,
+          "LeafyPlant": 7,
+          "LongGrass": 47,
+          "MediumGrass": 28,
+          "ShortGrass": 84,
+          "Twigs": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 159,
+          "Plant": 6,
+          "Wood": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 159,
+        "Plant": 6,
+        "Wood": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 180,
+        "max_z": 260,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 38370,
+        "sprite_total": 43550,
+        "block_kind_counts": {
+          "Air": 43550,
+          "Earth": 4255,
+          "Grass": 1083,
+          "Leaves": 9397,
+          "Rock": 18712,
+          "Wood": 4923
+        },
+        "sprite_kind_counts": {
+          "Cotton": 4,
+          "Empty": 43439,
+          "JungleLeafyPlant": 9,
+          "LeafyPlant": 7,
+          "LongGrass": 31,
+          "MediumGrass": 15,
+          "ShortGrass": 45
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 159,
+          "Plant": 6,
+          "Wood": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 91,
+        "Plant": 4
+      }
+    },
+    {
+      "chunk_pos": [
+        523,
+        248
+      ],
+      "selection_score": 161,
+      "resource_kind_count": 1,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 177,
+        "max_z": 257,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 40968,
+        "sprite_total": 40952,
+        "block_kind_counts": {
+          "Air": 40952,
+          "Earth": 4251,
+          "Grass": 1097,
+          "Leaves": 12333,
+          "Rock": 18660,
+          "Wood": 4627
+        },
+        "sprite_kind_counts": {
+          "Empty": 40782,
+          "JungleLeafyPlant": 4,
+          "LeafyPlant": 4,
+          "LingonBerry": 1,
+          "LongGrass": 10,
+          "MediumGrass": 42,
+          "ShortGrass": 109
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 161
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 161
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 177,
+        "max_z": 257,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 40968,
+        "sprite_total": 40952,
+        "block_kind_counts": {
+          "Air": 40952,
+          "Earth": 4251,
+          "Grass": 1097,
+          "Leaves": 12333,
+          "Rock": 18660,
+          "Wood": 4627
+        },
+        "sprite_kind_counts": {
+          "Empty": 40852,
+          "JungleLeafyPlant": 4,
+          "LeafyPlant": 4,
+          "LingonBerry": 1,
+          "LongGrass": 3,
+          "MediumGrass": 26,
+          "ShortGrass": 62
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 161
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 91
+      }
+    },
+    {
+      "chunk_pos": [
+        508,
+        260
+      ],
+      "selection_score": 160,
+      "resource_kind_count": 1,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 170,
+        "max_z": 250,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 19492,
+        "sprite_total": 62428,
+        "block_kind_counts": {
+          "Air": 62428,
+          "Earth": 4338,
+          "Grass": 1082,
+          "Leaves": 319,
+          "Misc": 63,
+          "Rock": 13628,
+          "Wood": 62
+        },
+        "sprite_kind_counts": {
+          "Empty": 62265,
+          "JungleLeafyPlant": 2,
+          "LingonBerry": 1,
+          "LongGrass": 24,
+          "MediumGrass": 46,
+          "ShortGrass": 90
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 160
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 160
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 170,
+        "max_z": 250,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 19492,
+        "sprite_total": 62428,
+        "block_kind_counts": {
+          "Air": 62428,
+          "Earth": 4338,
+          "Grass": 1082,
+          "Leaves": 319,
+          "Misc": 63,
+          "Rock": 13628,
+          "Wood": 62
+        },
+        "sprite_kind_counts": {
+          "Empty": 62339,
+          "JungleLeafyPlant": 2,
+          "LingonBerry": 1,
+          "LongGrass": 17,
+          "MediumGrass": 25,
+          "ShortGrass": 44
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 160
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 86
+      }
+    },
+    {
+      "chunk_pos": [
+        524,
+        250
+      ],
+      "selection_score": 159,
+      "resource_kind_count": 2,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 168,
+        "max_z": 232,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 34602,
+        "sprite_total": 30934,
+        "block_kind_counts": {
+          "Air": 30934,
+          "Earth": 4281,
+          "Grass": 1018,
+          "Leaves": 9602,
+          "Misc": 123,
+          "Rock": 16816,
+          "Wood": 2762
+        },
+        "sprite_kind_counts": {
+          "Empty": 30762,
+          "JungleLeafyPlant": 8,
+          "LeafyPlant": 5,
+          "LongGrass": 68,
+          "MediumGrass": 45,
+          "ShortGrass": 45,
+          "Twigs": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 158,
+          "Wood": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 158,
+        "Wood": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 168,
+        "max_z": 232,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 34602,
+        "sprite_total": 30934,
+        "block_kind_counts": {
+          "Air": 30934,
+          "Earth": 4281,
+          "Grass": 1018,
+          "Leaves": 9602,
+          "Misc": 123,
+          "Rock": 16816,
+          "Wood": 2762
+        },
+        "sprite_kind_counts": {
+          "Empty": 30845,
+          "JungleLeafyPlant": 8,
+          "LeafyPlant": 5,
+          "LongGrass": 36,
+          "MediumGrass": 16,
+          "ShortGrass": 23,
+          "Twigs": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 158,
+          "Wood": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 75,
+        "Wood": 1
+      }
+    },
+    {
+      "chunk_pos": [
+        510,
+        249
+      ],
+      "selection_score": 158,
+      "resource_kind_count": 4,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -109,
+        "max_z": 307,
+        "sub_chunks": 26,
+        "block_total": 425984,
+        "non_air_blocks": 371706,
+        "sprite_total": 54278,
+        "block_kind_counts": {
+          "Air": 54278,
+          "ArtSnow": 191,
+          "Earth": 4574,
+          "GlowingWeakRock": 21,
+          "Grass": 1246,
+          "Leaves": 9330,
+          "Misc": 4,
+          "Rock": 354735,
+          "WeakRock": 3,
+          "Wood": 1602
+        },
+        "sprite_kind_counts": {
+          "Beehive": 1,
+          "Coal": 1,
+          "Empty": 54109,
+          "IceCrystal": 1,
+          "JungleLeafyPlant": 5,
+          "LeafyPlant": 5,
+          "LongGrass": 15,
+          "MediumGrass": 48,
+          "ShortGrass": 92,
+          "Twigs": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Fruit": 1,
+          "Grass": 155,
+          "Ore": 1,
+          "Wood": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Fruit": 1,
+        "Grass": 155,
+        "Ore": 1,
+        "Wood": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -109,
+        "max_z": 307,
+        "sub_chunks": 26,
+        "block_total": 425984,
+        "non_air_blocks": 371706,
+        "sprite_total": 54278,
+        "block_kind_counts": {
+          "Air": 54278,
+          "ArtSnow": 191,
+          "Earth": 4574,
+          "GlowingWeakRock": 21,
+          "Grass": 1246,
+          "Leaves": 9330,
+          "Misc": 4,
+          "Rock": 354735,
+          "WeakRock": 3,
+          "Wood": 1602
+        },
+        "sprite_kind_counts": {
+          "Beehive": 1,
+          "Coal": 1,
+          "Empty": 54190,
+          "IceCrystal": 1,
+          "JungleLeafyPlant": 5,
+          "LeafyPlant": 5,
+          "LongGrass": 7,
+          "MediumGrass": 23,
+          "ShortGrass": 45
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Fruit": 1,
+          "Grass": 155,
+          "Ore": 1,
+          "Wood": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Fruit": 1,
+        "Grass": 75,
+        "Ore": 1
+      }
+    }
+  ],
   "sampled_chunks": [
     {
       "chunk_pos": [
@@ -56,7 +954,9 @@
         "sprite_kind_counts": {
           "Empty": 28397,
           "SeaweedTropical": 7
-        },
+        }
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -80,9 +980,7 @@
         "sprite_kind_counts": {
           "Empty": 28397,
           "SeaweedTropical": 7
-        },
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        }
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -107,7 +1005,61 @@
         "sprite_kind_counts": {
           "Empty": 28394,
           "SeaweedTropical": 7
+        }
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 79,
+        "max_z": 143,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 62464,
+        "sprite_total": 28404,
+        "block_kind_counts": {
+          "Air": 3072,
+          "Earth": 3414,
+          "Rock": 29960,
+          "Sand": 3758,
+          "Water": 25332
         },
+        "sprite_kind_counts": {
+          "Empty": 28397,
+          "SeaweedTropical": 7
+        }
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 3,
+        "entity_signatures": [
+          "pos_bits=1113718784,1108475904,1123518680;body=FishMedium(Body { species: Marlin, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1115029504,1111359488,1123649752;body=FishMedium(Body { species: Marlin, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1115553792,1108213760,1123649752;body=FishMedium(Body { species: Marlin, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false"
+        ]
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 79,
+        "max_z": 143,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 62464,
+        "sprite_total": 28404,
+        "block_kind_counts": {
+          "Air": 3072,
+          "Earth": 3414,
+          "Rock": 29960,
+          "Sand": 3758,
+          "Water": 25332
+        },
+        "sprite_kind_counts": {
+          "Empty": 28397,
+          "SeaweedTropical": 7
+        }
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -139,7 +1091,9 @@
           "Empty": 54365,
           "SeaweedTemperate": 2,
           "SoftCoral": 4
-        },
+        }
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -165,9 +1119,7 @@
           "Empty": 54365,
           "SeaweedTemperate": 2,
           "SoftCoral": 4
-        },
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        }
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -194,7 +1146,61 @@
           "Empty": 54362,
           "SeaweedTemperate": 2,
           "SoftCoral": 4
+        }
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 72,
+        "max_z": 152,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 69632,
+        "sprite_total": 54380,
+        "block_kind_counts": {
+          "Air": 12288,
+          "Earth": 3408,
+          "Rock": 22059,
+          "Sand": 2073,
+          "Water": 42092
         },
+        "sprite_kind_counts": {
+          "BullKelp": 9,
+          "Empty": 54365,
+          "SeaweedTemperate": 2,
+          "SoftCoral": 4
+        }
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 72,
+        "max_z": 152,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 69632,
+        "sprite_total": 54380,
+        "block_kind_counts": {
+          "Air": 12288,
+          "Earth": 3408,
+          "Rock": 22059,
+          "Sand": 2073,
+          "Water": 42092
+        },
+        "sprite_kind_counts": {
+          "BullKelp": 9,
+          "Empty": 54365,
+          "SeaweedTemperate": 2,
+          "SoftCoral": 4
+        }
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -215,7 +1221,9 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -230,9 +1238,7 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {}
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -245,7 +1251,39 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -276,7 +1314,9 @@
           "Empty": 47174,
           "GiantKelp": 20,
           "SeaweedTemperate": 5
-        },
+        }
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -301,9 +1341,7 @@
           "Empty": 47174,
           "GiantKelp": 20,
           "SeaweedTemperate": 5
-        },
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        }
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -329,7 +1367,59 @@
           "Empty": 47171,
           "GiantKelp": 20,
           "SeaweedTemperate": 5
+        }
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 85,
+        "max_z": 149,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 56320,
+        "sprite_total": 47199,
+        "block_kind_counts": {
+          "Air": 9216,
+          "Earth": 3411,
+          "Rock": 12835,
+          "Sand": 2091,
+          "Water": 37983
         },
+        "sprite_kind_counts": {
+          "Empty": 47174,
+          "GiantKelp": 20,
+          "SeaweedTemperate": 5
+        }
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 85,
+        "max_z": 149,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 56320,
+        "sprite_total": 47199,
+        "block_kind_counts": {
+          "Air": 9216,
+          "Earth": 3411,
+          "Rock": 12835,
+          "Sand": 2091,
+          "Water": 37983
+        },
+        "sprite_kind_counts": {
+          "Empty": 47174,
+          "GiantKelp": 20,
+          "SeaweedTemperate": 5
+        }
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -362,7 +1452,9 @@
           "LongGrass": 9,
           "MediumGrass": 28,
           "ShortGrass": 64
-        },
+        }
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -389,9 +1481,7 @@
           "LongGrass": 9,
           "MediumGrass": 28,
           "ShortGrass": 64
-        },
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        }
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -419,7 +1509,63 @@
           "LongGrass": 9,
           "MediumGrass": 28,
           "ShortGrass": 64
+        }
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 182,
+        "max_z": 214,
+        "sub_chunks": 2,
+        "block_total": 32768,
+        "non_air_blocks": 25866,
+        "sprite_total": 6902,
+        "block_kind_counts": {
+          "Air": 6902,
+          "Earth": 4553,
+          "Grass": 1184,
+          "Rock": 20129
         },
+        "sprite_kind_counts": {
+          "Empty": 6793,
+          "JungleLeafyPlant": 4,
+          "LeafyPlant": 4,
+          "LongGrass": 9,
+          "MediumGrass": 28,
+          "ShortGrass": 64
+        }
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 182,
+        "max_z": 214,
+        "sub_chunks": 2,
+        "block_total": 32768,
+        "non_air_blocks": 25866,
+        "sprite_total": 6902,
+        "block_kind_counts": {
+          "Air": 6902,
+          "Earth": 4553,
+          "Grass": 1184,
+          "Rock": 20129
+        },
+        "sprite_kind_counts": {
+          "Empty": 6793,
+          "JungleLeafyPlant": 4,
+          "LeafyPlant": 4,
+          "LongGrass": 9,
+          "MediumGrass": 28,
+          "ShortGrass": 64
+        }
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -440,7 +1586,9 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -455,9 +1603,7 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {}
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -470,7 +1616,39 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -491,7 +1669,9 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -506,9 +1686,7 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {}
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -521,7 +1699,39 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -542,7 +1752,9 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -557,9 +1769,7 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {}
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -572,7 +1782,39 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -593,7 +1835,9 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -608,9 +1852,7 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {}
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -623,7 +1865,39 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }

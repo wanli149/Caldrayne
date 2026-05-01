@@ -20,7 +20,10 @@ use tokio::runtime::Runtime;
 use tracing::{error, info, trace, warn};
 
 mod singleplayer_world;
-pub use singleplayer_world::{SingleplayerWorld, SingleplayerWorlds};
+pub use singleplayer_world::{
+    SingleplayerLegacyInventory, SingleplayerLegacyOrigin, SingleplayerWorld,
+    SingleplayerWorldSource, SingleplayerWorlds,
+};
 
 const TPS: u64 = 30;
 
@@ -102,22 +105,7 @@ impl SingleplayerState {
                 },
             );
 
-            let file_opts = if let Some(gen_opts) = &world.gen_opts
-                && !world.is_generated
-            {
-                server::FileOpts::Save(world.map_path.clone(), gen_opts.clone())
-            } else {
-                if !world.is_generated
-                    && world.gen_opts.is_none()
-                    && matches!(
-                        world.world_source,
-                        singleplayer_world::SingleplayerWorldSource::DefaultAsset
-                    )
-                {
-                    world.copy_default_world();
-                }
-                server::FileOpts::Load(world.map_path.clone())
-            };
+            let file_opts = world.runtime_file_opts();
 
             settings.map_file = Some(file_opts);
             settings.world_seed = world.seed;
@@ -169,6 +157,7 @@ impl SingleplayerState {
                             runtime_world_meta.sync_runtime_source_contract(
                                 compat_audit,
                                 server.world().sim().recipe_manifest(),
+                                server.world().sim().managed_recipe_sidecar_missing(),
                             );
                             runtime_world_meta.persist_meta();
                             (Some(server), Ok(SingleplayerInitOutcome { compat_audit }))

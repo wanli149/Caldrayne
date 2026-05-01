@@ -56,6 +56,8 @@ type RuntimeListenerAuditState =
     HashMap<(&'static str, SocketAddr), (server::RuntimeListenerState, String)>;
 type RuntimeObservabilityAuditState =
     HashMap<&'static str, (web::RuntimeObservabilityState, String)>;
+type WebUiRequest = (Message, tokio::sync::oneshot::Sender<MessageReturn>);
+type WebUiRequestReceiver = tokio::sync::mpsc::Receiver<WebUiRequest>;
 
 fn append_audit_event_warn(
     audit_log_path: &std::path::Path,
@@ -95,27 +97,36 @@ fn compat_audit_summary(audit: server::CompatAuditV1) -> String {
     )
 }
 
+#[cfg(feature = "worldgen")]
+fn startup_world_compat_reject_error(
+    audit_log_path: &std::path::Path,
+    error_display: impl std::fmt::Display,
+    audit: server::CompatAuditV1,
+) -> io::Error {
+    let detail = format!(
+        "failed to create server instance: {error_display}; {}",
+        compat_audit_summary(audit)
+    );
+    tracing::error!(
+        compat_entry = %audit.entry.as_str(),
+        compat_decision = %audit.decision.as_str(),
+        compat_failure = %audit.failure_kind.as_str(),
+        "dedicated startup failed with world compatibility rejection"
+    );
+    append_audit_event_warn(
+        audit_log_path,
+        AuditSource::Runtime,
+        AuditAction::WorldCompatStartupReject,
+        AuditOutcome::Failed,
+        &detail,
+    );
+    io::Error::new(io::ErrorKind::InvalidData, detail)
+}
+
 fn startup_server_error(audit_log_path: &std::path::Path, error: server::Error) -> io::Error {
     #[cfg(feature = "worldgen")]
     if let Some(audit) = error.compat_audit() {
-        let detail = format!(
-            "failed to create server instance: {error}; {}",
-            compat_audit_summary(audit)
-        );
-        tracing::error!(
-            compat_entry = %audit.entry.as_str(),
-            compat_decision = %audit.decision.as_str(),
-            compat_failure = %audit.failure_kind.as_str(),
-            "dedicated startup failed with world compatibility rejection"
-        );
-        append_audit_event_warn(
-            audit_log_path,
-            AuditSource::Runtime,
-            AuditAction::WorldCompatStartupReject,
-            AuditOutcome::Failed,
-            &detail,
-        );
-        return io::Error::new(io::ErrorKind::InvalidData, detail);
+        return startup_world_compat_reject_error(audit_log_path, &error, audit);
     }
 
     startup_failure_error(
@@ -148,6 +159,44 @@ fn observe_startup_compat_fallback(audit_log_path: &std::path::Path, audit: serv
         AuditOutcome::Accepted,
         &detail,
     );
+}
+
+#[cfg(feature = "worldgen")]
+fn startup_server_pre_web<T, E, M, F>(
+    audit_log_path: &std::path::Path,
+    server_result: Result<T, E>,
+    map_startup_error: M,
+    compat_audit: F,
+) -> io::Result<T>
+where
+    M: FnOnce(E) -> io::Error,
+    F: FnOnce(&T) -> server::CompatAuditV1,
+{
+    let server = server_result.map_err(map_startup_error)?;
+    observe_startup_compat_fallback(audit_log_path, compat_audit(&server));
+    Ok(server)
+}
+
+#[cfg(feature = "worldgen")]
+fn startup_server_pre_web_then<T, E, M, F, C, R>(
+    audit_log_path: &std::path::Path,
+    server_result: Result<T, E>,
+    map_startup_error: M,
+    compat_audit: F,
+    continue_startup: C,
+) -> io::Result<R>
+where
+    M: FnOnce(E) -> io::Error,
+    F: FnOnce(&T) -> server::CompatAuditV1,
+    C: FnOnce(T) -> io::Result<R>,
+{
+    let server = startup_server_pre_web(
+        audit_log_path,
+        server_result,
+        map_startup_error,
+        compat_audit,
+    )?;
+    continue_startup(server)
 }
 
 fn snapshot_runtime_listener_inventory(
@@ -308,48 +357,236 @@ fn append_runtime_observability_transition_audit_events(
     *previous_states = current_states;
 }
 
-fn main() -> io::Result<()> {
-    #[cfg(feature = "tracy")]
-    common_base::tracy_client::Client::start();
+pub(crate) fn startup_runtime_observability_inventory(
+    chunk_lifecycle_summary: Option<server::ChunkLifecycleAbnormalSummary>,
+) -> web::RuntimeObservabilityInventory {
+    let runtime_observability_inventory = web::default_runtime_observability_inventory();
+    web::set_chunk_lifecycle_observability_status(
+        &runtime_observability_inventory,
+        chunk_lifecycle_summary,
+    );
+    runtime_observability_inventory
+}
 
-    use clap::Parser;
-    let app = ArgvApp::parse();
+#[cfg(feature = "worldgen")]
+#[derive(Clone, Copy)]
+pub(crate) struct StartupWorldCompatObservability<'a> {
+    pub configured_mode: &'a str,
+    pub load_legacy_mode: &'a str,
+    pub load_or_generate_sidecarless_mode: &'a str,
+    pub compat_audit: server::CompatAuditV1,
+    pub recipe_manifest: &'a server::RecipeManifestV1,
+    pub managed_recipe_sidecar_missing: bool,
+}
 
-    let basic = !app.tui || app.command.is_some();
-    let noninteractive = app.non_interactive;
-    let no_auth = app.no_auth;
-    let sql_log_mode = app.sql_log_mode;
+#[cfg(feature = "worldgen")]
+pub(crate) fn apply_startup_world_compat_observability(
+    runtime_observability_inventory: &web::RuntimeObservabilityInventory,
+    world_compat: StartupWorldCompatObservability<'_>,
+) {
+    web::set_world_compat_observability_status(
+        runtime_observability_inventory,
+        world_compat.configured_mode,
+        world_compat.load_legacy_mode,
+        world_compat.load_or_generate_sidecarless_mode,
+        world_compat.compat_audit,
+        world_compat.recipe_manifest,
+        world_compat.managed_recipe_sidecar_missing,
+    );
+}
 
-    // noninteractive implies basic
-    let basic = basic || noninteractive;
+#[cfg(feature = "worldgen")]
+struct PreparedWorldgenStartup {
+    server: Server,
+    registry: Arc<prometheus::Registry>,
+    chat: server::chat::ChatCache,
+    runtime_listener_inventory: server::RuntimeListenerInventory,
+    runtime_listener_audit_state: RuntimeListenerAuditState,
+    runtime_observability_inventory: web::RuntimeObservabilityInventory,
+    runtime_observability_audit_state: RuntimeObservabilityAuditState,
+    health_state: web::HealthState,
+}
 
-    let shutdown_signal = Arc::new(AtomicBool::new(false));
+struct PreparedRuntimeInputs {
+    runtime_layout: crate::settings::RuntimeLayout,
+    audit_log_path: PathBuf,
+    server_data_dir: PathBuf,
+    runtime: Arc<tokio::runtime::Runtime>,
+    server_identity: server::ServerIdentity,
+    server_settings: server::Settings,
+    editable_settings: server::EditableSettings,
+    database_settings: server::persistence::DatabaseSettings,
+}
 
-    let (_guards, _guards2) = if basic {
-        (Vec::new(), common_frontend::init_stdout(None))
-    } else {
-        (common_frontend::init(None, &|| LOG.clone()), Vec::new())
-    };
+struct PreparedServerLoopHandoff {
+    server: Server,
+    metrics_shutdown: Arc<Notify>,
+    web_server_task: tokio::task::JoinHandle<()>,
+    web_bind_address: Option<SocketAddr>,
+    web_ui_request_r: WebUiRequestReceiver,
+    runtime_listener_inventory: server::RuntimeListenerInventory,
+    runtime_listener_audit_state: RuntimeListenerAuditState,
+    runtime_observability_inventory: web::RuntimeObservabilityInventory,
+    runtime_observability_audit_state: RuntimeObservabilityAuditState,
+}
 
-    // Load settings
-    let settings = settings::Settings::load().ok_or(io::ErrorKind::Other)?;
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        for signal in &settings.shutdown_signals {
-            let _ = signal_hook::flag::register(signal.to_signal(), Arc::clone(&shutdown_signal));
-        }
+pub(crate) fn startup_health_state(
+    settings: &Settings,
+    runtime_layout: &crate::settings::RuntimeLayout,
+    runtime_listener_inventory: server::RuntimeListenerInventory,
+    runtime_observability_inventory: web::RuntimeObservabilityInventory,
+    auth_server_configured: bool,
+    authoritative_auth_provider: Option<String>,
+    surface_inventory: Vec<crate::settings::RuntimeSurface>,
+    management_auth_inventory: Vec<crate::settings::ManagementAuthInventoryEntry>,
+    transport_security_inventory: Vec<crate::settings::TransportSecurityInventoryEntry>,
+    governance_findings: Vec<crate::settings::RuntimeGovernanceFinding>,
+) -> web::HealthState {
+    web::HealthState {
+        environment: settings.environment.as_str(),
+        auth_server_configured,
+        authoritative_auth_provider,
+        server_state: runtime_layout.server_state.clone(),
+        recovery_staging_state: runtime_layout.recovery_staging_state.clone(),
+        audit_retention: settings.audit_retention,
+        runtime_listener_inventory,
+        runtime_observability_inventory,
+        surface_inventory,
+        management_auth_inventory,
+        transport_security_inventory,
+        governance_findings,
     }
+}
 
-    #[cfg(target_os = "windows")]
-    if !settings.shutdown_signals.is_empty() {
-        tracing::warn!(
-            "Server configuration contains shutdown signals, but your platform does not support \
-             them"
-        );
-    }
+fn resolved_ui_api_secret(settings: &Settings) -> String {
+    settings.ui_api_secret.clone().unwrap_or_else(|| {
+        // When no secret is provided we generate one that we distribute via the
+        // loopback-only /ui bootstrap endpoint.
+        use rand::distr::Alphanumeric;
+        Alphanumeric.sample_string(&mut rand::rng(), 32)
+    })
+}
 
-    let runtime_layout = settings.resolve_runtime_layout();
+fn bind_startup_web_listener(
+    settings: &Settings,
+    runtime: &tokio::runtime::Runtime,
+    audit_log_path: &std::path::Path,
+) -> io::Result<tokio::net::TcpListener> {
+    runtime
+        .block_on(web::bind_listener(settings.web_address))
+        .map_err(|error| {
+            startup_failure_error(
+                audit_log_path,
+                error.kind(),
+                format!(
+                    "failed to bind web listener on {}: {error}",
+                    settings.web_address
+                ),
+            )
+        })
+}
+
+#[cfg(feature = "worldgen")]
+fn prepare_worldgen_startup(
+    settings: &Settings,
+    runtime_layout: &crate::settings::RuntimeLayout,
+    audit_log_path: &std::path::Path,
+    server_settings: server::Settings,
+    editable_settings: server::EditableSettings,
+    server_identity: server::ServerIdentity,
+    database_settings: server::persistence::DatabaseSettings,
+    server_data_dir: &std::path::Path,
+    runtime: Arc<tokio::runtime::Runtime>,
+) -> io::Result<PreparedWorldgenStartup> {
+    startup_server_pre_web_then(
+        audit_log_path,
+        Server::new(
+            server_settings,
+            editable_settings,
+            server_identity,
+            database_settings,
+            server_data_dir,
+            &|_| {},
+            Arc::clone(&runtime),
+        ),
+        |error| startup_server_error(audit_log_path, error),
+        |server| server.world().sim().compat_audit(),
+        |server| {
+            let registry = Arc::clone(server.metrics_registry());
+            let chat = server.chat_cache().clone();
+            let runtime_listener_inventory = server.runtime_listener_inventory();
+            let runtime_listener_audit_state = append_runtime_listener_startup_audit_events(
+                audit_log_path,
+                &runtime_listener_inventory,
+            );
+            let runtime_observability_inventory =
+                startup_runtime_observability_inventory(server.chunk_lifecycle_abnormal_summary());
+            apply_startup_world_compat_observability(
+                &runtime_observability_inventory,
+                StartupWorldCompatObservability {
+                    configured_mode: server.world().sim().compat_mode().as_str(),
+                    load_legacy_mode: server.world().sim().load_legacy_mode().as_str(),
+                    load_or_generate_sidecarless_mode: server
+                        .world()
+                        .sim()
+                        .load_or_generate_sidecarless_mode()
+                        .as_str(),
+                    compat_audit: server.world().sim().compat_audit(),
+                    recipe_manifest: server.world().sim().recipe_manifest(),
+                    managed_recipe_sidecar_missing: server
+                        .world()
+                        .sim()
+                        .managed_recipe_sidecar_missing(),
+                },
+            );
+            let runtime_observability_audit_state = runtime_observability_audit_state(
+                &web::snapshot_runtime_observability_inventory(&runtime_observability_inventory),
+            );
+
+            let effective_server_settings = server.settings();
+            let auth_server_configured = effective_server_settings.auth_server_address.is_some();
+            let authoritative_auth_provider = effective_server_settings.auth_server_address.clone();
+            let surface_inventory = settings.surface_inventory(&effective_server_settings);
+            let management_auth_inventory =
+                settings.management_auth_inventory(&effective_server_settings);
+            let transport_security_inventory =
+                settings.transport_security_inventory(&effective_server_settings);
+            let governance_findings = settings.governance_findings(&effective_server_settings);
+            drop(effective_server_settings);
+
+            let health_state = startup_health_state(
+                settings,
+                runtime_layout,
+                Arc::clone(&runtime_listener_inventory),
+                runtime_observability_inventory.clone(),
+                auth_server_configured,
+                authoritative_auth_provider,
+                surface_inventory,
+                management_auth_inventory,
+                transport_security_inventory,
+                governance_findings,
+            );
+
+            Ok(PreparedWorldgenStartup {
+                server,
+                registry,
+                chat,
+                runtime_listener_inventory,
+                runtime_listener_audit_state,
+                runtime_observability_inventory,
+                runtime_observability_audit_state,
+                health_state,
+            })
+        },
+    )
+}
+
+fn prepare_runtime_inputs(
+    settings: &Settings,
+    runtime_layout: crate::settings::RuntimeLayout,
+    no_auth: bool,
+    sql_log_mode: server::persistence::SqlLogMode,
+) -> io::Result<PreparedRuntimeInputs> {
     info!(
         "Using userdata folder at {}",
         runtime_layout.userdata_dir.display()
@@ -487,17 +724,15 @@ fn main() -> io::Result<()> {
         world::init();
     }
 
-    // Load server settings
     let server_identity = server::ServerIdentity::load(&server_data_dir);
     let mut server_settings = server::Settings::load(&server_data_dir);
-    let mut editable_settings = server::EditableSettings::load(&server_data_dir);
+    let editable_settings = server::EditableSettings::load(&server_data_dir);
     server_settings.runtime_environment = match settings.environment {
         settings::Environment::Local => server::settings::RuntimeEnvironment::Local,
         settings::Environment::Test => server::settings::RuntimeEnvironment::Test,
         settings::Environment::Production => server::settings::RuntimeEnvironment::Production,
     };
 
-    // Apply no_auth modifier to the settings
     if no_auth {
         server_settings.auth_server_address = None;
     }
@@ -530,135 +765,121 @@ fn main() -> io::Result<()> {
         sql_log_mode,
     };
 
-    let mut bench = None;
-    if let Some(command) = app.command {
-        match command {
-            ArgvCommand::Shared(SharedCommand::Admin { command }) => {
-                let login_provider = server::login_provider::LoginProvider::new(
-                    server_settings.auth_server_address,
-                    runtime,
-                );
-
-                return match command {
-                    Admin::Add { username, role } => {
-                        // FIXME: Currently the UUID can get returned even if the file didn't
-                        // change, so this can't be relied on as an error
-                        // code; moreover, we do nothing with the UUID
-                        // returned in the success case.  Fix the underlying function to return
-                        // enough information that we can reliably return an error code.
-                        let _ = server::add_admin(
-                            &username,
-                            role,
-                            &login_provider,
-                            &mut editable_settings,
-                            &server_data_dir,
-                        );
-                        append_audit_event_warn(
-                            &audit_log_path,
-                            AuditSource::Argv,
-                            AuditAction::AdminAdd,
-                            AuditOutcome::Accepted,
-                            &format!("username={username} role={role:?}"),
-                        );
-                        Ok(())
-                    },
-                    Admin::Remove { username } => {
-                        // FIXME: Currently the UUID can get returned even if the file didn't
-                        // change, so this can't be relied on as an error
-                        // code; moreover, we do nothing with the UUID
-                        // returned in the success case.  Fix the underlying function to return
-                        // enough information that we can reliably return an error code.
-                        let _ = server::remove_admin(
-                            &username,
-                            &login_provider,
-                            &mut editable_settings,
-                            &server_data_dir,
-                        );
-                        append_audit_event_warn(
-                            &audit_log_path,
-                            AuditSource::Argv,
-                            AuditAction::AdminRemove,
-                            AuditOutcome::Accepted,
-                            &format!("username={username}"),
-                        );
-                        Ok(())
-                    },
-                };
-            },
-            ArgvCommand::Bench(params) => {
-                bench = Some(params);
-                // If we are trying to benchmark, don't limit the server view distance.
-                server_settings.max_view_distance = None;
-                // TODO: add setting to adjust wildlife spawn density, note I
-                // tried but Index setup makes it a bit
-                // annoying, might require a more involved refactor to get
-                // working nicely
-            },
-        };
-    }
-
-    // Panic hook to ensure that console mode is set back correctly if in non-basic
-    // mode
-    if !basic {
-        let hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |info| {
-            Tui::shutdown(basic);
-            hook(info);
-        }));
-    }
-
-    let tui = (!noninteractive).then(|| Tui::run(basic));
-
-    info!("Starting server...");
-    info!(
-        environment = settings.environment.as_str(),
-        "Server CLI environment selected"
-    );
-
-    let protocols_and_addresses = server_settings.gameserver_protocols.clone();
-    let web_port = &settings.web_address.port();
-    // Create server
-    #[cfg_attr(not(feature = "worldgen"), expect(unused_mut))]
-    let mut server = Server::new(
+    Ok(PreparedRuntimeInputs {
+        runtime_layout,
+        audit_log_path,
+        server_data_dir,
+        runtime,
+        server_identity,
         server_settings,
         editable_settings,
-        server_identity,
         database_settings,
-        &server_data_dir,
-        &|_| {},
-        Arc::clone(&runtime),
-    )
-    .map_err(|error| startup_server_error(&audit_log_path, error))?;
+    })
+}
 
+fn prepare_server_loop_handoff(
+    settings: &Settings,
+    runtime_layout: &crate::settings::RuntimeLayout,
+    audit_log_path: &std::path::Path,
+    server_settings: server::Settings,
+    editable_settings: server::EditableSettings,
+    server_identity: server::ServerIdentity,
+    database_settings: server::persistence::DatabaseSettings,
+    server_data_dir: &std::path::Path,
+    runtime: Arc<tokio::runtime::Runtime>,
+) -> io::Result<PreparedServerLoopHandoff> {
     #[cfg(feature = "worldgen")]
-    observe_startup_compat_fallback(&audit_log_path, server.world().sim().compat_audit());
+    let (
+        server,
+        registry,
+        chat,
+        runtime_listener_inventory,
+        runtime_listener_audit_state,
+        runtime_observability_inventory,
+        runtime_observability_audit_state,
+    ) = {
+        let PreparedWorldgenStartup {
+            server,
+            registry,
+            chat,
+            runtime_listener_inventory,
+            runtime_listener_audit_state,
+            runtime_observability_inventory,
+            runtime_observability_audit_state,
+            health_state: _,
+        } = prepare_worldgen_startup(
+            settings,
+            runtime_layout,
+            audit_log_path,
+            server_settings,
+            editable_settings,
+            server_identity,
+            database_settings,
+            server_data_dir,
+            Arc::clone(&runtime),
+        )?;
 
-    let registry = Arc::clone(server.metrics_registry());
-    let chat = server.chat_cache().clone();
-    let runtime_listener_inventory = server.runtime_listener_inventory();
-    let runtime_listener_inventory_for_loop = Arc::clone(&runtime_listener_inventory);
-    let runtime_listener_audit_state =
-        append_runtime_listener_startup_audit_events(&audit_log_path, &runtime_listener_inventory);
-    let runtime_observability_inventory = web::default_runtime_observability_inventory();
-    #[cfg(feature = "worldgen")]
-    web::set_world_compat_observability_status(
-        &runtime_observability_inventory,
-        server.world().sim().compat_mode().as_str(),
-        server.world().sim().compat_audit(),
-        server.world().sim().recipe_manifest(),
-    );
-    let runtime_observability_audit_state = runtime_observability_audit_state(
-        &web::snapshot_runtime_observability_inventory(&runtime_observability_inventory),
-    );
+        (
+            server,
+            registry,
+            chat,
+            runtime_listener_inventory,
+            runtime_listener_audit_state,
+            runtime_observability_inventory,
+            runtime_observability_audit_state,
+        )
+    };
+
+    #[cfg(not(feature = "worldgen"))]
+    let (
+        server,
+        registry,
+        chat,
+        runtime_listener_inventory,
+        runtime_listener_audit_state,
+        runtime_observability_inventory,
+        runtime_observability_audit_state,
+    ) = {
+        #[cfg_attr(not(feature = "worldgen"), expect(unused_mut))]
+        let mut server = Server::new(
+            server_settings,
+            editable_settings,
+            server_identity,
+            database_settings,
+            server_data_dir,
+            &|_| {},
+            Arc::clone(&runtime),
+        )
+        .map_err(|error| startup_server_error(audit_log_path, error))?;
+
+        let registry = Arc::clone(server.metrics_registry());
+        let chat = server.chat_cache().clone();
+        let runtime_listener_inventory = server.runtime_listener_inventory();
+        let runtime_listener_audit_state = append_runtime_listener_startup_audit_events(
+            audit_log_path,
+            &runtime_listener_inventory,
+        );
+        let runtime_observability_inventory =
+            startup_runtime_observability_inventory(server.chunk_lifecycle_abnormal_summary());
+        let runtime_observability_audit_state = runtime_observability_audit_state(
+            &web::snapshot_runtime_observability_inventory(&runtime_observability_inventory),
+        );
+
+        (
+            server,
+            registry,
+            chat,
+            runtime_listener_inventory,
+            runtime_listener_audit_state,
+            runtime_observability_inventory,
+            runtime_observability_audit_state,
+        )
+    };
+
     let metrics_shutdown = Arc::new(Notify::new());
     let metrics_shutdown_clone = Arc::clone(&metrics_shutdown);
     let web_chat_secret = settings.web_chat_secret.clone();
-    let ui_api_secret = settings.ui_api_secret.clone().unwrap_or_else(|| {
-        // when no secret is provided we generate one that we distribute via the /ui
-        // endpoint
-        use rand::distr::Alphanumeric;
-        Alphanumeric.sample_string(&mut rand::rng(), 32)
-    });
+    let ui_api_secret = resolved_ui_api_secret(settings);
 
     let (
         auth_server_configured,
@@ -831,36 +1052,23 @@ fn main() -> io::Result<()> {
     };
 
     let (web_ui_request_s, web_ui_request_r) = tokio::sync::mpsc::channel(1000);
-    let web_listener = runtime
-        .block_on(web::bind_listener(settings.web_address))
-        .map_err(|error| {
-            startup_failure_error(
-                &audit_log_path,
-                error.kind(),
-                format!(
-                    "failed to bind web listener on {}: {error}",
-                    settings.web_address
-                ),
-            )
-        })?;
-    let health_state = web::HealthState {
-        environment: settings.environment.as_str(),
+    let web_listener = bind_startup_web_listener(settings, &runtime, audit_log_path)?;
+    let health_state = startup_health_state(
+        settings,
+        runtime_layout,
+        Arc::clone(&runtime_listener_inventory),
+        runtime_observability_inventory.clone(),
         auth_server_configured,
         authoritative_auth_provider,
-        server_state: runtime_layout.server_state.clone(),
-        recovery_staging_state: runtime_layout.recovery_staging_state.clone(),
-        audit_retention: settings.audit_retention,
-        runtime_listener_inventory,
-        runtime_observability_inventory: runtime_observability_inventory.clone(),
         surface_inventory,
         management_auth_inventory,
         transport_security_inventory,
         governance_findings,
-    };
-    let web_listener_bind_address = web_listener.local_addr().ok();
-    let audit_log_path_for_web = audit_log_path.clone();
+    );
+    let web_bind_address = web_listener.local_addr().ok();
+    let audit_log_path_for_web = audit_log_path.to_path_buf();
 
-    runtime.spawn(async move {
+    let web_server_task = runtime.spawn(async move {
         let result = web::run_with_listener(
             registry,
             chat,
@@ -877,17 +1085,196 @@ fn main() -> io::Result<()> {
             Err(error) => {
                 tracing::error!(
                     ?error,
-                    bind_address = ?web_listener_bind_address,
+                    bind_address = ?web_bind_address,
                     "webserver shutdown error"
                 );
                 append_web_runtime_failure_audit_event(
                     &audit_log_path_for_web,
-                    web_listener_bind_address,
+                    web_bind_address,
                     &error,
                 );
             },
         }
     });
+
+    Ok(PreparedServerLoopHandoff {
+        server,
+        metrics_shutdown,
+        web_server_task,
+        web_bind_address,
+        web_ui_request_r,
+        runtime_listener_inventory,
+        runtime_listener_audit_state,
+        runtime_observability_inventory,
+        runtime_observability_audit_state,
+    })
+}
+
+fn main() -> io::Result<()> {
+    #[cfg(feature = "tracy")]
+    common_base::tracy_client::Client::start();
+
+    use clap::Parser;
+    let app = ArgvApp::parse();
+
+    let basic = !app.tui || app.command.is_some();
+    let noninteractive = app.non_interactive;
+    let no_auth = app.no_auth;
+    let sql_log_mode = app.sql_log_mode;
+
+    // noninteractive implies basic
+    let basic = basic || noninteractive;
+
+    let shutdown_signal = Arc::new(AtomicBool::new(false));
+
+    let (_guards, _guards2) = if basic {
+        (Vec::new(), common_frontend::init_stdout(None))
+    } else {
+        (common_frontend::init(None, &|| LOG.clone()), Vec::new())
+    };
+
+    // Load settings
+    let settings = settings::Settings::load().ok_or(io::ErrorKind::Other)?;
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        for signal in &settings.shutdown_signals {
+            let _ = signal_hook::flag::register(signal.to_signal(), Arc::clone(&shutdown_signal));
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    if !settings.shutdown_signals.is_empty() {
+        tracing::warn!(
+            "Server configuration contains shutdown signals, but your platform does not support \
+             them"
+        );
+    }
+
+    let PreparedRuntimeInputs {
+        runtime_layout,
+        audit_log_path,
+        server_data_dir,
+        runtime,
+        server_identity,
+        mut server_settings,
+        mut editable_settings,
+        database_settings,
+    } = prepare_runtime_inputs(
+        &settings,
+        settings.resolve_runtime_layout(),
+        no_auth,
+        sql_log_mode,
+    )?;
+
+    let mut bench = None;
+    if let Some(command) = app.command {
+        match command {
+            ArgvCommand::Shared(SharedCommand::Admin { command }) => {
+                let login_provider = server::login_provider::LoginProvider::new(
+                    server_settings.auth_server_address,
+                    runtime,
+                );
+
+                return match command {
+                    Admin::Add { username, role } => {
+                        // FIXME: Currently the UUID can get returned even if the file didn't
+                        // change, so this can't be relied on as an error
+                        // code; moreover, we do nothing with the UUID
+                        // returned in the success case.  Fix the underlying function to return
+                        // enough information that we can reliably return an error code.
+                        let _ = server::add_admin(
+                            &username,
+                            role,
+                            &login_provider,
+                            &mut editable_settings,
+                            &server_data_dir,
+                        );
+                        append_audit_event_warn(
+                            &audit_log_path,
+                            AuditSource::Argv,
+                            AuditAction::AdminAdd,
+                            AuditOutcome::Accepted,
+                            &format!("username={username} role={role:?}"),
+                        );
+                        Ok(())
+                    },
+                    Admin::Remove { username } => {
+                        // FIXME: Currently the UUID can get returned even if the file didn't
+                        // change, so this can't be relied on as an error
+                        // code; moreover, we do nothing with the UUID
+                        // returned in the success case.  Fix the underlying function to return
+                        // enough information that we can reliably return an error code.
+                        let _ = server::remove_admin(
+                            &username,
+                            &login_provider,
+                            &mut editable_settings,
+                            &server_data_dir,
+                        );
+                        append_audit_event_warn(
+                            &audit_log_path,
+                            AuditSource::Argv,
+                            AuditAction::AdminRemove,
+                            AuditOutcome::Accepted,
+                            &format!("username={username}"),
+                        );
+                        Ok(())
+                    },
+                };
+            },
+            ArgvCommand::Bench(params) => {
+                bench = Some(params);
+                // If we are trying to benchmark, don't limit the server view distance.
+                server_settings.max_view_distance = None;
+                // TODO: add setting to adjust wildlife spawn density, note I
+                // tried but Index setup makes it a bit
+                // annoying, might require a more involved refactor to get
+                // working nicely
+            },
+        };
+    }
+
+    // Panic hook to ensure that console mode is set back correctly if in non-basic
+    // mode
+    if !basic {
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            Tui::shutdown(basic);
+            hook(info);
+        }));
+    }
+
+    let tui = (!noninteractive).then(|| Tui::run(basic));
+
+    info!("Starting server...");
+    info!(
+        environment = settings.environment.as_str(),
+        "Server CLI environment selected"
+    );
+
+    let protocols_and_addresses = server_settings.gameserver_protocols.clone();
+    let web_port = &settings.web_address.port();
+    let PreparedServerLoopHandoff {
+        mut server,
+        metrics_shutdown,
+        web_server_task: _web_server_task,
+        web_bind_address: _web_bind_address,
+        web_ui_request_r,
+        runtime_listener_inventory,
+        runtime_listener_audit_state,
+        runtime_observability_inventory,
+        runtime_observability_audit_state,
+    } = prepare_server_loop_handoff(
+        &settings,
+        &runtime_layout,
+        &audit_log_path,
+        server_settings,
+        editable_settings,
+        server_identity,
+        database_settings,
+        &server_data_dir,
+        runtime,
+    )?;
 
     // Collect addresses that the server is listening to log.
     let gameserver_addresses = protocols_and_addresses
@@ -921,7 +1308,7 @@ fn main() -> io::Result<()> {
         web_ui_request_r,
         audit_log_path,
         shutdown_signal,
-        runtime_listener_inventory_for_loop,
+        runtime_listener_inventory,
         runtime_listener_audit_state,
         runtime_observability_inventory,
         runtime_observability_audit_state,
@@ -935,11 +1322,27 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "worldgen")]
+    use server::{CompatAuditV1, CompatEntryKindV1, CompatFailureKindV1};
     use std::{
+        cell::{Cell, RefCell},
         fs,
+        net::SocketAddr,
+        path::Path,
         sync::{Arc, Mutex},
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
+    #[cfg(feature = "worldgen")]
+    #[derive(Clone, Copy)]
+    struct StartupCompatTestState {
+        audit: CompatAuditV1,
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[derive(Clone, Copy)]
+    struct StartupCompatTestError {
+        audit: CompatAuditV1,
+    }
 
     fn unique_temp_path() -> PathBuf {
         let unique = SystemTime::now()
@@ -949,6 +1352,874 @@ mod tests {
         std::env::temp_dir()
             .join(format!("caldrayne-startup-audit-{unique}"))
             .join("audit-log.ronl")
+    }
+
+    fn unique_temp_dir() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("caldrayne-startup-web-{unique}"))
+    }
+
+    fn seed_identity_file(identity_file: &Path) {
+        let identity = ron::ser::to_string_pretty(
+            &server::ServerIdentity::default(),
+            ron::ser::PrettyConfig::default(),
+        )
+        .expect("should serialize server identity");
+        fs::write(identity_file, identity).expect("should write identity file");
+    }
+
+    fn seed_database_file(database_dir: &Path) {
+        server::persistence::run_migrations(&server::persistence::DatabaseSettings {
+            db_dir: database_dir.to_path_buf(),
+            sql_log_mode: server::persistence::SqlLogMode::Disabled,
+        });
+    }
+
+    fn write_settings_file(data_dir: &Path, settings: &server::Settings) {
+        let settings_path = server::settings::settings_file_path(data_dir);
+        let settings = ron::ser::to_string_pretty(settings, ron::ser::PrettyConfig::default())
+            .expect("should serialize server settings");
+        fs::write(&settings_path, settings).expect("should write settings file");
+    }
+
+    fn seed_settings_file(data_dir: &Path) {
+        write_settings_file(data_dir, &server::Settings::default());
+    }
+
+    fn seed_live_runtime_state(state: &server::ServerStatePaths) {
+        seed_live_runtime_state_with_settings(state, &server::Settings::default());
+    }
+
+    fn seed_live_runtime_state_with_settings(
+        state: &server::ServerStatePaths,
+        settings: &server::Settings,
+    ) {
+        fs::create_dir_all(&state.config_dir).expect("should create config dir");
+        fs::create_dir_all(&state.ops_dir).expect("should create ops dir");
+        seed_identity_file(&state.identity_file);
+        seed_database_file(&state.database_dir);
+        write_settings_file(&state.data_dir, settings);
+    }
+
+    fn seed_recovery_staging_restore_state(recovery_staging_state: &server::ServerStatePaths) {
+        fs::create_dir_all(&recovery_staging_state.data_dir)
+            .expect("should create recovery staging dir");
+        fs::create_dir_all(&recovery_staging_state.config_dir)
+            .expect("should create recovery staging config dir");
+        seed_identity_file(&recovery_staging_state.identity_file);
+        seed_database_file(&recovery_staging_state.database_dir);
+        seed_settings_file(&recovery_staging_state.data_dir);
+    }
+
+    fn http_response_body(response: &str) -> &str {
+        response
+            .split_once("\r\n\r\n")
+            .map(|(_, body)| body)
+            .unwrap_or("")
+    }
+
+    async fn fetch_http_response(addr: SocketAddr, path: &str) -> io::Result<String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let mut last_error = None;
+        for _attempt in 0..20 {
+            match tokio::net::TcpStream::connect(addr).await {
+                Ok(mut stream) => {
+                    let request =
+                        format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+                    stream.write_all(request.as_bytes()).await?;
+                    stream.flush().await?;
+
+                    let mut response = Vec::new();
+                    stream.read_to_end(&mut response).await?;
+                    return Ok(String::from_utf8_lossy(&response).into_owned());
+                },
+                Err(error) => {
+                    last_error = Some(error);
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                },
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("timed out waiting for HTTP listener at {addr}"),
+            )
+        }))
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[test]
+    fn startup_server_error_records_world_compat_reject_as_invalid_data_audit() {
+        let path = unique_temp_path();
+        let audit = CompatAuditV1::fallback_generate(
+            CompatEntryKindV1::LoadLegacy,
+            CompatFailureKindV1::PolicyDenied,
+        );
+        let startup_error =
+            startup_world_compat_reject_error(&path, "World Error: compat reject", audit);
+        let contents = fs::read_to_string(&path).expect("audit log should be readable");
+        let _ = fs::remove_dir_all(path.parent().expect("audit path should have parent"));
+
+        assert_eq!(startup_error.kind(), io::ErrorKind::InvalidData);
+        let detail = startup_error.to_string();
+        assert!(detail.contains("failed to create server instance"));
+        assert!(detail.contains("entry=load_legacy"));
+        assert!(detail.contains("decision=fallback_generate"));
+        assert!(detail.contains("failure=policy_denied"));
+        assert!(contents.contains("source:\"runtime\""));
+        assert!(contents.contains("action:\"world-compat-startup-reject\""));
+        assert!(contents.contains("outcome:\"failed\""));
+        assert!(contents.contains("entry=load_legacy"));
+        assert!(!contents.contains("action:\"startup-failure\""));
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[test]
+    fn observe_startup_compat_fallback_only_records_strict_load_contract_gaps() {
+        let path = unique_temp_path();
+        let strict_gap_audit = CompatAuditV1::fallback_generate(
+            CompatEntryKindV1::Load,
+            CompatFailureKindV1::MissingInput,
+        );
+        let non_gap_audit = CompatAuditV1::loaded_existing(CompatEntryKindV1::LoadOrGenerate);
+
+        observe_startup_compat_fallback(&path, strict_gap_audit);
+        observe_startup_compat_fallback(&path, non_gap_audit);
+
+        let contents = fs::read_to_string(&path).expect("audit log should be readable");
+        let _ = fs::remove_dir_all(path.parent().expect("audit path should have parent"));
+
+        assert_eq!(contents.lines().count(), 1);
+        assert!(contents.contains("action:\"world-compat-fallback\""));
+        assert!(contents.contains("outcome:\"accepted\""));
+        assert!(contents.contains("entry=load"));
+        assert!(contents.contains("failure=missing_input"));
+        assert!(!contents.contains("load_or_generate"));
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[test]
+    fn startup_server_pre_web_compat_reject_short_circuits_before_continue_stage() {
+        let path = unique_temp_path();
+        let audit = CompatAuditV1::fallback_generate(
+            CompatEntryKindV1::LoadLegacy,
+            CompatFailureKindV1::PolicyDenied,
+        );
+        let continued = Cell::new(false);
+
+        let startup_error = startup_server_pre_web(
+            &path,
+            Err::<StartupCompatTestState, _>(StartupCompatTestError { audit }),
+            |error| {
+                startup_world_compat_reject_error(&path, "World Error: compat reject", error.audit)
+            },
+            |state| state.audit,
+        )
+        .map(|_| continued.set(true))
+        .expect_err("compat reject should short-circuit pre-web startup continuation");
+
+        let contents = fs::read_to_string(&path).expect("audit log should be readable");
+        let _ = fs::remove_dir_all(path.parent().expect("audit path should have parent"));
+
+        assert_eq!(startup_error.kind(), io::ErrorKind::InvalidData);
+        assert!(!continued.get());
+        assert!(contents.contains("action:\"world-compat-startup-reject\""));
+        assert!(!contents.contains("action:\"world-compat-fallback\""));
+        assert!(!contents.contains("action:\"startup-failure\""));
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[test]
+    fn startup_server_pre_web_sidecarless_reject_short_circuits_before_continue_stage() {
+        let path = unique_temp_path();
+        let audit = CompatAuditV1::reject(
+            CompatEntryKindV1::LoadOrGenerate,
+            CompatFailureKindV1::PolicyDenied,
+            server::CompatFailureSubjectV1::Options,
+            server::CompatFailureDetailV1::default(),
+        );
+        let continued = Cell::new(false);
+
+        let startup_error = startup_server_pre_web(
+            &path,
+            Err::<StartupCompatTestState, _>(StartupCompatTestError { audit }),
+            |error| {
+                startup_world_compat_reject_error(&path, "World Error: compat reject", error.audit)
+            },
+            |state| state.audit,
+        )
+        .map(|_| continued.set(true))
+        .expect_err("sidecarless managed reject should short-circuit pre-web startup");
+
+        let contents = fs::read_to_string(&path).expect("audit log should be readable");
+        let _ = fs::remove_dir_all(path.parent().expect("audit path should have parent"));
+
+        assert_eq!(startup_error.kind(), io::ErrorKind::InvalidData);
+        assert!(!continued.get());
+        assert!(contents.contains("action:\"world-compat-startup-reject\""));
+        assert!(contents.contains("entry=load_or_generate"));
+        assert!(contents.contains("failure=policy_denied"));
+        assert!(!contents.contains("action:\"world-compat-fallback\""));
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[test]
+    fn startup_server_pre_web_records_strict_fallback_before_continue_stage() {
+        let path = unique_temp_path();
+        let audit = CompatAuditV1::fallback_generate(
+            CompatEntryKindV1::Load,
+            CompatFailureKindV1::MissingInput,
+        );
+        let continued = Cell::new(false);
+
+        startup_server_pre_web(
+            &path,
+            Ok::<StartupCompatTestState, StartupCompatTestError>(StartupCompatTestState { audit }),
+            |_| unreachable!("error mapper should not run on success"),
+            |state| state.audit,
+        )
+        .map(|_| continued.set(true))
+        .expect("strict fallback should remain in the pre-web success path");
+
+        let contents = fs::read_to_string(&path).expect("audit log should be readable");
+        let _ = fs::remove_dir_all(path.parent().expect("audit path should have parent"));
+
+        assert!(continued.get());
+        assert_eq!(contents.lines().count(), 1);
+        assert!(contents.contains("action:\"world-compat-fallback\""));
+        assert!(contents.contains("entry=load"));
+        assert!(contents.contains("failure=missing_input"));
+        assert!(!contents.contains("action:\"world-compat-startup-reject\""));
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[test]
+    fn startup_server_pre_web_success_path_orders_fallback_audit_before_post_creation_side_effects()
+    {
+        let path = unique_temp_path();
+        let audit = CompatAuditV1::fallback_generate(
+            CompatEntryKindV1::Load,
+            CompatFailureKindV1::MissingInput,
+        );
+        let events = RefCell::new(Vec::new());
+
+        let result = startup_server_pre_web_then(
+            &path,
+            Ok::<StartupCompatTestState, StartupCompatTestError>(StartupCompatTestState { audit }),
+            |_| unreachable!("error mapper should not run on success"),
+            |state| {
+                events.borrow_mut().push("compat_audit");
+                state.audit
+            },
+            |state| {
+                let contents = fs::read_to_string(&path)
+                    .expect("fallback audit should exist before the continuation stage starts");
+                assert_eq!(events.borrow().as_slice(), ["compat_audit"]);
+                assert!(contents.contains("action:\"world-compat-fallback\""));
+                assert!(!contents.contains("action:\"world-compat-startup-reject\""));
+
+                events.borrow_mut().push("continuation");
+                assert_eq!(events.borrow().as_slice(), ["compat_audit", "continuation"]);
+
+                let post_creation_effect = || {
+                    events.borrow_mut().push("post_creation_side_effect");
+                };
+                post_creation_effect();
+
+                assert_eq!(events.borrow().as_slice(), [
+                    "compat_audit",
+                    "continuation",
+                    "post_creation_side_effect"
+                ]);
+                Ok(state)
+            },
+        )
+        .expect("strict fallback should stay on the dedicated startup success path");
+
+        let contents = fs::read_to_string(&path).expect("audit log should be readable");
+        let _ = fs::remove_dir_all(path.parent().expect("audit path should have parent"));
+
+        assert_eq!(result.audit, audit);
+        assert_eq!(events.into_inner(), vec![
+            "compat_audit",
+            "continuation",
+            "post_creation_side_effect"
+        ]);
+        assert_eq!(contents.lines().count(), 1);
+        assert!(contents.contains("action:\"world-compat-fallback\""));
+    }
+
+    #[cfg(feature = "worldgen")]
+    #[test]
+    fn startup_server_pre_web_success_path_without_fallback_keeps_post_creation_side_effects_audit_free()
+     {
+        let path = unique_temp_path();
+        let audit = CompatAuditV1::loaded_existing(CompatEntryKindV1::LoadAsset);
+        let events = RefCell::new(Vec::new());
+
+        let result = startup_server_pre_web_then(
+            &path,
+            Ok::<StartupCompatTestState, StartupCompatTestError>(StartupCompatTestState { audit }),
+            |_| unreachable!("error mapper should not run on success"),
+            |state| {
+                events.borrow_mut().push("compat_audit");
+                state.audit
+            },
+            |state| {
+                let read_error = fs::read_to_string(&path)
+                    .expect_err("clean pre-web success should not append a compat audit event");
+                assert_eq!(read_error.kind(), io::ErrorKind::NotFound);
+                assert_eq!(events.borrow().as_slice(), ["compat_audit"]);
+
+                events.borrow_mut().push("continuation");
+                let post_creation_effect = || {
+                    events.borrow_mut().push("post_creation_side_effect");
+                };
+                post_creation_effect();
+
+                assert_eq!(events.borrow().as_slice(), [
+                    "compat_audit",
+                    "continuation",
+                    "post_creation_side_effect"
+                ]);
+                Ok(state)
+            },
+        )
+        .expect("clean pre-web success should continue without a compat fallback audit");
+
+        let read_error =
+            fs::read_to_string(&path).expect_err("clean success should keep the audit log absent");
+        let _ = fs::remove_dir_all(path.parent().expect("audit path should have parent"));
+
+        assert_eq!(result.audit, audit);
+        assert_eq!(read_error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(events.into_inner(), vec![
+            "compat_audit",
+            "continuation",
+            "post_creation_side_effect"
+        ]);
+    }
+
+    #[test]
+    #[cfg(feature = "worldgen")]
+    fn startup_health_state_happy_path_smoke_serves_world_compat_and_preflight() {
+        let root = unique_temp_dir();
+        let runtime_layout = crate::settings::RuntimeLayout {
+            userdata_dir: root.clone(),
+            server_cli_settings_dir: root.join("server-cli"),
+            server_state: server::ServerStatePaths::new(root.join("live")),
+            recovery_staging_state: server::ServerStatePaths::new(root.join("recovery-staging")),
+        };
+        seed_live_runtime_state(&runtime_layout.server_state);
+        seed_recovery_staging_restore_state(&runtime_layout.recovery_staging_state);
+
+        let settings = Settings::default();
+        let runtime = Arc::new(tokio::runtime::Runtime::new().expect("tokio runtime should build"));
+        let (chat, _chat_exporter) =
+            server::chat::ChatCache::new(Duration::from_secs(30), &runtime);
+        let registry = Arc::new(prometheus::Registry::new());
+        let runtime_listener_inventory = Arc::new(Mutex::new(Vec::new()));
+        let runtime_observability_inventory = startup_runtime_observability_inventory(None);
+        let manifest = server::RecipeManifestV1::record_only(
+            server::DEFAULT_WORLD_SEED,
+            &server::GenOpts::default(),
+            true,
+        );
+        apply_startup_world_compat_observability(
+            &runtime_observability_inventory,
+            StartupWorldCompatObservability {
+                configured_mode: "record",
+                load_legacy_mode: "deny",
+                load_or_generate_sidecarless_mode: "deny",
+                compat_audit: CompatAuditV1::loaded_existing(CompatEntryKindV1::Load),
+                recipe_manifest: &manifest,
+                managed_recipe_sidecar_missing: false,
+            },
+        );
+        let health_state = startup_health_state(
+            &settings,
+            &runtime_layout,
+            Arc::clone(&runtime_listener_inventory),
+            runtime_observability_inventory,
+            true,
+            Some("https://auth.example.test".to_owned()),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+
+        let listener = runtime
+            .block_on(web::bind_listener(
+                "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
+            ))
+            .expect("web listener should bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener should expose a local address");
+        let (web_ui_request_s, _web_ui_request_r) = tokio::sync::mpsc::channel(4);
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let web_task = runtime.spawn(async move {
+            web::run_with_listener(
+                registry,
+                chat,
+                None,
+                "ui-secret".to_owned(),
+                web_ui_request_s,
+                health_state,
+                listener,
+                async move {
+                    let _ = shutdown_rx.await;
+                },
+            )
+            .await
+        });
+
+        let world_compat_response = runtime
+            .block_on(fetch_http_response(addr, "/health/world-compat"))
+            .expect("world-compat route should respond");
+        let preflight_response = runtime
+            .block_on(fetch_http_response(addr, "/health/preflight"))
+            .expect("preflight route should respond");
+        shutdown_tx.send(()).expect("shutdown signal should send");
+        let web_result = runtime
+            .block_on(async {
+                tokio::time::timeout(Duration::from_secs(5), web_task)
+                    .await
+                    .expect("web task should finish after shutdown")
+            })
+            .expect("web task should not panic");
+        let _ = fs::remove_dir_all(root);
+
+        assert!(web_result.is_ok());
+        assert!(
+            world_compat_response.contains(" 200 OK\r\n"),
+            "world_compat_response={world_compat_response}"
+        );
+        assert!(world_compat_response.contains("\"status\":\"world-compat-clear\""));
+        assert!(world_compat_response.contains("\"load_legacy_mode\":\"deny\""));
+        assert!(world_compat_response.contains("\"load_or_generate_sidecarless_mode\":\"deny\""));
+        assert!(world_compat_response.contains("\"review_result_status_hint\":\"approved\""));
+        assert!(
+            world_compat_response
+                .contains("\"required_terminal_record_fields\":[\"rollback_reference\"]")
+        );
+        assert!(
+            preflight_response.contains(" 200 OK\r\n"),
+            "preflight_response={preflight_response}"
+        );
+        let preflight_body = http_response_body(&preflight_response);
+        assert!(preflight_body.contains("\"status\":\"preflight_clear\""));
+        assert!(preflight_body.contains("\"signal\":\"world-compat\""));
+        assert!(preflight_body.contains("\"status\":\"world-compat-clear\""));
+    }
+
+    #[test]
+    #[cfg(feature = "worldgen")]
+    fn startup_health_state_allow_window_smoke_exports_world_compat_exception_path() {
+        let root = unique_temp_dir();
+        let runtime_layout = crate::settings::RuntimeLayout {
+            userdata_dir: root.clone(),
+            server_cli_settings_dir: root.join("server-cli"),
+            server_state: server::ServerStatePaths::new(root.join("live")),
+            recovery_staging_state: server::ServerStatePaths::new(root.join("recovery-staging")),
+        };
+        seed_live_runtime_state(&runtime_layout.server_state);
+        seed_recovery_staging_restore_state(&runtime_layout.recovery_staging_state);
+
+        let settings = Settings::default();
+        let runtime = Arc::new(tokio::runtime::Runtime::new().expect("tokio runtime should build"));
+        let (chat, _chat_exporter) =
+            server::chat::ChatCache::new(Duration::from_secs(30), &runtime);
+        let registry = Arc::new(prometheus::Registry::new());
+        let runtime_listener_inventory = Arc::new(Mutex::new(Vec::new()));
+        let runtime_observability_inventory = startup_runtime_observability_inventory(None);
+        let manifest = server::RecipeManifestV1::record_only(
+            server::DEFAULT_WORLD_SEED,
+            &server::GenOpts::default(),
+            true,
+        );
+        apply_startup_world_compat_observability(
+            &runtime_observability_inventory,
+            StartupWorldCompatObservability {
+                configured_mode: "record",
+                load_legacy_mode: "allow",
+                load_or_generate_sidecarless_mode: "allow",
+                compat_audit: CompatAuditV1::loaded_existing(CompatEntryKindV1::LoadLegacy),
+                recipe_manifest: &manifest,
+                managed_recipe_sidecar_missing: false,
+            },
+        );
+        let health_state = startup_health_state(
+            &settings,
+            &runtime_layout,
+            Arc::clone(&runtime_listener_inventory),
+            runtime_observability_inventory,
+            true,
+            Some("https://auth.example.test".to_owned()),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+
+        let listener = runtime
+            .block_on(web::bind_listener(
+                "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
+            ))
+            .expect("web listener should bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener should expose a local address");
+        let (web_ui_request_s, _web_ui_request_r) = tokio::sync::mpsc::channel(4);
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let web_task = runtime.spawn(async move {
+            web::run_with_listener(
+                registry,
+                chat,
+                None,
+                "ui-secret".to_owned(),
+                web_ui_request_s,
+                health_state,
+                listener,
+                async move {
+                    let _ = shutdown_rx.await;
+                },
+            )
+            .await
+        });
+
+        let world_compat_response = runtime
+            .block_on(fetch_http_response(addr, "/health/world-compat"))
+            .expect("world-compat route should respond");
+        let preflight_response = runtime
+            .block_on(fetch_http_response(addr, "/health/preflight"))
+            .expect("preflight route should respond");
+        shutdown_tx.send(()).expect("shutdown signal should send");
+        let web_result = runtime
+            .block_on(async {
+                tokio::time::timeout(Duration::from_secs(5), web_task)
+                    .await
+                    .expect("web task should finish after shutdown")
+            })
+            .expect("web task should not panic");
+        let _ = fs::remove_dir_all(root);
+
+        assert!(web_result.is_ok());
+        assert!(world_compat_response.contains(" 200 OK\r\n"));
+        assert!(world_compat_response.contains("\"status\":\"world-compat-review-required\""));
+        assert!(world_compat_response.contains("\"transition_window_open\":true"));
+        assert!(
+            world_compat_response.contains("\"review_result_status_hint\":\"exception-accepted\"")
+        );
+        assert!(world_compat_response.contains(
+            "\"required_terminal_record_fields\":[\"exception_reason\",\"rollback_reference\"]"
+        ));
+        assert!(preflight_response.contains(" 200 OK\r\n"));
+        let preflight_body = http_response_body(&preflight_response);
+        assert!(preflight_body.contains("\"status\":\"operator_review_required\""));
+        assert!(preflight_body.contains("\"signal\":\"world-compat\""));
+        assert!(
+            preflight_body.contains("\"current_result_status_hint\":\"exception-accepted\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(preflight_body.contains(
+            "\"current_terminal_record_fields\":[\"exception_reason\",\"rollback_reference\"]"
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "worldgen")]
+    fn startup_server_new_live_health_happy_path_serves_world_compat_preflight_and_listeners() {
+        let root = unique_temp_dir();
+        let runtime_layout = crate::settings::RuntimeLayout {
+            userdata_dir: root.clone(),
+            server_cli_settings_dir: root.join("server-cli"),
+            server_state: server::ServerStatePaths::new(root.join("live")),
+            recovery_staging_state: server::ServerStatePaths::new(root.join("recovery-staging")),
+        };
+        let mut seeded_server_settings = server::Settings::default();
+        seeded_server_settings.gameserver_protocols = vec![Protocol::Tcp {
+            address: "127.0.0.1:0"
+                .parse()
+                .expect("loopback tcp socket should parse"),
+        }];
+        seeded_server_settings.query_address = None;
+        seed_live_runtime_state_with_settings(
+            &runtime_layout.server_state,
+            &seeded_server_settings,
+        );
+        seed_recovery_staging_restore_state(&runtime_layout.recovery_staging_state);
+
+        let audit_log_path = runtime_layout.server_state.ops_dir.join("audit-log.ronl");
+        let mut cli_settings = Settings::default();
+        cli_settings.ui_api_secret = Some("ui-secret".to_owned());
+        cli_settings.web_address = "127.0.0.1:0".parse().unwrap();
+        let server_data_dir = runtime_layout.server_state.data_dir.clone();
+        let server_identity = server::ServerIdentity::load(&server_data_dir);
+        let server_settings = server::Settings::load(&server_data_dir);
+        let editable_settings = server::EditableSettings::load(&server_data_dir);
+        let database_settings = server::persistence::DatabaseSettings {
+            db_dir: runtime_layout.server_state.database_dir.clone(),
+            sql_log_mode: server::persistence::SqlLogMode::Disabled,
+        };
+        let runtime = Arc::new(tokio::runtime::Runtime::new().expect("tokio runtime should build"));
+        let PreparedWorldgenStartup {
+            server: _server,
+            registry,
+            chat,
+            runtime_listener_inventory: _runtime_listener_inventory,
+            runtime_listener_audit_state: _runtime_listener_audit_state,
+            runtime_observability_inventory: _runtime_observability_inventory,
+            runtime_observability_audit_state: _runtime_observability_audit_state,
+            health_state,
+        } = prepare_worldgen_startup(
+            &cli_settings,
+            &runtime_layout,
+            &audit_log_path,
+            server_settings,
+            editable_settings,
+            server_identity,
+            database_settings,
+            &server_data_dir,
+            Arc::clone(&runtime),
+        )
+        .expect("real Server::new startup should prepare dedicated health state");
+        let listener = bind_startup_web_listener(&cli_settings, &runtime, &audit_log_path)
+            .expect("web listener should bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener should expose a local address");
+        let ui_api_secret = resolved_ui_api_secret(&cli_settings);
+        let (web_ui_request_s, _web_ui_request_r) = tokio::sync::mpsc::channel(4);
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let web_task = runtime.spawn(async move {
+            web::run_with_listener(
+                registry,
+                chat,
+                None,
+                ui_api_secret,
+                web_ui_request_s,
+                health_state,
+                listener,
+                async move {
+                    let _ = shutdown_rx.await;
+                },
+            )
+            .await
+        });
+
+        let world_compat_response = runtime
+            .block_on(fetch_http_response(addr, "/health/world-compat"))
+            .expect("world-compat route should respond");
+        let preflight_response = runtime
+            .block_on(fetch_http_response(addr, "/health/preflight"))
+            .expect("preflight route should respond");
+        let listeners_response = runtime
+            .block_on(fetch_http_response(addr, "/health/listeners"))
+            .expect("listeners route should respond");
+        shutdown_tx.send(()).expect("shutdown signal should send");
+        let web_result = runtime
+            .block_on(async {
+                tokio::time::timeout(Duration::from_secs(5), web_task)
+                    .await
+                    .expect("web task should finish after shutdown")
+            })
+            .expect("web task should not panic");
+
+        assert!(web_result.is_ok());
+        assert!(
+            world_compat_response.contains(" 200 OK\r\n"),
+            "world_compat_response={world_compat_response}"
+        );
+        assert!(world_compat_response.contains("\"status\":\"world-compat-clear\""));
+        assert!(world_compat_response.contains("\"configured_mode\":\"record\""));
+        assert!(world_compat_response.contains("\"load_legacy_mode\":\"deny\""));
+        assert!(world_compat_response.contains("\"load_or_generate_sidecarless_mode\":\"deny\""));
+        assert!(world_compat_response.contains("\"compat_entry\":\"load_asset\""));
+        assert!(world_compat_response.contains("\"review_result_status_hint\":\"approved\""));
+        assert!(
+            world_compat_response
+                .contains("\"required_terminal_record_fields\":[\"rollback_reference\"]")
+        );
+        assert!(
+            preflight_response.contains(" 200 OK\r\n"),
+            "preflight_response={preflight_response}"
+        );
+        let preflight_body = http_response_body(&preflight_response);
+        assert!(
+            preflight_body.contains("\"status\":\"preflight_clear\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(
+            preflight_body.contains("\"signal\":\"world-compat\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(
+            preflight_body.contains("\"status\":\"world-compat-clear\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(
+            preflight_body.contains("\"signal\":\"runtime-listeners\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(
+            preflight_body.contains("\"status\":\"runtime-listeners-ready\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(
+            listeners_response.contains(" 200 OK\r\n"),
+            "listeners_response={listeners_response}"
+        );
+        assert!(listeners_response.contains("\"status\":\"runtime-listener-inventory\""));
+        assert!(listeners_response.contains("\"surface\":\"game-tcp\""));
+        assert!(listeners_response.contains("\"state\":\"listening\""));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg(feature = "worldgen")]
+    fn startup_runtime_guard_and_handoff_smoke_serves_ready_preflight_and_listeners() {
+        let root = unique_temp_dir();
+        let runtime_layout = crate::settings::RuntimeLayout {
+            userdata_dir: root.clone(),
+            server_cli_settings_dir: root.join("server-cli"),
+            server_state: server::ServerStatePaths::new(root.join("live")),
+            recovery_staging_state: server::ServerStatePaths::new(root.join("recovery-staging")),
+        };
+        let mut seeded_server_settings = server::Settings::default();
+        seeded_server_settings.gameserver_protocols = vec![Protocol::Tcp {
+            address: "127.0.0.1:0"
+                .parse()
+                .expect("loopback tcp socket should parse"),
+        }];
+        seeded_server_settings.query_address = None;
+        seed_live_runtime_state_with_settings(
+            &runtime_layout.server_state,
+            &seeded_server_settings,
+        );
+        seed_recovery_staging_restore_state(&runtime_layout.recovery_staging_state);
+
+        let mut cli_settings = Settings::default();
+        cli_settings.ui_api_secret = Some("ui-secret".to_owned());
+        cli_settings.web_address = "127.0.0.1:0".parse().unwrap();
+
+        let PreparedRuntimeInputs {
+            runtime_layout,
+            audit_log_path,
+            server_data_dir,
+            runtime,
+            server_identity,
+            server_settings,
+            editable_settings,
+            database_settings,
+        } = prepare_runtime_inputs(
+            &cli_settings,
+            runtime_layout,
+            false,
+            server::persistence::SqlLogMode::Disabled,
+        )
+        .expect("runtime guard and probe stage should prepare startup inputs");
+
+        let PreparedServerLoopHandoff {
+            server: _server,
+            metrics_shutdown,
+            web_server_task,
+            web_bind_address,
+            web_ui_request_r: _web_ui_request_r,
+            runtime_listener_inventory: _runtime_listener_inventory,
+            runtime_listener_audit_state: _runtime_listener_audit_state,
+            runtime_observability_inventory: _runtime_observability_inventory,
+            runtime_observability_audit_state: _runtime_observability_audit_state,
+        } = prepare_server_loop_handoff(
+            &cli_settings,
+            &runtime_layout,
+            &audit_log_path,
+            server_settings,
+            editable_settings,
+            server_identity,
+            database_settings,
+            &server_data_dir,
+            Arc::clone(&runtime),
+        )
+        .expect("startup handoff should assemble live web/health state");
+        let addr = web_bind_address.expect("startup handoff should expose the web listener");
+
+        let ready_response = runtime
+            .block_on(fetch_http_response(addr, "/health/ready"))
+            .expect("ready route should respond");
+        let preflight_response = runtime
+            .block_on(fetch_http_response(addr, "/health/preflight"))
+            .expect("preflight route should respond");
+        let listeners_response = runtime
+            .block_on(fetch_http_response(addr, "/health/listeners"))
+            .expect("listeners route should respond");
+
+        metrics_shutdown.notify_one();
+        runtime
+            .block_on(async {
+                tokio::time::timeout(Duration::from_secs(5), web_server_task)
+                    .await
+                    .expect("web task should finish after shutdown")
+            })
+            .expect("web task should not panic");
+        let _ = fs::remove_dir_all(root);
+
+        assert!(
+            ready_response.contains(" 200 OK\r\n"),
+            "ready_response={ready_response}"
+        );
+        let ready_body = http_response_body(&ready_response);
+        assert!(
+            ready_body.contains("\"status\":\"ready\""),
+            "ready_body={ready_body}"
+        );
+        assert!(
+            ready_body.contains("\"name\":\"recovery-staging-layout\""),
+            "ready_body={ready_body}"
+        );
+        assert!(
+            ready_body.contains("\"name\":\"runtime-state-layout\""),
+            "ready_body={ready_body}"
+        );
+        assert!(
+            preflight_response.contains(" 200 OK\r\n"),
+            "preflight_response={preflight_response}"
+        );
+        let preflight_body = http_response_body(&preflight_response);
+        assert!(
+            preflight_body.contains("\"status\":\"preflight_clear\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(
+            preflight_body.contains("\"signal\":\"world-compat\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(
+            preflight_body.contains("\"status\":\"world-compat-clear\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(
+            preflight_body.contains("\"signal\":\"runtime-listeners\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(
+            preflight_body.contains("\"status\":\"runtime-listeners-ready\""),
+            "preflight_body={preflight_body}"
+        );
+        assert!(
+            listeners_response.contains(" 200 OK\r\n"),
+            "listeners_response={listeners_response}"
+        );
+        assert!(listeners_response.contains("\"status\":\"runtime-listener-inventory\""));
+        assert!(listeners_response.contains("\"surface\":\"game-tcp\""));
+        assert!(listeners_response.contains("\"state\":\"listening\""));
     }
 
     #[test]
@@ -1071,10 +2342,7 @@ fn server_loop(
     bench: Option<BenchParams>,
     settings: Settings,
     tui: Option<Tui>,
-    mut web_ui_request_r: tokio::sync::mpsc::Receiver<(
-        Message,
-        tokio::sync::oneshot::Sender<MessageReturn>,
-    )>,
+    mut web_ui_request_r: WebUiRequestReceiver,
     audit_log_path: PathBuf,
     shutdown_signal: Arc<AtomicBool>,
     runtime_listener_inventory: server::RuntimeListenerInventory,
@@ -1131,6 +2399,10 @@ fn server_loop(
 
         // Clean up the server after a tick.
         server.cleanup();
+        web::set_chunk_lifecycle_observability_status(
+            &runtime_observability_inventory,
+            server.chunk_lifecycle_abnormal_summary(),
+        );
 
         if tick_no.rem_euclid(1000) == 0 {
             trace!(?tick_no, "keepalive")

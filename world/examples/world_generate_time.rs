@@ -16,6 +16,8 @@ fn main() {
             world_file: FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into()),
             calendar: None,
             compat_mode: Default::default(),
+            load_legacy_mode: Default::default(),
+            load_or_generate_sidecarless_mode: Default::default(),
         },
         &threadpool,
         &|_| {},

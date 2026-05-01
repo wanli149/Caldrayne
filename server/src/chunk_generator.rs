@@ -115,13 +115,20 @@ impl ChunkGenerator {
         self.pending_chunks.keys().copied()
     }
 
+    pub fn is_pending(&self, key: Vec2<i32>) -> bool { self.pending_chunks.contains_key(&key) }
+
     pub fn par_pending_chunks(&self) -> impl rayon::iter::ParallelIterator<Item = Vec2<i32>> + '_ {
         self.pending_chunks.par_keys().copied()
     }
 
+    pub fn terrain_intake_queue_len(&self) -> usize { self.chunk_rx.len() }
+
     pub fn record_chunk_generated(&self) { self.metrics.chunks_served.inc(); }
 
     pub fn record_chunk_failed(&self) { self.metrics.chunks_failed.inc(); }
+
+    #[cfg(test)]
+    pub fn requested_count(&self) -> u64 { self.metrics.chunks_requested.get() }
 
     pub fn cancel_if_pending(&mut self, key: Vec2<i32>, tick: u64) {
         if let Some(cancel) = self.pending_chunks.remove(&key) {
@@ -144,5 +151,24 @@ impl ChunkGenerator {
             let _ = lifecycle.complete(key, Some(tick), ChunkLifecycleTerminal::Canceled, None);
             metrics.chunks_canceled.inc();
         });
+    }
+
+    #[cfg(test)]
+    pub fn queue_completed_chunk_for_test(
+        &mut self,
+        key: Vec2<i32>,
+        result: Result<(TerrainChunk, ChunkSupplement), Option<EcsEntity>>,
+        tick: u64,
+    ) {
+        if let Entry::Vacant(entry) = self.pending_chunks.entry(key) {
+            entry.insert(Arc::new(AtomicBool::new(false)));
+            self.lifecycle
+                .lock()
+                .expect("Poisoned")
+                .record_generation_queued(key, tick);
+        }
+        self.chunk_tx
+            .send((key, result))
+            .expect("queue completed chunk result for test");
     }
 }

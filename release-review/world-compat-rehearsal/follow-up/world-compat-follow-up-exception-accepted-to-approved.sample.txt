@@ -1,0 +1,41 @@
+sample_kind = world-compat-follow-up
+sample_status = rehearsal-only
+authoritative_record = external-release-tracker
+authoritative_owner = release-operator
+do_not_use_as_production_evidence = true
+
+record_kind = release-review-record
+section_signal = world-compat
+release_reference = rel-2026-05-world-compat-01
+reviewed_by = ops.world.release
+decision_recorded_at_utc = 2026-05-01T18:30:00Z
+
+approval_decision = approved
+result_status = approved
+world_compat_status = world-compat-clear
+configured_mode = record
+load_legacy_mode = deny
+load_or_generate_sidecarless_mode = deny
+compat_entry = load
+compat_decision = loaded_existing
+compat_failure = none
+strict_load_contract_gap = false
+managed_recipe_sidecar_missing = false
+world_recipe_hash = sha256:world-recipe-424242
+chunk_recipe_hash = sha256:chunk-recipe-424242
+topology_id = bounded_plane_v1
+preset_id = default
+
+prior_result_statuses = ["exception-accepted"]
+rollback_reference = runbook://world-compat/rollback-01
+archive_reference = archive://release-review/rel-2026-05-world-compat-01/world-compat/terminal-01
+source_record_state = approved
+post_archive_verification_reference = audit://world-compat/post-archive-check-01
+
+boundary_notes = [
+  "rehearsal sample only; replace release_reference, operator identity, hashes, topology, preset, and evidence references with rollout-specific truth",
+  "copy current terminal snapshot fields from the live /health/world-compat surface at follow-up time; do not reuse superseded terminal values",
+  "this sample represents an append-only follow-up on the same release-review-record and the same world-compat section",
+  "prior_result_statuses proves the superseded terminal state was exception-accepted",
+  "source_record_state must stay aligned with the current result_status = approved"
+]

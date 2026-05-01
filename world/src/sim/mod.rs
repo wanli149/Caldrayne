@@ -1,6 +1,8 @@
 mod compat;
 mod diffusion;
 mod erosion;
+mod file_ops;
+mod load_content;
 mod location;
 mod map;
 pub(crate) mod marine_semantics;
@@ -12,7 +14,7 @@ mod way;
 
 // Reexports
 pub use self::{
-    compat::CompatMode,
+    compat::{CompatMode, LoadLegacyMode, LoadOrGenerateSidecarlessMode},
     diffusion::diffusion,
     location::Location,
     map::{sample_pos, sample_wpos},
@@ -258,6 +260,13 @@ struct PreErosionSetup {
     fields: PreErosionFields,
 }
 
+struct WorldGenerationStart {
+    generation_tunables: GenerationTunables,
+    rng: ChaChaRng,
+    gen_ctx: GenCtx,
+    pre_erosion_setup: PreErosionSetup,
+}
+
 impl PreErosionSetup {
     fn model<'a>(&'a self, map_size_lg: MapSizeLg, gen_ctx: &'a GenCtx) -> PreErosionModel<'a> {
         PreErosionModel {
@@ -455,11 +464,19 @@ struct GeneratedWorldParts {
     rng: ChaChaRng,
     calendar: Option<Calendar>,
     compat_mode: CompatMode,
+    load_legacy_mode: LoadLegacyMode,
+    load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
     compat_audit: CompatAuditV1,
+    managed_recipe_sidecar_missing: bool,
     recipe_manifest: RecipeManifestV1,
 }
 
 struct GeneratedWorldFinalizeInputs {
+    world_parts_inputs: GeneratedWorldPartsInputs,
+    seed_elements: bool,
+}
+
+struct GeneratedWorldFinalizeBuilderInputs {
     seed: u32,
     map_size_lg: MapSizeLg,
     gen_ctx: GenCtx,
@@ -467,9 +484,71 @@ struct GeneratedWorldFinalizeInputs {
     rng: ChaChaRng,
     calendar: Option<Calendar>,
     compat_mode: CompatMode,
+    load_legacy_mode: LoadLegacyMode,
+    load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
     compat_audit: CompatAuditV1,
+    managed_recipe_sidecar_missing: bool,
     recipe_manifest: RecipeManifestV1,
     seed_elements: bool,
+}
+
+struct WorldLoadBootstrapRequest {
+    seed: u32,
+    seed_elements: bool,
+    world_file: FileOpts,
+    compat_mode: CompatMode,
+    load_legacy_mode: LoadLegacyMode,
+    load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
+}
+
+struct GeneratedWorldFinalizePreparationRequest<'a> {
+    load_bootstrap: WorldLoadBootstrap,
+    world_file: FileOpts,
+    calendar: Option<Calendar>,
+    compat_mode: CompatMode,
+    load_legacy_mode: LoadLegacyMode,
+    load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
+    threadpool: &'a rayon::ThreadPool,
+    stage_report: &'a dyn Fn(WorldSimStage),
+}
+
+struct GeneratedWorldFinalizeBuilderPreparationRequest<'a> {
+    load_bootstrap: WorldLoadBootstrap,
+    world_file: FileOpts,
+    calendar: Option<Calendar>,
+    compat_mode: CompatMode,
+    load_legacy_mode: LoadLegacyMode,
+    load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
+    threadpool: &'a rayon::ThreadPool,
+    stage_report: &'a dyn Fn(WorldSimStage),
+}
+
+struct GeneratedWorldPartsInputs {
+    seed: u32,
+    map_size_lg: MapSizeLg,
+    gen_ctx: GenCtx,
+    post_erosion_chunk_inputs: PostErosionChunkInputs,
+    rng: ChaChaRng,
+    calendar: Option<Calendar>,
+    compat_mode: CompatMode,
+    load_legacy_mode: LoadLegacyMode,
+    load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
+    compat_audit: CompatAuditV1,
+    managed_recipe_sidecar_missing: bool,
+    recipe_manifest: RecipeManifestV1,
+}
+
+struct GenerationChunkInputsRequest<'a> {
+    parsed_world_file: Option<ModernMap>,
+    map_size_lg: MapSizeLg,
+    gen_opts: &'a GenOpts,
+    world_file: FileOpts,
+    fresh: bool,
+    recipe_manifest: &'a RecipeManifestV1,
+    gen_ctx: &'a GenCtx,
+    pre_erosion_setup: PreErosionSetup,
+    threadpool: &'a rayon::ThreadPool,
+    stage_report: &'a dyn Fn(WorldSimStage),
 }
 
 struct PostErosionChunkInputs {
@@ -478,7 +557,11 @@ struct PostErosionChunkInputs {
 }
 
 impl GeneratedWorldFinalizeInputs {
-    fn into_parts(self) -> (GeneratedWorldParts, bool) {
+    fn into_parts(self) -> GeneratedWorldParts { self.world_parts_inputs.into_parts() }
+}
+
+impl GeneratedWorldPartsInputs {
+    fn into_parts(self) -> GeneratedWorldParts {
         let Self {
             seed,
             map_size_lg,
@@ -487,30 +570,33 @@ impl GeneratedWorldFinalizeInputs {
             rng,
             calendar,
             compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
             compat_audit,
+            managed_recipe_sidecar_missing,
             recipe_manifest,
-            seed_elements,
         } = self;
         let PostErosionChunkInputs {
             max_height,
             gen_cdf,
         } = post_erosion_chunk_inputs;
         let chunks = WorldSim::build_sim_chunks(map_size_lg, &gen_ctx, &gen_cdf);
-        (
-            GeneratedWorldParts {
-                seed,
-                map_size_lg,
-                max_height,
-                chunks,
-                gen_ctx,
-                rng,
-                calendar,
-                compat_mode,
-                compat_audit,
-                recipe_manifest,
-            },
-            seed_elements,
-        )
+
+        GeneratedWorldParts {
+            seed,
+            map_size_lg,
+            max_height,
+            chunks,
+            gen_ctx,
+            rng,
+            calendar,
+            compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
+            compat_audit,
+            managed_recipe_sidecar_missing,
+            recipe_manifest,
+        }
     }
 }
 
@@ -651,6 +737,19 @@ struct FileLoadContent {
     map_size_lg: MapSizeLg,
     gen_opts: GenOpts,
     compat_audit: CompatAuditV1,
+    managed_recipe_sidecar_missing: bool,
+}
+
+struct WorldLoadBootstrap {
+    parsed_world_file: Option<ModernMap>,
+    map_size_lg: MapSizeLg,
+    gen_opts: GenOpts,
+    compat_audit: CompatAuditV1,
+    managed_recipe_sidecar_missing: bool,
+    recipe_manifest: RecipeManifestV1,
+    fresh: bool,
+    effective_seed: u32,
+    effective_seed_elements: bool,
 }
 
 struct LoadedMapContent {
@@ -660,12 +759,62 @@ struct LoadedMapContent {
 }
 
 impl FileOpts {
+    #[cfg(test)]
     fn load_content(
         &self,
         compat_mode: CompatMode,
         world_seed: u32,
         seed_elements: bool,
     ) -> Result<FileLoadContent, compat::CompatResolveError> {
+        self.load_content_with_policy_modes(
+            compat_mode,
+            LoadLegacyMode::Allow,
+            LoadOrGenerateSidecarlessMode::Allow,
+            world_seed,
+            seed_elements,
+        )
+    }
+
+    #[cfg(test)]
+    fn load_content_with_legacy_mode(
+        &self,
+        compat_mode: CompatMode,
+        load_legacy_mode: LoadLegacyMode,
+        world_seed: u32,
+        seed_elements: bool,
+    ) -> Result<FileLoadContent, compat::CompatResolveError> {
+        self.load_content_with_policy_modes(
+            compat_mode,
+            load_legacy_mode,
+            LoadOrGenerateSidecarlessMode::Allow,
+            world_seed,
+            seed_elements,
+        )
+    }
+
+    fn load_content_with_policy_modes(
+        &self,
+        compat_mode: CompatMode,
+        load_legacy_mode: LoadLegacyMode,
+        load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
+        world_seed: u32,
+        seed_elements: bool,
+    ) -> Result<FileLoadContent, compat::CompatResolveError> {
+        if matches!(self, Self::LoadLegacy(_)) && matches!(load_legacy_mode, LoadLegacyMode::Deny) {
+            warn!(
+                load_legacy_mode = %load_legacy_mode.as_str(),
+                "LoadLegacy(path) is disabled by configured compat-import gate"
+            );
+            return Err(compat::CompatResolveError {
+                audit: CompatAuditV1::reject(
+                    compat::entry_kind(self),
+                    CompatFailureKindV1::PolicyDenied,
+                    CompatFailureSubjectV1::Options,
+                    CompatFailureDetailV1::default(),
+                ),
+            });
+        }
+
         let requested_gen_opts = self.gen_opts();
         let requested_recipe_manifest = requested_gen_opts
             .as_ref()
@@ -675,50 +824,12 @@ impl FileOpts {
             compat::entry_kind(self),
             self.try_load_map_raw(requested_recipe_manifest.as_ref()),
         )?;
-        let loaded_recipe_manifest = compat_resolution
-            .parsed_world_file
-            .as_ref()
-            .and_then(|loaded| loaded.recipe_manifest.clone());
-        let loaded_inferred_gen_opts = compat_resolution
-            .parsed_world_file
-            .as_ref()
-            .and_then(|loaded| loaded.inferred_gen_opts.clone());
-        let parsed_world_file = compat_resolution.parsed_world_file.map(|loaded| loaded.map);
-        let compat_audit = compat_resolution.compat_audit;
-
-        let mut gen_opts = loaded_recipe_manifest
-            .as_ref()
-            .map(|recipe_manifest| recipe_manifest.world_recipe.gen_opts.clone())
-            .or(loaded_inferred_gen_opts)
-            .or(requested_gen_opts)
-            .unwrap_or_default();
-
-        let map_size_lg = if let Some(map) = &parsed_world_file {
-            MapSizeLg::new(map.map_size_lg)
-                .expect("World size of loaded map does not satisfy invariants.")
-        } else {
-            self.map_size()
-        };
-
-        // NOTE: Change 1.0 to 4.0 for a 4x
-        // improvement in world detail.  We also use this to automatically adjust
-        // grid_scale (multiplying by 4.0) and multiply mins_per_sec by
-        // 1.0 / (4.0 * 4.0) in ./erosion.rs, in order to get a similar rate of river
-        // formation.
-        //
-        // FIXME: This is a hack!  At some point we will have a more principled way of
-        // dealing with this.
-        if let Some(map) = &parsed_world_file {
-            gen_opts.scale = map.continent_scale_hack;
-        };
-
-        Ok(FileLoadContent {
-            parsed_world_file,
-            loaded_recipe_manifest,
-            map_size_lg,
-            gen_opts,
-            compat_audit,
-        })
+        load_content::build_file_load_content(
+            self,
+            requested_gen_opts,
+            compat_resolution,
+            load_or_generate_sidecarless_mode,
+        )
     }
 
     fn gen_opts(&self) -> Option<GenOpts> {
@@ -771,9 +882,7 @@ impl FileOpts {
     }
 
     fn recipe_sidecar_path_for_map_path(map_path: &std::path::Path) -> PathBuf {
-        let mut sidecar_path = map_path.as_os_str().to_owned();
-        sidecar_path.push(".recipe.ron");
-        PathBuf::from(sidecar_path)
+        file_ops::recipe_sidecar_path_for_map_path(map_path)
     }
 
     fn recipe_sidecar_path(&self) -> Option<PathBuf> {
@@ -784,54 +893,7 @@ impl FileOpts {
     fn load_recipe_sidecar(
         map_path: &std::path::Path,
     ) -> Result<Option<RecipeManifestV1>, compat::RawCompatFailure> {
-        let sidecar_path = Self::recipe_sidecar_path_for_map_path(map_path);
-        let file = match File::open(&sidecar_path) {
-            Ok(file) => file,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => {
-                warn!(
-                    ?e,
-                    ?sidecar_path,
-                    "Couldn't read adjacent world recipe sidecar"
-                );
-                return Err(Self::structured_load_failure(
-                    CompatFailureKindV1::MissingInput,
-                    CompatFailureSubjectV1::Recipe,
-                    CompatFailureDetailV1::default(),
-                ));
-            },
-        };
-
-        let reader = BufReader::new(file);
-        match ron::de::from_reader::<_, RecipeManifestV1>(reader) {
-            Ok(recipe_manifest) => {
-                if !recipe_manifest.validates_record_only_contract() {
-                    warn!(
-                        ?sidecar_path,
-                        "Parsed adjacent world recipe sidecar failed internal contract validation"
-                    );
-                    return Err(Self::structured_load_failure(
-                        CompatFailureKindV1::InvalidWorld,
-                        CompatFailureSubjectV1::Recipe,
-                        CompatFailureDetailV1::default(),
-                    ));
-                }
-
-                Ok(Some(recipe_manifest))
-            },
-            Err(e) => {
-                warn!(
-                    ?e,
-                    ?sidecar_path,
-                    "Couldn't parse adjacent world recipe sidecar"
-                );
-                Err(Self::structured_load_failure(
-                    CompatFailureKindV1::ParseError,
-                    CompatFailureSubjectV1::Recipe,
-                    CompatFailureDetailV1::default(),
-                ))
-            },
-        }
+        file_ops::load_recipe_sidecar(map_path)
     }
 
     // Built-in asset manifests describe the runtime contract we enforce for
@@ -839,93 +901,22 @@ impl FileOpts {
     // third-party or historical asset worlds. In particular, the default asset
     // keeps its longstanding runtime biome seed while using the asset's
     // recorded world-shape gen opts.
-    fn fixed_asset_recipe_manifest(specifier: &str) -> Option<RecipeManifestV1> {
-        match specifier {
-            DEFAULT_WORLD_MAP => Some(RecipeManifestV1::record_only(
-                DEFAULT_WORLD_SEED,
-                &default_world_asset_gen_opts(),
-                true,
-            )),
-            _ => None,
-        }
-    }
-
     fn load_asset_recipe_manifest(
         specifier: &str,
         map: &ModernMap,
     ) -> Result<RecipeManifestV1, compat::RawCompatFailure> {
-        let recipe_manifest = match Self::fixed_asset_recipe_manifest(specifier) {
-            Some(recipe_manifest) => recipe_manifest,
-            None => {
-                warn!(
-                    ?specifier,
-                    compat_failure = %CompatFailureKindV1::MissingInput.as_str(),
-                    compat_subject = %CompatFailureSubjectV1::Recipe.as_str(),
-                    "LoadAsset(asset) requires a fixed asset recipe manifest; refusing strict asset load"
-                );
-                return Err(Self::structured_load_failure(
-                    CompatFailureKindV1::MissingInput,
-                    CompatFailureSubjectV1::Recipe,
-                    CompatFailureDetailV1::default(),
-                ));
-            },
-        };
-
-        if !recipe_manifest.validates_record_only_contract() {
-            warn!(
-                ?specifier,
-                compat_failure = %CompatFailureKindV1::InvalidWorld.as_str(),
-                compat_subject = %CompatFailureSubjectV1::Recipe.as_str(),
-                "Fixed asset recipe manifest failed internal contract validation"
-            );
-            return Err(Self::structured_load_failure(
-                CompatFailureKindV1::InvalidWorld,
-                CompatFailureSubjectV1::Recipe,
-                CompatFailureDetailV1::default(),
-            ));
-        }
-
-        let failure = Self::recipe_manifest_world_contract_failure(map, &recipe_manifest);
-        if failure.detail.world_size_mismatch || failure.detail.world_scale_mismatch {
-            let stored_gen_opts = &recipe_manifest.world_recipe.gen_opts;
-            warn!(
-                ?specifier,
-                stored_world_recipe_hash = %recipe_manifest.world_recipe_hash,
-                stored_topology_id = %recipe_manifest.world_recipe.topology_id.as_str(),
-                world_file_size = ?map.map_size_lg,
-                recipe_size = ?Vec2::new(stored_gen_opts.x_lg, stored_gen_opts.y_lg),
-                world_file_scale = map.continent_scale_hack,
-                recipe_scale = stored_gen_opts.scale,
-                "LoadAsset(asset) found fixed recipe manifest that does not match the asset world file"
-            );
-            return Err(failure);
-        }
-
-        Ok(recipe_manifest)
+        file_ops::load_asset_recipe_manifest(specifier, map)
     }
 
     fn recipe_manifest_world_contract_failure(
         map: &ModernMap,
         recipe_manifest: &RecipeManifestV1,
     ) -> compat::RawCompatFailure {
-        let stored_gen_opts = &recipe_manifest.world_recipe.gen_opts;
-        let world_size_mismatch =
-            map.map_size_lg != Vec2::new(stored_gen_opts.x_lg, stored_gen_opts.y_lg);
-        let world_scale_mismatch = map.continent_scale_hack != stored_gen_opts.scale;
-        Self::structured_load_failure(
-            CompatFailureKindV1::OptionMismatch,
-            CompatFailureSubjectV1::Recipe,
-            CompatFailureDetailV1::option_mismatch(world_size_mismatch, world_scale_mismatch),
-        )
+        file_ops::recipe_manifest_world_contract_failure(map, recipe_manifest)
     }
 
     fn inferred_gen_opts_from_map(map: &ModernMap) -> GenOpts {
-        GenOpts {
-            x_lg: map.map_size_lg.x,
-            y_lg: map.map_size_lg.y,
-            scale: map.continent_scale_hack,
-            ..GenOpts::default()
-        }
+        file_ops::inferred_gen_opts_from_map(map)
     }
 
     // TODO: This should probably return a Result, so that caller can choose
@@ -1462,6 +1453,12 @@ pub struct WorldOpts {
     pub world_file: FileOpts,
     pub calendar: Option<Calendar>,
     pub compat_mode: CompatMode,
+    /// Controls whether the transitional `LoadLegacy(path)` compat-import
+    /// entry remains admitted or is rejected before any file parsing.
+    pub load_legacy_mode: LoadLegacyMode,
+    /// Controls whether managed `LoadOrGenerate` may still reuse an existing
+    /// world when the adjacent recipe sidecar is missing.
+    pub load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
 }
 
 impl Default for WorldOpts {
@@ -1471,6 +1468,8 @@ impl Default for WorldOpts {
             world_file: Default::default(),
             calendar: None,
             compat_mode: CompatMode::Record,
+            load_legacy_mode: LoadLegacyMode::Allow,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
         }
     }
 }
@@ -1705,7 +1704,10 @@ pub struct WorldSim {
 
     pub(crate) calendar: Option<Calendar>,
     pub(crate) compat_mode: CompatMode,
+    pub(crate) load_legacy_mode: LoadLegacyMode,
+    pub(crate) load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
     pub(crate) compat_audit: CompatAuditV1,
+    pub(crate) managed_recipe_sidecar_missing: bool,
     pub(crate) recipe_manifest: RecipeManifestV1,
     topology: WorldTopology,
 }
@@ -1816,7 +1818,10 @@ impl WorldSim {
             rng: rand_chacha::ChaCha20Rng::from_seed([0; 32]),
             calendar: None,
             compat_mode: CompatMode::Record,
+            load_legacy_mode: LoadLegacyMode::Allow,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
             compat_audit: CompatAuditV1::default(),
+            managed_recipe_sidecar_missing: false,
             recipe_manifest: RecipeManifestV1::default(),
             topology: WorldTopology::new(
                 TopologyId::BoundedPlaneV1,
@@ -1836,134 +1841,27 @@ impl WorldSim {
         let calendar = opts.calendar; // separate lifetime of elements
         let world_file = opts.world_file;
         let compat_mode = opts.compat_mode;
+        let load_legacy_mode = opts.load_legacy_mode;
+        let load_or_generate_sidecarless_mode = opts.load_or_generate_sidecarless_mode;
+        let load_bootstrap = Self::prepare_world_load_bootstrap(WorldLoadBootstrapRequest {
+            seed,
+            seed_elements,
+            world_file: world_file.clone(),
+            compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
+        })?;
 
-        // Parse out the contents of various map formats into the values we need.
-        let FileLoadContent {
-            parsed_world_file,
-            loaded_recipe_manifest,
-            map_size_lg,
-            gen_opts,
-            compat_audit,
-        } = match world_file.load_content(compat_mode, seed, seed_elements) {
-            Ok(content) => content,
-            Err(err) => {
-                error!(
-                    compat_mode = %compat_mode.as_str(),
-                    compat_entry = %err.audit.entry.as_str(),
-                    compat_decision = %err.audit.decision.as_str(),
-                    compat_failure = %err.audit.failure_kind.as_str(),
-                    compat_resolution = %err.audit.resolution.as_str(),
-                    compat_subject = %err.audit.failure_subject.as_str(),
-                    compat_legacy_world_version = err.audit.failure_detail.legacy_world_version,
-                    compat_world_size_mismatch = err.audit.failure_detail.world_size_mismatch,
-                    compat_world_scale_mismatch = err.audit.failure_detail.world_scale_mismatch,
-                    "compat contract rejected world load"
-                );
-                return Err(crate::Error::CompatEnforce { audit: err.audit });
-            },
-        };
-        // Currently only used with LoadOrGenerate to know if we need to
-        // overwrite world file
-        let fresh = parsed_world_file.is_none();
-        info!(
-            compat_entry = %compat_audit.entry.as_str(),
-            compat_decision = %compat_audit.decision.as_str(),
-            compat_failure = %compat_audit.failure_kind.as_str(),
-            compat_resolution = %compat_audit.resolution.as_str(),
-            compat_subject = %compat_audit.failure_subject.as_str(),
-            compat_legacy_world_version = compat_audit.failure_detail.legacy_world_version,
-            compat_world_size_mismatch = compat_audit.failure_detail.world_size_mismatch,
-            compat_world_scale_mismatch = compat_audit.failure_detail.world_scale_mismatch,
-            fresh,
-            "recorded world file compatibility audit"
-        );
-        if compat_audit.is_strict_load_contract_gap() {
-            warn!(
-                compat_entry = %compat_audit.entry.as_str(),
-                compat_failure = %compat_audit.failure_kind.as_str(),
-                "strict load path fell back to generation; C1 keeps this behavior observable before enforce"
-            );
-        }
-        let recipe_manifest = loaded_recipe_manifest
-            .unwrap_or_else(|| RecipeManifestV1::record_only(seed, &gen_opts, seed_elements));
-        let effective_seed = recipe_manifest.world_recipe.world_seed;
-        let effective_seed_elements = recipe_manifest.world_recipe.seed_elements;
-        info!(
-            world_recipe_hash = %recipe_manifest.world_recipe_hash,
-            chunk_recipe_hash = %recipe_manifest.chunk_recipe_hash,
-            topology_id = %recipe_manifest.world_recipe.topology_id.as_str(),
-            preset_id = %recipe_manifest.world_recipe.preset_id.as_str(),
-            config_hash = %recipe_manifest
-                .world_recipe
-                .config_hash
-                .as_deref()
-                .unwrap_or("unrecorded"),
-            asset_hash = %recipe_manifest
-                .world_recipe
-                .asset_hash
-                .as_deref()
-                .unwrap_or("unrecorded"),
-            "recorded world recipe manifest"
-        );
-
-        let generation_tunables = GenerationTunables::new(&gen_opts);
-
-        info!("Starting world generation");
-
-        let (rng, gen_ctx) = Self::init_gen_ctx(
-            effective_seed,
-            generation_tunables.continent_scale,
-            generation_tunables.rock_lacunarity,
-            generation_tunables.uplift_scale,
-        );
-        let pre_erosion_setup = Self::prepare_pre_erosion_setup(
-            map_size_lg,
-            &gen_opts,
-            &gen_ctx,
-            &generation_tunables,
-            threadpool,
-        );
-
-        // Perform some erosion.
-
-        let mut erosion_reporter = ErosionProgressReporter::new(stage_report);
-        let report_erosion: &mut dyn FnMut(f64) =
-            &mut |progress: f64| erosion_reporter.report(progress);
-        let pre_erosion_model = pre_erosion_setup.model(map_size_lg, &gen_ctx);
-
-        let (alt, basement) = Self::materialize_heightfields(
-            parsed_world_file,
-            &gen_opts,
-            world_file,
-            fresh,
-            &recipe_manifest,
-            &pre_erosion_model,
-            threadpool,
-            report_erosion,
-        );
-        let chaos = pre_erosion_setup.into_chaos();
-
-        let post_erosion_chunk_inputs = Self::prepare_post_erosion_chunk_inputs(
-            map_size_lg,
-            gen_opts.scale,
-            &gen_ctx,
-            chaos,
-            alt,
-            basement,
-            threadpool,
-        );
-        Ok(Self::finalize_world_from_chunk_inputs(
-            GeneratedWorldFinalizeInputs {
-                seed: effective_seed,
-                map_size_lg,
-                gen_ctx,
-                post_erosion_chunk_inputs,
-                rng,
+        Ok(Self::prepare_and_finalize_generated_world(
+            GeneratedWorldFinalizePreparationRequest {
+                load_bootstrap,
+                world_file,
                 calendar,
                 compat_mode,
-                compat_audit,
-                recipe_manifest,
-                seed_elements: effective_seed_elements,
+                load_legacy_mode,
+                load_or_generate_sidecarless_mode,
+                threadpool,
+                stage_report,
             },
         ))
     }
@@ -1985,6 +1883,357 @@ impl WorldSim {
             Self::build_pre_erosion_fields(map_size_lg, gen_opts, gen_ctx, &params, threadpool);
 
         PreErosionSetup { params, fields }
+    }
+
+    fn prepare_generation_start(
+        effective_seed: u32,
+        map_size_lg: MapSizeLg,
+        gen_opts: &GenOpts,
+        threadpool: &rayon::ThreadPool,
+    ) -> WorldGenerationStart {
+        let generation_tunables = GenerationTunables::new(gen_opts);
+
+        info!("Starting world generation");
+
+        let (rng, gen_ctx) = Self::init_gen_ctx(
+            effective_seed,
+            generation_tunables.continent_scale,
+            generation_tunables.rock_lacunarity,
+            generation_tunables.uplift_scale,
+        );
+        let pre_erosion_setup = Self::prepare_pre_erosion_setup(
+            map_size_lg,
+            gen_opts,
+            &gen_ctx,
+            &generation_tunables,
+            threadpool,
+        );
+
+        WorldGenerationStart {
+            generation_tunables,
+            rng,
+            gen_ctx,
+            pre_erosion_setup,
+        }
+    }
+
+    fn prepare_world_load_bootstrap(
+        request: WorldLoadBootstrapRequest,
+    ) -> Result<WorldLoadBootstrap, crate::Error> {
+        let WorldLoadBootstrapRequest {
+            seed,
+            seed_elements,
+            world_file,
+            compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
+        } = request;
+        Self::resolve_world_load_bootstrap_with_observability(
+            &world_file,
+            seed,
+            seed_elements,
+            compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
+        )
+    }
+
+    fn resolve_world_load_bootstrap_with_observability(
+        world_file: &FileOpts,
+        seed: u32,
+        seed_elements: bool,
+        compat_mode: CompatMode,
+        load_legacy_mode: LoadLegacyMode,
+        load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
+    ) -> Result<WorldLoadBootstrap, crate::Error> {
+        match world_file.load_content_with_policy_modes(
+            compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
+            seed,
+            seed_elements,
+        ) {
+            Ok(file_load_content) => Ok(Self::record_world_load_bootstrap_observability(
+                load_legacy_mode,
+                load_or_generate_sidecarless_mode,
+                load_content::build_world_load_bootstrap(seed, seed_elements, file_load_content),
+            )),
+            Err(err) => {
+                Self::record_world_load_contract_rejection(
+                    compat_mode,
+                    load_legacy_mode,
+                    load_or_generate_sidecarless_mode,
+                    &err.audit,
+                );
+                Err(crate::Error::CompatEnforce { audit: err.audit })
+            },
+        }
+    }
+
+    fn record_world_load_bootstrap_observability(
+        load_legacy_mode: LoadLegacyMode,
+        load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
+        load_bootstrap: WorldLoadBootstrap,
+    ) -> WorldLoadBootstrap {
+        Self::record_world_load_contract_observability(
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
+            &load_bootstrap.compat_audit,
+            load_bootstrap.managed_recipe_sidecar_missing,
+            load_bootstrap.fresh,
+            &load_bootstrap.recipe_manifest,
+        );
+
+        load_bootstrap
+    }
+
+    fn record_world_load_contract_observability(
+        load_legacy_mode: LoadLegacyMode,
+        load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
+        compat_audit: &CompatAuditV1,
+        managed_recipe_sidecar_missing: bool,
+        fresh: bool,
+        recipe_manifest: &RecipeManifestV1,
+    ) {
+        info!(
+            load_legacy_mode = %load_legacy_mode.as_str(),
+            load_or_generate_sidecarless_mode =
+                %load_or_generate_sidecarless_mode.as_str(),
+            compat_entry = %compat_audit.entry.as_str(),
+            compat_decision = %compat_audit.decision.as_str(),
+            compat_failure = %compat_audit.failure_kind.as_str(),
+            compat_resolution = %compat_audit.resolution.as_str(),
+            compat_subject = %compat_audit.failure_subject.as_str(),
+            compat_legacy_world_version = compat_audit.failure_detail.legacy_world_version,
+            compat_world_size_mismatch = compat_audit.failure_detail.world_size_mismatch,
+            compat_world_scale_mismatch = compat_audit.failure_detail.world_scale_mismatch,
+            compat_managed_recipe_sidecar_missing = managed_recipe_sidecar_missing,
+            fresh,
+            "recorded world file compatibility audit"
+        );
+        if compat_audit.is_strict_load_contract_gap() {
+            warn!(
+                compat_entry = %compat_audit.entry.as_str(),
+                compat_failure = %compat_audit.failure_kind.as_str(),
+                "strict load path fell back to generation; C1 keeps this behavior observable before enforce"
+            );
+        }
+        if managed_recipe_sidecar_missing {
+            warn!(
+                compat_entry = %compat_audit.entry.as_str(),
+                "managed world loaded without an adjacent recipe sidecar; runtime recipe contract remains inferred from legacy option compare"
+            );
+        }
+        info!(
+            world_recipe_hash = %recipe_manifest.world_recipe_hash,
+            chunk_recipe_hash = %recipe_manifest.chunk_recipe_hash,
+            topology_id = %recipe_manifest.world_recipe.topology_id.as_str(),
+            preset_id = %recipe_manifest.world_recipe.preset_id.as_str(),
+            config_hash = %recipe_manifest
+                .world_recipe
+                .config_hash
+                .as_deref()
+                .unwrap_or("unrecorded"),
+            asset_hash = %recipe_manifest
+                .world_recipe
+                .asset_hash
+                .as_deref()
+                .unwrap_or("unrecorded"),
+            "recorded world recipe manifest"
+        );
+    }
+
+    fn record_world_load_contract_rejection(
+        compat_mode: CompatMode,
+        load_legacy_mode: LoadLegacyMode,
+        load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
+        compat_audit: &CompatAuditV1,
+    ) {
+        error!(
+            compat_mode = %compat_mode.as_str(),
+            load_legacy_mode = %load_legacy_mode.as_str(),
+            load_or_generate_sidecarless_mode =
+                %load_or_generate_sidecarless_mode.as_str(),
+            compat_entry = %compat_audit.entry.as_str(),
+            compat_decision = %compat_audit.decision.as_str(),
+            compat_failure = %compat_audit.failure_kind.as_str(),
+            compat_resolution = %compat_audit.resolution.as_str(),
+            compat_subject = %compat_audit.failure_subject.as_str(),
+            compat_legacy_world_version = compat_audit.failure_detail.legacy_world_version,
+            compat_world_size_mismatch = compat_audit.failure_detail.world_size_mismatch,
+            compat_world_scale_mismatch = compat_audit.failure_detail.world_scale_mismatch,
+            "compat contract rejected world load"
+        );
+    }
+
+    fn prepare_generation_chunk_inputs(
+        request: GenerationChunkInputsRequest<'_>,
+    ) -> PostErosionChunkInputs {
+        let GenerationChunkInputsRequest {
+            parsed_world_file,
+            map_size_lg,
+            gen_opts,
+            world_file,
+            fresh,
+            recipe_manifest,
+            gen_ctx,
+            pre_erosion_setup,
+            threadpool,
+            stage_report,
+        } = request;
+
+        // Perform some erosion.
+        let mut erosion_reporter = ErosionProgressReporter::new(stage_report);
+        let report_erosion: &mut dyn FnMut(f64) =
+            &mut |progress: f64| erosion_reporter.report(progress);
+        let pre_erosion_model = pre_erosion_setup.model(map_size_lg, gen_ctx);
+
+        let (alt, basement) = Self::materialize_heightfields(
+            parsed_world_file,
+            gen_opts,
+            world_file,
+            fresh,
+            recipe_manifest,
+            &pre_erosion_model,
+            threadpool,
+            report_erosion,
+        );
+        let chaos = pre_erosion_setup.into_chaos();
+
+        Self::prepare_post_erosion_chunk_inputs(
+            map_size_lg,
+            gen_opts.scale,
+            gen_ctx,
+            chaos,
+            alt,
+            basement,
+            threadpool,
+        )
+    }
+
+    fn prepare_generated_world_finalize_inputs(
+        request: GeneratedWorldFinalizePreparationRequest<'_>,
+    ) -> GeneratedWorldFinalizeInputs {
+        let builder_inputs = Self::prepare_generated_world_finalize_builder_inputs(
+            GeneratedWorldFinalizeBuilderPreparationRequest {
+                load_bootstrap: request.load_bootstrap,
+                world_file: request.world_file,
+                calendar: request.calendar,
+                compat_mode: request.compat_mode,
+                load_legacy_mode: request.load_legacy_mode,
+                load_or_generate_sidecarless_mode: request.load_or_generate_sidecarless_mode,
+                threadpool: request.threadpool,
+                stage_report: request.stage_report,
+            },
+        );
+
+        Self::build_generated_world_finalize_inputs(builder_inputs)
+    }
+
+    fn prepare_generated_world_finalize_builder_inputs(
+        request: GeneratedWorldFinalizeBuilderPreparationRequest<'_>,
+    ) -> GeneratedWorldFinalizeBuilderInputs {
+        let GeneratedWorldFinalizeBuilderPreparationRequest {
+            load_bootstrap,
+            world_file,
+            calendar,
+            compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
+            threadpool,
+            stage_report,
+        } = request;
+        let WorldLoadBootstrap {
+            parsed_world_file,
+            map_size_lg,
+            gen_opts,
+            compat_audit,
+            managed_recipe_sidecar_missing,
+            recipe_manifest,
+            fresh,
+            effective_seed,
+            effective_seed_elements,
+        } = load_bootstrap;
+        let WorldGenerationStart {
+            generation_tunables: _generation_tunables,
+            rng,
+            gen_ctx,
+            pre_erosion_setup,
+        } = Self::prepare_generation_start(effective_seed, map_size_lg, &gen_opts, threadpool);
+        let post_erosion_chunk_inputs =
+            Self::prepare_generation_chunk_inputs(GenerationChunkInputsRequest {
+                parsed_world_file,
+                map_size_lg,
+                gen_opts: &gen_opts,
+                world_file,
+                fresh,
+                recipe_manifest: &recipe_manifest,
+                gen_ctx: &gen_ctx,
+                pre_erosion_setup,
+                threadpool,
+                stage_report,
+            });
+
+        GeneratedWorldFinalizeBuilderInputs {
+            seed: effective_seed,
+            map_size_lg,
+            gen_ctx,
+            post_erosion_chunk_inputs,
+            rng,
+            calendar,
+            compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
+            compat_audit,
+            managed_recipe_sidecar_missing,
+            recipe_manifest,
+            seed_elements: effective_seed_elements,
+        }
+    }
+
+    fn build_generated_world_finalize_inputs(
+        inputs: GeneratedWorldFinalizeBuilderInputs,
+    ) -> GeneratedWorldFinalizeInputs {
+        let GeneratedWorldFinalizeBuilderInputs {
+            seed,
+            map_size_lg,
+            gen_ctx,
+            post_erosion_chunk_inputs,
+            rng,
+            calendar,
+            compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
+            compat_audit,
+            managed_recipe_sidecar_missing,
+            recipe_manifest,
+            seed_elements,
+        } = inputs;
+
+        GeneratedWorldFinalizeInputs {
+            world_parts_inputs: GeneratedWorldPartsInputs {
+                seed,
+                map_size_lg,
+                gen_ctx,
+                post_erosion_chunk_inputs,
+                rng,
+                calendar,
+                compat_mode,
+                load_legacy_mode,
+                load_or_generate_sidecarless_mode,
+                compat_audit,
+                managed_recipe_sidecar_missing,
+                recipe_manifest,
+            },
+            seed_elements,
+        }
+    }
+
+    fn prepare_and_finalize_generated_world(
+        request: GeneratedWorldFinalizePreparationRequest<'_>,
+    ) -> Self {
+        let finalize_inputs = Self::prepare_generated_world_finalize_inputs(request);
+        Self::finalize_world_from_chunk_inputs(finalize_inputs)
     }
 
     fn prepare_post_erosion_chunk_inputs(
@@ -2864,11 +3113,9 @@ impl WorldSim {
     }
 
     fn finalize_world_from_chunk_inputs(inputs: GeneratedWorldFinalizeInputs) -> Self {
-        let (parts, seed_elements) = inputs.into_parts();
-        let mut this = Self::finalize_world_from_parts(parts);
-        this.run_generation_postprocesses(seed_elements);
-
-        this
+        let seed_elements = inputs.seed_elements;
+        let parts = inputs.into_parts();
+        Self::finalize_world_from_parts_with_postprocess(parts, seed_elements)
     }
 
     fn finalize_world_from_parts(parts: GeneratedWorldParts) -> Self {
@@ -2881,7 +3128,10 @@ impl WorldSim {
             rng,
             calendar,
             compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
             compat_audit,
+            managed_recipe_sidecar_missing,
             recipe_manifest,
         } = parts;
 
@@ -2895,10 +3145,23 @@ impl WorldSim {
             rng,
             calendar,
             compat_mode,
+            load_legacy_mode,
+            load_or_generate_sidecarless_mode,
             compat_audit,
+            managed_recipe_sidecar_missing,
             topology: WorldTopology::new(recipe_manifest.world_recipe.topology_id, map_size_lg),
             recipe_manifest,
         }
+    }
+
+    fn finalize_world_from_parts_with_postprocess(
+        parts: GeneratedWorldParts,
+        seed_elements: bool,
+    ) -> Self {
+        let mut this = Self::finalize_world_from_parts(parts);
+        this.run_generation_postprocesses(seed_elements);
+
+        this
     }
 
     fn run_generation_postprocesses(&mut self, seed_elements: bool) {
@@ -2914,7 +3177,17 @@ impl WorldSim {
 
     pub const fn compat_mode(&self) -> CompatMode { self.compat_mode }
 
+    pub const fn load_legacy_mode(&self) -> LoadLegacyMode { self.load_legacy_mode }
+
+    pub const fn load_or_generate_sidecarless_mode(&self) -> LoadOrGenerateSidecarlessMode {
+        self.load_or_generate_sidecarless_mode
+    }
+
     pub const fn compat_audit(&self) -> CompatAuditV1 { self.compat_audit }
+
+    pub const fn managed_recipe_sidecar_missing(&self) -> bool {
+        self.managed_recipe_sidecar_missing
+    }
 
     pub fn recipe_manifest(&self) -> &RecipeManifestV1 { &self.recipe_manifest }
 
@@ -4206,13 +4479,20 @@ impl SimChunk {
 #[cfg(test)]
 mod compat_tests {
     use super::{
-        CompatMode, DEFAULT_WORLD_MAP, DEFAULT_WORLD_SEED, FileOpts, GenOpts, WorldFile,
-        WorldMap_0_5_0, WorldMap_0_7_0, default_world_asset_gen_opts,
+        CompatAuditV1, CompatMode, DEFAULT_WORLD_MAP, DEFAULT_WORLD_SEED, FileOpts, GenOpts,
+        GeneratedWorldFinalizeBuilderInputs, GeneratedWorldFinalizeBuilderPreparationRequest,
+        GeneratedWorldFinalizeInputs, GeneratedWorldFinalizePreparationRequest,
+        GeneratedWorldPartsInputs, GenerationChunkInputsRequest, GenerationTunables,
+        LoadLegacyMode, LoadOrGenerateSidecarlessMode, WorldFile, WorldLoadBootstrap,
+        WorldLoadBootstrapRequest, WorldMap_0_5_0, WorldMap_0_7_0, WorldSim,
+        default_world_asset_gen_opts,
     };
     use crate::recipe::{
         CompatDecisionV1, CompatFailureKindV1, CompatFailureSubjectV1, RecipeManifestV1,
     };
     use bincode::{config::legacy, serde::encode_into_std_write};
+    use common::terrain::MapSizeLg;
+    use rayon::ThreadPoolBuilder;
     use std::{
         fs::{self, File},
         io::BufWriter,
@@ -4558,6 +4838,27 @@ mod compat_tests {
     }
 
     #[test]
+    fn load_legacy_rejects_when_compat_import_gate_is_closed() {
+        let (_, temp_target) = TempLoadOrGenerateTarget::new("load-legacy-gate-closed");
+        temp_target.write_world_file(&matching_world_file());
+
+        let err = match load_legacy_opts(temp_target.file_path.clone())
+            .load_content_with_legacy_mode(
+                CompatMode::Record,
+                LoadLegacyMode::Deny,
+                TEST_WORLD_SEED,
+                TEST_SEED_ELEMENTS,
+            ) {
+            Ok(_) => panic!("LoadLegacy(path) should reject when compat import gate is closed"),
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::PolicyDenied);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Options);
+    }
+
+    #[test]
     fn load_asset_default_world_uses_fixed_recipe_manifest() {
         let requested_seed = TEST_WORLD_SEED + 91;
         let default_asset_gen_opts = default_world_asset_gen_opts();
@@ -4627,6 +4928,468 @@ mod compat_tests {
         assert!(err.audit.is_rejected());
         assert_eq!(err.audit.failure_kind, CompatFailureKindV1::MissingInput);
         assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Recipe);
+    }
+
+    #[test]
+    fn prepare_generation_start_shapes_tunables_and_pre_erosion_setup() {
+        let gen_opts = GenOpts::default();
+        let map_size_lg = MapSizeLg::new(Vec2::new(gen_opts.x_lg, gen_opts.y_lg))
+            .expect("default gen opts should map to valid world size");
+        let threadpool = ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("threadpool should build");
+
+        let start = WorldSim::prepare_generation_start(
+            TEST_WORLD_SEED,
+            map_size_lg,
+            &gen_opts,
+            &threadpool,
+        );
+        let expected_tunables = GenerationTunables::new(&gen_opts);
+
+        assert_eq!(
+            start.generation_tunables.continent_scale,
+            expected_tunables.continent_scale
+        );
+        assert_eq!(
+            start.generation_tunables.rock_lacunarity,
+            expected_tunables.rock_lacunarity
+        );
+        assert_eq!(
+            start.generation_tunables.uplift_scale,
+            expected_tunables.uplift_scale
+        );
+
+        let pre_erosion_model = start.pre_erosion_setup.model(map_size_lg, &start.gen_ctx);
+        assert_eq!(pre_erosion_model.map_size_lg.chunks(), map_size_lg.chunks());
+    }
+
+    #[test]
+    fn prepare_generation_chunk_inputs_shapes_loaded_world_into_post_erosion_inputs() {
+        let gen_opts = GenOpts::default();
+        let map_size_lg = MapSizeLg::new(Vec2::new(gen_opts.x_lg, gen_opts.y_lg))
+            .expect("default gen opts should map to valid world size");
+        let threadpool = ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("threadpool should build");
+        let start = WorldSim::prepare_generation_start(
+            TEST_WORLD_SEED,
+            map_size_lg,
+            &gen_opts,
+            &threadpool,
+        );
+        let recipe_manifest = RecipeManifestV1::record_only(TEST_WORLD_SEED, &gen_opts, true);
+        let loaded_world = matching_world_file()
+            .into_modern()
+            .expect("fixture should be modern");
+
+        let post = WorldSim::prepare_generation_chunk_inputs(GenerationChunkInputsRequest {
+            parsed_world_file: Some(loaded_world),
+            map_size_lg,
+            gen_opts: &gen_opts,
+            world_file: FileOpts::Generate(gen_opts.clone()),
+            fresh: false,
+            recipe_manifest: &recipe_manifest,
+            gen_ctx: &start.gen_ctx,
+            pre_erosion_setup: start.pre_erosion_setup,
+            threadpool: &threadpool,
+            stage_report: &|_| {},
+        });
+
+        assert!(post.max_height.is_finite());
+        assert!(post.max_height >= 0.0);
+        assert_eq!(post.gen_cdf.alt.len(), post.gen_cdf.basement.len());
+        assert_eq!(
+            post.gen_cdf.alt.len(),
+            map_size_lg.chunks().map(|e| e as usize).product()
+        );
+    }
+
+    #[test]
+    fn generated_world_finalize_inputs_into_parts_preserves_seed_elements_as_finalize_gate() {
+        let gen_opts = GenOpts::default();
+        let map_size_lg = MapSizeLg::new(Vec2::new(gen_opts.x_lg, gen_opts.y_lg))
+            .expect("default gen opts should map to valid world size");
+        let threadpool = ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("threadpool should build");
+        let start = WorldSim::prepare_generation_start(
+            TEST_WORLD_SEED,
+            map_size_lg,
+            &gen_opts,
+            &threadpool,
+        );
+        let recipe_manifest = RecipeManifestV1::record_only(TEST_WORLD_SEED, &gen_opts, true);
+        let loaded_world = matching_world_file()
+            .into_modern()
+            .expect("fixture should be modern");
+        let post_erosion_chunk_inputs =
+            WorldSim::prepare_generation_chunk_inputs(GenerationChunkInputsRequest {
+                parsed_world_file: Some(loaded_world),
+                map_size_lg,
+                gen_opts: &gen_opts,
+                world_file: FileOpts::Generate(gen_opts.clone()),
+                fresh: false,
+                recipe_manifest: &recipe_manifest,
+                gen_ctx: &start.gen_ctx,
+                pre_erosion_setup: start.pre_erosion_setup,
+                threadpool: &threadpool,
+                stage_report: &|_| {},
+            });
+
+        let inputs = GeneratedWorldFinalizeInputs {
+            world_parts_inputs: GeneratedWorldPartsInputs {
+                seed: TEST_WORLD_SEED,
+                map_size_lg,
+                gen_ctx: start.gen_ctx,
+                post_erosion_chunk_inputs,
+                rng: start.rng,
+                calendar: None,
+                compat_mode: CompatMode::Record,
+                load_legacy_mode: LoadLegacyMode::Allow,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+                compat_audit: CompatAuditV1::default(),
+                managed_recipe_sidecar_missing: false,
+                recipe_manifest: recipe_manifest.clone(),
+            },
+            seed_elements: true,
+        };
+
+        assert!(inputs.seed_elements);
+        let parts = inputs.into_parts();
+        assert_eq!(parts.seed, TEST_WORLD_SEED);
+        assert_eq!(parts.map_size_lg.chunks(), map_size_lg.chunks());
+        assert_eq!(
+            parts.recipe_manifest.world_recipe_hash,
+            recipe_manifest.world_recipe_hash
+        );
+        assert_eq!(
+            parts.chunks.len(),
+            map_size_lg.chunks().map(|e| e as usize).product()
+        );
+    }
+
+    #[test]
+    fn build_generated_world_finalize_inputs_keeps_finalize_payload_packing_at_single_boundary() {
+        let gen_opts = GenOpts::default();
+        let map_size_lg = MapSizeLg::new(Vec2::new(gen_opts.x_lg, gen_opts.y_lg))
+            .expect("default gen opts should map to valid world size");
+        let threadpool = ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("threadpool should build");
+        let start = WorldSim::prepare_generation_start(
+            TEST_WORLD_SEED,
+            map_size_lg,
+            &gen_opts,
+            &threadpool,
+        );
+        let recipe_manifest = RecipeManifestV1::record_only(TEST_WORLD_SEED, &gen_opts, true);
+        let loaded_world = matching_world_file()
+            .into_modern()
+            .expect("fixture should be modern");
+        let post_erosion_chunk_inputs =
+            WorldSim::prepare_generation_chunk_inputs(GenerationChunkInputsRequest {
+                parsed_world_file: Some(loaded_world),
+                map_size_lg,
+                gen_opts: &gen_opts,
+                world_file: FileOpts::Generate(gen_opts.clone()),
+                fresh: false,
+                recipe_manifest: &recipe_manifest,
+                gen_ctx: &start.gen_ctx,
+                pre_erosion_setup: start.pre_erosion_setup,
+                threadpool: &threadpool,
+                stage_report: &|_| {},
+            });
+
+        let finalize_inputs =
+            WorldSim::build_generated_world_finalize_inputs(GeneratedWorldFinalizeBuilderInputs {
+                seed: TEST_WORLD_SEED,
+                map_size_lg,
+                gen_ctx: start.gen_ctx,
+                post_erosion_chunk_inputs,
+                rng: start.rng,
+                calendar: None,
+                compat_mode: CompatMode::Record,
+                load_legacy_mode: LoadLegacyMode::Allow,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+                compat_audit: CompatAuditV1::default(),
+                managed_recipe_sidecar_missing: false,
+                recipe_manifest: recipe_manifest.clone(),
+                seed_elements: true,
+            });
+
+        assert!(finalize_inputs.seed_elements);
+        assert_eq!(
+            finalize_inputs
+                .world_parts_inputs
+                .recipe_manifest
+                .world_recipe_hash,
+            recipe_manifest.world_recipe_hash
+        );
+        assert_eq!(
+            finalize_inputs.world_parts_inputs.map_size_lg.chunks(),
+            map_size_lg.chunks()
+        );
+    }
+
+    #[test]
+    fn prepare_generated_world_finalize_builder_inputs_keeps_bootstrap_to_builder_boundary_single_step()
+     {
+        let gen_opts = GenOpts::default();
+        let threadpool = ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("threadpool should build");
+        let recipe_manifest = RecipeManifestV1::record_only(TEST_WORLD_SEED, &gen_opts, true);
+        let load_bootstrap = WorldLoadBootstrap {
+            parsed_world_file: Some(
+                matching_world_file()
+                    .into_modern()
+                    .expect("fixture should be modern"),
+            ),
+            map_size_lg: MapSizeLg::new(Vec2::new(gen_opts.x_lg, gen_opts.y_lg))
+                .expect("default gen opts should map to valid world size"),
+            gen_opts: gen_opts.clone(),
+            compat_audit: CompatAuditV1::default(),
+            managed_recipe_sidecar_missing: false,
+            recipe_manifest: recipe_manifest.clone(),
+            fresh: false,
+            effective_seed: TEST_WORLD_SEED,
+            effective_seed_elements: true,
+        };
+
+        let builder_inputs = WorldSim::prepare_generated_world_finalize_builder_inputs(
+            GeneratedWorldFinalizeBuilderPreparationRequest {
+                load_bootstrap,
+                world_file: FileOpts::Generate(gen_opts),
+                calendar: None,
+                compat_mode: CompatMode::Record,
+                load_legacy_mode: LoadLegacyMode::Allow,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+                threadpool: &threadpool,
+                stage_report: &|_| {},
+            },
+        );
+
+        assert!(builder_inputs.seed_elements);
+        assert_eq!(
+            builder_inputs.recipe_manifest.world_recipe_hash,
+            recipe_manifest.world_recipe_hash
+        );
+    }
+
+    #[test]
+    fn prepare_generated_world_finalize_inputs_keeps_bootstrap_to_finalize_at_single_boundary() {
+        let gen_opts = GenOpts::default();
+        let threadpool = ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("threadpool should build");
+        let recipe_manifest = RecipeManifestV1::record_only(TEST_WORLD_SEED, &gen_opts, true);
+        let load_bootstrap = WorldLoadBootstrap {
+            parsed_world_file: Some(
+                matching_world_file()
+                    .into_modern()
+                    .expect("fixture should be modern"),
+            ),
+            map_size_lg: MapSizeLg::new(Vec2::new(gen_opts.x_lg, gen_opts.y_lg))
+                .expect("default gen opts should map to valid world size"),
+            gen_opts: gen_opts.clone(),
+            compat_audit: CompatAuditV1::default(),
+            managed_recipe_sidecar_missing: false,
+            recipe_manifest: recipe_manifest.clone(),
+            fresh: false,
+            effective_seed: TEST_WORLD_SEED,
+            effective_seed_elements: true,
+        };
+
+        let finalize_inputs = WorldSim::prepare_generated_world_finalize_inputs(
+            GeneratedWorldFinalizePreparationRequest {
+                load_bootstrap,
+                world_file: FileOpts::Generate(gen_opts),
+                calendar: None,
+                compat_mode: CompatMode::Record,
+                load_legacy_mode: LoadLegacyMode::Allow,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+                threadpool: &threadpool,
+                stage_report: &|_| {},
+            },
+        );
+
+        assert!(finalize_inputs.seed_elements);
+        assert_eq!(
+            finalize_inputs
+                .world_parts_inputs
+                .recipe_manifest
+                .world_recipe_hash,
+            recipe_manifest.world_recipe_hash
+        );
+    }
+
+    #[test]
+    fn finalize_world_from_parts_with_postprocess_preserves_finalize_gate() {
+        let gen_opts = GenOpts::default();
+        let map_size_lg = MapSizeLg::new(Vec2::new(gen_opts.x_lg, gen_opts.y_lg))
+            .expect("default gen opts should map to valid world size");
+        let threadpool = ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("threadpool should build");
+        let start = WorldSim::prepare_generation_start(
+            TEST_WORLD_SEED,
+            map_size_lg,
+            &gen_opts,
+            &threadpool,
+        );
+        let recipe_manifest = RecipeManifestV1::record_only(TEST_WORLD_SEED, &gen_opts, false);
+        let post_erosion_chunk_inputs =
+            WorldSim::prepare_generation_chunk_inputs(GenerationChunkInputsRequest {
+                parsed_world_file: Some(
+                    matching_world_file()
+                        .into_modern()
+                        .expect("fixture should be modern"),
+                ),
+                map_size_lg,
+                gen_opts: &gen_opts,
+                world_file: FileOpts::Generate(gen_opts.clone()),
+                fresh: false,
+                recipe_manifest: &recipe_manifest,
+                gen_ctx: &start.gen_ctx,
+                pre_erosion_setup: start.pre_erosion_setup,
+                threadpool: &threadpool,
+                stage_report: &|_| {},
+            });
+        let parts = GeneratedWorldPartsInputs {
+            seed: TEST_WORLD_SEED,
+            map_size_lg,
+            gen_ctx: start.gen_ctx,
+            post_erosion_chunk_inputs,
+            rng: start.rng,
+            calendar: None,
+            compat_mode: CompatMode::Record,
+            load_legacy_mode: LoadLegacyMode::Allow,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+            compat_audit: CompatAuditV1::default(),
+            managed_recipe_sidecar_missing: false,
+            recipe_manifest: recipe_manifest.clone(),
+        }
+        .into_parts();
+
+        let world = WorldSim::finalize_world_from_parts_with_postprocess(parts, false);
+
+        assert_eq!(
+            world.recipe_manifest().world_recipe_hash,
+            recipe_manifest.world_recipe_hash
+        );
+        assert_eq!(world.map_size_lg().chunks(), map_size_lg.chunks());
+    }
+
+    #[test]
+    fn prepare_and_finalize_generated_world_keeps_prepare_finalize_boundary_single_step() {
+        let gen_opts = GenOpts::default();
+        let threadpool = ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("threadpool should build");
+        let recipe_manifest = RecipeManifestV1::record_only(TEST_WORLD_SEED, &gen_opts, true);
+        let load_bootstrap = WorldLoadBootstrap {
+            parsed_world_file: Some(
+                matching_world_file()
+                    .into_modern()
+                    .expect("fixture should be modern"),
+            ),
+            map_size_lg: MapSizeLg::new(Vec2::new(gen_opts.x_lg, gen_opts.y_lg))
+                .expect("default gen opts should map to valid world size"),
+            gen_opts: gen_opts.clone(),
+            compat_audit: CompatAuditV1::default(),
+            managed_recipe_sidecar_missing: false,
+            recipe_manifest: recipe_manifest.clone(),
+            fresh: false,
+            effective_seed: TEST_WORLD_SEED,
+            effective_seed_elements: true,
+        };
+
+        let world = WorldSim::prepare_and_finalize_generated_world(
+            GeneratedWorldFinalizePreparationRequest {
+                load_bootstrap,
+                world_file: FileOpts::Generate(gen_opts),
+                calendar: None,
+                compat_mode: CompatMode::Record,
+                load_legacy_mode: LoadLegacyMode::Allow,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+                threadpool: &threadpool,
+                stage_report: &|_| {},
+            },
+        );
+
+        assert_eq!(
+            world.recipe_manifest().world_recipe_hash,
+            recipe_manifest.world_recipe_hash
+        );
+        assert_eq!(world.compat_mode(), CompatMode::Record);
+        assert_eq!(world.load_legacy_mode(), LoadLegacyMode::Allow);
+        assert_eq!(
+            world.load_or_generate_sidecarless_mode(),
+            LoadOrGenerateSidecarlessMode::Allow
+        );
+    }
+
+    #[test]
+    fn prepare_world_load_bootstrap_keeps_load_to_bootstrap_boundary_single_step() {
+        let gen_opts = GenOpts::default();
+        let bootstrap = WorldSim::prepare_world_load_bootstrap(WorldLoadBootstrapRequest {
+            seed: TEST_WORLD_SEED,
+            seed_elements: true,
+            world_file: FileOpts::Generate(gen_opts.clone()),
+            compat_mode: CompatMode::Record,
+            load_legacy_mode: LoadLegacyMode::Allow,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+        })
+        .expect("generate contract should remain bootstrap-able");
+
+        assert!(bootstrap.parsed_world_file.is_none());
+        assert!(bootstrap.fresh);
+        assert_eq!(bootstrap.effective_seed, TEST_WORLD_SEED);
+        assert_eq!(
+            bootstrap.recipe_manifest.world_recipe_hash,
+            RecipeManifestV1::record_only(TEST_WORLD_SEED, &gen_opts, true).world_recipe_hash
+        );
+    }
+
+    #[test]
+    fn prepare_world_load_bootstrap_preserves_rejection_audit_on_gate_denial() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("bootstrap-recipe-sidecar-gate");
+        temp_target.write_world_file(&matching_world_file());
+
+        let err = match WorldSim::prepare_world_load_bootstrap(WorldLoadBootstrapRequest {
+            seed: TEST_WORLD_SEED,
+            seed_elements: TEST_SEED_ELEMENTS,
+            world_file: load_or_generate_opts(name, false),
+            compat_mode: CompatMode::Record,
+            load_legacy_mode: LoadLegacyMode::Allow,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
+        }) {
+            Ok(_) => {
+                panic!(
+                    "prepare_world_load_bootstrap should preserve gate denial for sidecarless \
+                     managed reuse"
+                )
+            },
+            Err(err) => err,
+        };
+
+        match err {
+            crate::Error::CompatEnforce { audit } => {
+                assert!(audit.is_rejected());
+                assert_eq!(audit.failure_kind, CompatFailureKindV1::PolicyDenied);
+                assert_eq!(audit.failure_subject, CompatFailureSubjectV1::Options);
+            },
+            other => panic!("unexpected bootstrap error: {other}"),
+        }
     }
 
     #[test]
@@ -4718,6 +5481,7 @@ mod compat_tests {
             content.compat_audit.failure_subject,
             CompatFailureSubjectV1::None
         );
+        assert!(!content.managed_recipe_sidecar_missing);
     }
 
     #[test]
@@ -4738,6 +5502,33 @@ mod compat_tests {
             content.compat_audit.failure_subject,
             CompatFailureSubjectV1::None
         );
+        assert!(content.managed_recipe_sidecar_missing);
+    }
+
+    #[test]
+    fn load_or_generate_missing_recipe_sidecar_rejects_when_gate_is_closed() {
+        let (name, temp_target) = TempLoadOrGenerateTarget::new("recipe-sidecar-gate-closed");
+        temp_target.write_world_file(&matching_world_file());
+
+        let err = match load_or_generate_opts(name, false).load_content_with_policy_modes(
+            CompatMode::Record,
+            LoadLegacyMode::Allow,
+            LoadOrGenerateSidecarlessMode::Deny,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => {
+                panic!(
+                    "sidecarless managed LoadOrGenerate should reject when its admission gate is \
+                     closed"
+                )
+            },
+            Err(err) => err,
+        };
+
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::PolicyDenied);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Options);
     }
 
     #[test]

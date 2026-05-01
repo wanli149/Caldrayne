@@ -1,4 +1,7 @@
 mod batch_generate_runtime_audit;
+#[allow(dead_code)]
+#[path = "world_block_statistics.rs"]
+mod world_block_statistics_example;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -80,6 +83,12 @@ enum Action {
         /// Override chunk sample count for chunk-side audit
         #[arg(long)]
         sample_chunks: Option<usize>,
+        /// Opt into the deferred heavy world_block_statistics lane
+        #[arg(long)]
+        heavy_world_block_statistics: bool,
+        /// Fixed chunk budget recorded for the opt-in heavy lane contract
+        #[arg(long)]
+        heavy_world_block_statistics_chunk_budget: Option<usize>,
     },
 }
 
@@ -104,13 +113,34 @@ impl BatchGenerateConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
+struct WorldBlockStatisticsAuditConfig {
+    #[serde(default)]
+    chunk_budget: usize,
+}
+
+impl WorldBlockStatisticsAuditConfig {
+    fn is_empty(&self) -> bool { self.chunk_budget == 0 }
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
 struct MapAuditConfig {
     #[serde(default)]
     sample_chunks: usize,
+    #[serde(
+        default,
+        skip_serializing_if = "WorldBlockStatisticsAuditConfig::is_empty"
+    )]
+    world_block_statistics: WorldBlockStatisticsAuditConfig,
 }
 
 impl MapAuditConfig {
-    fn is_empty(&self) -> bool { self.sample_chunks == 0 }
+    fn is_empty(&self) -> bool { self.sample_chunks == 0 && self.world_block_statistics.is_empty() }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResolvedAuditConfig {
+    sample_chunks: usize,
+    heavy_world_block_statistics_chunk_budget: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -122,8 +152,20 @@ struct MapGenConfig {
 }
 
 impl MapGenConfig {
-    fn resolved_audit_config(&self, sample_chunks_override: Option<usize>) -> MapAuditConfig {
-        MapAuditConfig {
+    fn resolved_audit_config(
+        &self,
+        sample_chunks_override: Option<usize>,
+        heavy_world_block_statistics_chunk_budget_override: Option<usize>,
+        heavy_world_block_statistics_requested: bool,
+    ) -> ResolvedAuditConfig {
+        let configured_heavy_chunk_budget = (self.audit.world_block_statistics.chunk_budget > 0)
+            .then_some(self.audit.world_block_statistics.chunk_budget);
+        let heavy_world_block_statistics_chunk_budget =
+            heavy_world_block_statistics_chunk_budget_override
+                .or(configured_heavy_chunk_budget)
+                .or(heavy_world_block_statistics_requested.then_some(9))
+                .map(|budget| budget.max(1));
+        ResolvedAuditConfig {
             sample_chunks: sample_chunks_override
                 .or(if self.audit.sample_chunks > 0 {
                     Some(self.audit.sample_chunks)
@@ -132,6 +174,7 @@ impl MapGenConfig {
                 })
                 .unwrap_or(9)
                 .max(1),
+            heavy_world_block_statistics_chunk_budget,
         }
     }
 }
@@ -143,7 +186,13 @@ struct AuditRecipeSummary {
     topology_id: String,
     preset_id: String,
     world_alg_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    config_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    asset_hash: Option<String>,
     chunk_pass_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    static_feature_profile: Option<String>,
     seed_elements: bool,
 }
 
@@ -157,10 +206,20 @@ struct AuditSimSummary {
     water_alt_max: f32,
     water_alt_mean: f32,
     river_chunks: usize,
+    lake_chunks: usize,
+    ocean_chunks: usize,
     near_water_chunks: usize,
+    coastal_chunks: usize,
+    dry_land_chunks: usize,
+    surface_cave_entrance_chunks: usize,
+    land_ratio: f32,
+    ocean_ratio: f32,
+    coast_ratio: f32,
+    surface_cave_entrance_ratio: f32,
     site_chunks: usize,
     poi_chunks: usize,
     spot_kind_counts: BTreeMap<String, usize>,
+    site_kind_counts: BTreeMap<String, usize>,
     mean_temp: f32,
     mean_humidity: f32,
     marine_adjacency_compare: AuditMarineAdjacencyCompareSummary,
@@ -184,6 +243,8 @@ struct AuditPreviewMetrics {
     seed: u32,
     gen_opts: GenOpts,
     recipe: AuditRecipeSummary,
+    world_generate_time_contract: String,
+    world_generate_ms: u64,
     dimensions_lg: [u32; 2],
     chunk_dimensions: [u32; 2],
     max_height: f32,
@@ -248,7 +309,48 @@ struct AuditCompareStatus {
     artifacts: AuditCompareArtifacts,
     comparability: AuditCompareComparability,
     volatile_fields: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    heavy_opt_in: Option<AuditHeavyOptInStatus>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    deferred_heavy_artifacts: Vec<String>,
     notes: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct AuditHeavyOptInStatus {
+    lane: String,
+    execution_mode: String,
+    input_parity_contract: String,
+    comparability: String,
+    world_bin: String,
+    recipe_sidecar: String,
+    precheck_artifact: String,
+    output_artifact: String,
+    baseline_artifact: String,
+    requested_chunk_budget: usize,
+    notes: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct AuditHeavyPrecheckStatus {
+    schema_version: String,
+    lane: String,
+    execution_mode: String,
+    input_parity_contract: String,
+    requested_chunk_budget: usize,
+    world_bin: String,
+    world_bin_exists: bool,
+    recipe_sidecar: String,
+    recipe_sidecar_exists: bool,
+    strict_reload_status: String,
+    compat_entry: String,
+    compat_decision: String,
+    compat_failure: String,
+    expected_world_recipe_hash: String,
+    reloaded_world_recipe_hash: String,
+    expected_chunk_recipe_hash: String,
+    reloaded_chunk_recipe_hash: String,
+    detail: String,
 }
 
 #[derive(Serialize)]
@@ -332,10 +434,14 @@ fn main() {
             config,
             output_path,
             sample_chunks,
+            heavy_world_block_statistics,
+            heavy_world_block_statistics_chunk_budget,
         } => do_audit(
             config,
             output_path.unwrap_or_else(|| PathBuf::from("target/worldgen-audit")),
             sample_chunks,
+            heavy_world_block_statistics,
+            heavy_world_block_statistics_chunk_budget,
             command.no_progress,
             command.save_bin,
         ),
@@ -350,11 +456,12 @@ fn generate_one(
     span: &Span,
     threadpool: &ThreadPool,
     progress: Option<ProgressBar>,
-) -> (World, IndexOwned) {
+) -> (World, IndexOwned, u64) {
     if let Some(progress) = &progress {
         progress.set_message(seed.to_string());
     }
 
+    let world_generate_start = Instant::now();
     let (world, index) = World::generate(
         seed,
         WorldOpts {
@@ -366,6 +473,8 @@ fn generate_one(
             },
             calendar: None,
             compat_mode: Default::default(),
+            load_legacy_mode: Default::default(),
+            load_or_generate_sidecarless_mode: Default::default(),
         },
         threadpool,
         &|stage| {
@@ -385,6 +494,7 @@ fn generate_one(
         },
     )
     .expect("batch world generation should succeed");
+    let world_generate_ms = world_generate_start.elapsed().as_millis() as u64;
 
     if save_image
         && let Err(error) = write_preview_image(
@@ -411,7 +521,7 @@ fn generate_one(
         progress.finish()
     }
 
-    (world, index)
+    (world, index, world_generate_ms)
 }
 
 fn do_regenerate(
@@ -536,15 +646,29 @@ fn do_audit(
     config: String,
     output_root: PathBuf,
     sample_chunks_override: Option<usize>,
+    heavy_world_block_statistics: bool,
+    heavy_world_block_statistics_chunk_budget: Option<usize>,
     no_progress: bool,
     save_bin: bool,
 ) {
     let mut config: MapGenConfig =
         ron::from_str(&fs::read_to_string(config).expect("Failed to read generation file"))
             .expect("Could not parse generation file");
-    let audit_config = config.resolved_audit_config(sample_chunks_override);
+    let heavy_world_block_statistics_requested = heavy_world_block_statistics
+        || heavy_world_block_statistics_chunk_budget.is_some()
+        || config.audit.world_block_statistics.chunk_budget > 0;
+    let audit_config = config.resolved_audit_config(
+        sample_chunks_override,
+        heavy_world_block_statistics_chunk_budget,
+        heavy_world_block_statistics_requested,
+    );
     config.audit = MapAuditConfig {
         sample_chunks: audit_config.sample_chunks,
+        world_block_statistics: WorldBlockStatisticsAuditConfig {
+            chunk_budget: audit_config
+                .heavy_world_block_statistics_chunk_budget
+                .unwrap_or(0),
+        },
     };
     let run_id = format!(
         "{}-{}",
@@ -567,19 +691,29 @@ fn do_audit(
     let span = info_span!("Auditing map", run_id, map = ?config);
     let pool = rayon::ThreadPoolBuilder::new().build().unwrap();
     let base_path = run_dir.join("world");
+    let save_bin_for_audit = save_bin || heavy_world_block_statistics_requested;
+    let heavy_opt_in = audit_config
+        .heavy_world_block_statistics_chunk_budget
+        .map(|chunk_budget| build_heavy_world_block_statistics_status(chunk_budget, !save_bin));
 
-    let (world, index) = generate_one(
+    let (world, index, world_generate_ms) = generate_one(
         config.seed,
         &base_path,
         config.gen_opts.clone(),
-        (save_bin, false, false),
+        (save_bin_for_audit, false, false),
         &span,
         &pool,
         (!no_progress).then(progress_bar),
     );
     let index_ref = index.as_index_ref();
-    let preview_metrics =
-        build_preview_metrics(&run_id, &world, index_ref, &config.gen_opts, &pool);
+    let preview_metrics = build_preview_metrics(
+        &run_id,
+        &world,
+        index_ref,
+        &config.gen_opts,
+        &pool,
+        world_generate_ms,
+    );
     let chunk_stats = build_chunk_stats(
         &run_id,
         &world,
@@ -601,6 +735,10 @@ fn do_audit(
         &config.gen_opts,
         audit_config.sample_chunks,
     );
+    if let Some(heavy_opt_in) = heavy_opt_in.as_ref() {
+        write_heavy_world_block_statistics_precheck(&run_dir, &world, &pool, heavy_opt_in)
+            .expect("Could not write heavy world_block_statistics precheck");
+    }
 
     write_preview_image(&world, index_ref, &preview_dir.join("preview.png"))
         .expect("Could not write preview audit image");
@@ -625,6 +763,7 @@ fn do_audit(
             &chunk_stats,
             &runtime_matrix,
             &wildlife_runtime_matrix,
+            heavy_opt_in,
         ),
     )
     .expect("Could not write compare status");
@@ -738,21 +877,125 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), Box<dyn std::e
     Ok(())
 }
 
+fn recipe_sidecar_path_for_map_path(map_path: &Path) -> PathBuf {
+    let mut sidecar_path = map_path.as_os_str().to_owned();
+    sidecar_path.push(".recipe.ron");
+    PathBuf::from(sidecar_path)
+}
+
+fn write_heavy_world_block_statistics_precheck(
+    run_dir: &Path,
+    world: &World,
+    threadpool: &ThreadPool,
+    heavy_opt_in: &AuditHeavyOptInStatus,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let world_bin_path = run_dir.join(&heavy_opt_in.world_bin);
+    let recipe_sidecar_path = run_dir.join(&heavy_opt_in.recipe_sidecar);
+    let expected_manifest = world.sim().recipe_manifest();
+    let world_bin_exists = world_bin_path.is_file();
+    let recipe_sidecar_exists = recipe_sidecar_path.is_file();
+    if !world_bin_exists {
+        return Err(format!(
+            "heavy world_block_statistics parity requires '{}', but it does not exist",
+            world_bin_path.display()
+        )
+        .into());
+    }
+    if !recipe_sidecar_exists {
+        return Err(format!(
+            "heavy world_block_statistics parity requires '{}', but it does not exist",
+            recipe_sidecar_path.display()
+        )
+        .into());
+    }
+
+    let (reloaded_world, reloaded_index) = World::generate(
+        world.sim().seed,
+        WorldOpts {
+            seed_elements: expected_manifest.world_recipe.seed_elements,
+            world_file: FileOpts::Load(world_bin_path),
+            calendar: None,
+            compat_mode: Default::default(),
+            load_legacy_mode: Default::default(),
+            load_or_generate_sidecarless_mode: Default::default(),
+        },
+        threadpool,
+        &|_| {},
+    )?;
+    let compat_audit = reloaded_world.sim().compat_audit();
+    let reloaded_manifest = reloaded_world.sim().recipe_manifest();
+    let strict_reload_passed = compat_audit.entry.as_str() == "load"
+        && compat_audit.decision.as_str() == "loaded_existing"
+        && compat_audit.failure_kind.as_str() == "none"
+        && expected_manifest.world_recipe_hash == reloaded_manifest.world_recipe_hash
+        && expected_manifest.chunk_recipe_hash == reloaded_manifest.chunk_recipe_hash;
+    if !strict_reload_passed {
+        return Err(format!(
+            "heavy world_block_statistics strict reload parity failed: entry={}, decision={}, \
+             failure={}, expected_world_recipe_hash={}, reloaded_world_recipe_hash={}",
+            compat_audit.entry.as_str(),
+            compat_audit.decision.as_str(),
+            compat_audit.failure_kind.as_str(),
+            expected_manifest.world_recipe_hash,
+            reloaded_manifest.world_recipe_hash
+        )
+        .into());
+    }
+
+    world_block_statistics_example::write_bounded_statistics_artifact(
+        &reloaded_world,
+        reloaded_index.as_index_ref(),
+        heavy_opt_in.requested_chunk_budget,
+        &run_dir.join(&heavy_opt_in.output_artifact),
+    )?;
+
+    write_json(
+        &run_dir.join(&heavy_opt_in.precheck_artifact),
+        &AuditHeavyPrecheckStatus {
+            schema_version: "world_block_statistics_precheck_v1".to_owned(),
+            lane: heavy_opt_in.lane.clone(),
+            execution_mode: heavy_opt_in.execution_mode.clone(),
+            input_parity_contract: heavy_opt_in.input_parity_contract.clone(),
+            requested_chunk_budget: heavy_opt_in.requested_chunk_budget,
+            world_bin: heavy_opt_in.world_bin.clone(),
+            world_bin_exists,
+            recipe_sidecar: heavy_opt_in.recipe_sidecar.clone(),
+            recipe_sidecar_exists,
+            strict_reload_status: "passed".to_owned(),
+            compat_entry: compat_audit.entry.as_str().to_owned(),
+            compat_decision: compat_audit.decision.as_str().to_owned(),
+            compat_failure: compat_audit.failure_kind.as_str().to_owned(),
+            expected_world_recipe_hash: expected_manifest.world_recipe_hash.clone(),
+            reloaded_world_recipe_hash: reloaded_manifest.world_recipe_hash.clone(),
+            expected_chunk_recipe_hash: expected_manifest.chunk_recipe_hash.clone(),
+            reloaded_chunk_recipe_hash: reloaded_manifest.chunk_recipe_hash.clone(),
+            detail: "strict Load(path) successfully reloaded this run's saved world.bin plus \
+                     adjacent RecipeManifestV1 sidecar and emitted the bounded \
+                     heavy/world_block_statistics.normalized.json compare surface"
+                .to_owned(),
+        },
+    )?;
+    Ok(())
+}
+
 fn write_warnings_file(world_path: &Path, world: &World) -> Result<(), Box<dyn std::error::Error>> {
     let manifest = world.sim().recipe_manifest();
     let map_size_lg = world.sim().map_size_lg();
     let map_size = map_size_lg.vec();
     let mut warnings = vec![
-        "record-only recipe hashes are audit metadata and are not enforce keys yet".to_string(),
-        "chunk_stats.json records deterministic static chunk facts for the current audit path; \
-         run_id and sampled_chunks[*].generate_ms remain volatile"
+        "recipe provenance and hashes are serialized into normalized audit artifacts, currently \
+         participate in gating compare, and are not baseline selection keys"
+            .to_string(),
+        "compare normalization drops run_id fields while preview/world_generate_ms and \
+         chunk/sampled_chunks[*].generate_ms remain volatile and non-gating"
             .to_string(),
         "chunk_stats.json is produced through the explicit static chunk snapshot entry; runtime \
          supplement and rtsim thinning remain outside this contract"
             .to_string(),
-        "runtime/runtime_matrix.json records base_runtime_chunk, empty_overlay_runtime_chunk, and \
-         fixed_overlay_runtime_chunk variants from the world runtime chunk path without time \
-         context or rtsim thinning while preview metrics remain raw"
+        "runtime/runtime_matrix.json records base no-time chunk/supplement summaries, empty/fixed \
+         overlay chunk variants, fixed night/calendar full-return variants, and a dedicated \
+         baseline-night rtsim thinning sample surface driven by a fixed fixture while preview \
+         metrics remain raw"
             .to_string(),
     ];
 
@@ -783,7 +1026,10 @@ fn build_recipe_summary(world: &World) -> AuditRecipeSummary {
         topology_id: manifest.world_recipe.topology_id.as_str().to_owned(),
         preset_id: manifest.world_recipe.preset_id.as_str().to_owned(),
         world_alg_version: manifest.world_recipe.world_alg_version.clone(),
+        config_hash: manifest.world_recipe.config_hash.clone(),
+        asset_hash: manifest.world_recipe.asset_hash.clone(),
         chunk_pass_version: manifest.chunk_recipe.chunk_pass_version.clone(),
+        static_feature_profile: manifest.chunk_recipe.static_feature_profile.clone(),
         seed_elements: manifest.world_recipe.seed_elements,
     }
 }
@@ -794,6 +1040,7 @@ fn build_preview_metrics(
     index_ref: IndexRef,
     gen_opts: &GenOpts,
     threadpool: &ThreadPool,
+    world_generate_ms: u64,
 ) -> AuditPreviewMetrics {
     let sampler = world.sim();
     let map = world.get_map_data(index_ref, threadpool);
@@ -804,6 +1051,12 @@ fn build_preview_metrics(
         .iter()
         .copied()
         .collect::<BTreeSet<_>>();
+    let mut site_kind_counts = BTreeMap::new();
+    for site in world.civs().sites.values() {
+        *site_kind_counts
+            .entry(format!("{:?}", site.kind))
+            .or_insert(0) += 1;
+    }
     let starting_site_candidates = starting_site_selection
         .candidates
         .into_iter()
@@ -845,7 +1098,12 @@ fn build_preview_metrics(
     let mut water_alt_max = f32::NEG_INFINITY;
     let mut water_alt_sum = 0.0f64;
     let mut river_chunks = 0usize;
+    let mut lake_chunks = 0usize;
+    let mut ocean_chunks = 0usize;
     let mut near_water_chunks = 0usize;
+    let mut coastal_chunks = 0usize;
+    let mut dry_land_chunks = 0usize;
+    let mut surface_cave_entrance_chunks = 0usize;
     let mut site_chunks = 0usize;
     let mut poi_chunks = 0usize;
     let mut spot_kind_counts = BTreeMap::new();
@@ -870,6 +1128,8 @@ fn build_preview_metrics(
             water_alt_max = water_alt_max.max(chunk.water_alt);
             water_alt_sum += f64::from(chunk.water_alt);
             river_chunks += usize::from(chunk.river.is_river());
+            lake_chunks += usize::from(chunk.river.is_lake());
+            ocean_chunks += usize::from(chunk.river.is_ocean());
             near_water_chunks += usize::from(chunk.river.near_water());
             site_chunks += usize::from(!chunk.sites.is_empty());
             poi_chunks += usize::from(chunk.poi.is_some());
@@ -881,6 +1141,11 @@ fn build_preview_metrics(
 
             let static_marine_adjacent = static_marine_adjacent_at_chunk(sampler, chunk_pos)
                 .expect("chunk coordinates within world bounds");
+            coastal_chunks += usize::from(static_marine_adjacent && !chunk.river.is_ocean());
+            dry_land_chunks += usize::from(!chunk.river.near_water());
+            let water_occupied = chunk.river.near_water() || chunk.water_alt > chunk.alt;
+            surface_cave_entrance_chunks +=
+                usize::from(chunk.cliff_height > 0.0 && !water_occupied);
             let Some(runtime_marine_adjacent) =
                 sample_chunk_center_column(world, index_ref, chunk_pos)
                     .map(|column| column.marine_adjacent)
@@ -898,11 +1163,16 @@ fn build_preview_metrics(
     }
 
     let chunk_count = size.product() as usize;
+    let land_chunks = chunk_count.saturating_sub(ocean_chunks);
     AuditPreviewMetrics {
         run_id: run_id.to_owned(),
         seed: world.sim().seed,
         gen_opts: gen_opts.clone(),
         recipe: build_recipe_summary(world),
+        world_generate_time_contract: "record-only wall-clock elapsed milliseconds for this audit \
+                                       run's World::generate(...) call; volatile and non-gating"
+            .to_owned(),
+        world_generate_ms,
         dimensions_lg: [map.dimensions_lg.x, map.dimensions_lg.y],
         chunk_dimensions: [size.x, size.y],
         max_height: map.max_height,
@@ -921,10 +1191,20 @@ fn build_preview_metrics(
             water_alt_max,
             water_alt_mean: (water_alt_sum / chunk_count as f64) as f32,
             river_chunks,
+            lake_chunks,
+            ocean_chunks,
             near_water_chunks,
+            coastal_chunks,
+            dry_land_chunks,
+            surface_cave_entrance_chunks,
+            land_ratio: land_chunks as f32 / chunk_count as f32,
+            ocean_ratio: ocean_chunks as f32 / chunk_count as f32,
+            coast_ratio: coastal_chunks as f32 / chunk_count as f32,
+            surface_cave_entrance_ratio: surface_cave_entrance_chunks as f32 / chunk_count as f32,
             site_chunks,
             poi_chunks,
             spot_kind_counts,
+            site_kind_counts,
             mean_temp: (temp_sum / chunk_count as f64) as f32,
             mean_humidity: (humidity_sum / chunk_count as f64) as f32,
             marine_adjacency_compare: AuditMarineAdjacencyCompareSummary {
@@ -999,7 +1279,49 @@ fn build_compare_status(
     chunk_stats: &AuditChunkStatsFile,
     runtime_matrix: &batch_generate_runtime_audit::AuditChunkRuntimeMatrixFile,
     wildlife_runtime_matrix: &batch_generate_runtime_audit::AuditWildlifeRuntimeMatrixFile,
+    heavy_opt_in: Option<AuditHeavyOptInStatus>,
 ) -> AuditCompareStatus {
+    let mut notes = vec![
+        "compare/diff remains empty during single-run audit and may be populated later by \
+         external baseline verification tooling"
+            .to_owned(),
+        "strict chunk comparability applies to TerrainChunk-only facts after normalization \
+         removes run_id and compare filtering excludes declared volatile fields"
+            .to_owned(),
+        "chunk_stats.json intentionally stops before runtime supplement and rtsim finalize mutate \
+         the full returned-value contract"
+            .to_owned(),
+        "runtime/runtime_matrix.json captures the world runtime chunk path with both no-time and \
+         fixed night/calendar contexts, keeps supplement summaries separate from overlay-only \
+         chunk variants, and now also includes a dedicated baseline-night fixed fixture surface \
+         for rtsim_resource_thinning while leaving preview metrics unchanged"
+            .to_owned(),
+        "preview/metrics.json now records world_generate_ms as a record-only volatile field \
+         attached to this audit run's real World::generate(...) call"
+            .to_owned(),
+        "preview/metrics.json now records world-side starter-site selection as distinct profile \
+         and score stages using the same selection path that feeds possible_starting_sites"
+            .to_owned(),
+        "runtime/wildlife_runtime_matrix.json captures wildlife-only runtime spawns under fixed \
+         night and calendar contexts plus a static aquatic-fauna audit surface using dedicated \
+         deterministic samplers"
+            .to_owned(),
+        "world_block_statistics remains outside the default verifier lane; when explicitly \
+         requested it runs as a bounded heavy contract over the audited world's saved input \
+         instead of the legacy default-asset full-world scan"
+            .to_owned(),
+    ];
+    if heavy_opt_in.is_some() {
+        notes.push(
+            "heavy world_block_statistics opt-in now emits a bounded runtime chunk compare \
+             surface after run-owned strict reload parity; missing \
+             heavy/world_block_statistics_precheck.json or failed strict reload reports an input \
+             parity problem, missing heavy/world_block_statistics.normalized.json baseline or \
+             mismatches stay non-gating, and neither status changes the default verifier result"
+                .to_owned(),
+        );
+    }
+
     AuditCompareStatus {
         schema_version: "worldgen_compare_status_v2".to_owned(),
         run_id: run_id.to_owned(),
@@ -1035,33 +1357,57 @@ fn build_compare_status(
         },
         volatile_fields: vec![
             "preview/run_id".to_owned(),
+            "preview/world_generate_ms".to_owned(),
             "chunk/run_id".to_owned(),
             "runtime/run_id".to_owned(),
             "chunk/sampled_chunks[*]/generate_ms".to_owned(),
         ],
-        notes: vec![
-            "compare/diff remains empty during single-run audit and may be populated later by \
-             external baseline verification tooling"
+        heavy_opt_in,
+        deferred_heavy_artifacts: vec!["world_block_statistics".to_owned()],
+        notes,
+    }
+}
+
+fn build_heavy_world_block_statistics_status(
+    requested_chunk_budget: usize,
+    forced_save_bin: bool,
+) -> AuditHeavyOptInStatus {
+    let mut notes = vec![
+        "the heavy lane is opt-in only; unified audit emits a bounded runtime chunk compare \
+         surface and never falls back to the full-world default-asset scan"
+            .to_owned(),
+        "audit itself now performs a strict Load(path) reload over the run-owned world.bin plus \
+         adjacent recipe sidecar, records the result in the precheck artifact, and writes the \
+         bounded heavy/world_block_statistics.normalized.json surface from the reloaded world"
+            .to_owned(),
+        "the verifier compares this lane independently but keeps it non-gating for overall_status \
+         because the contract is still explicit heavy opt-in"
+            .to_owned(),
+    ];
+    if forced_save_bin {
+        notes.push(
+            "audit forced world.bin emission because heavy world_block_statistics parity requires \
+             a strict Load(path) input instead of the default asset world"
                 .to_owned(),
-            "strict chunk comparability applies to TerrainChunk-only facts after excluding \
-             declared volatile fields"
-                .to_owned(),
-            "chunk_stats.json intentionally stops before runtime supplement and rtsim finalize \
-             mutate the full returned-value contract"
-                .to_owned(),
-            "runtime/runtime_matrix.json captures the world runtime chunk path without time \
-             context or rtsim thinning, plus empty/fixed overlay application, without changing \
-             preview metrics"
-                .to_owned(),
-            "preview/metrics.json now records world-side starter-site selection as distinct \
-             profile and score stages using the same selection path that feeds \
-             possible_starting_sites"
-                .to_owned(),
-            "runtime/wildlife_runtime_matrix.json captures wildlife-only runtime spawns under \
-             fixed night and calendar contexts plus a static aquatic-fauna audit surface using \
-             dedicated deterministic samplers"
-                .to_owned(),
-        ],
+        );
+    }
+
+    AuditHeavyOptInStatus {
+        lane: "world_block_statistics".to_owned(),
+        execution_mode: "opt_in_bounded_compare_surface_v1".to_owned(),
+        input_parity_contract: "strict Load(path) over this run's saved world.bin plus adjacent \
+                                recipe sidecar"
+            .to_owned(),
+        comparability: "bounded_runtime_chunk_block_statistics_non_gating".to_owned(),
+        world_bin: "world.bin".to_owned(),
+        recipe_sidecar: recipe_sidecar_path_for_map_path(Path::new("world.bin"))
+            .display()
+            .to_string(),
+        precheck_artifact: "heavy/world_block_statistics_precheck.json".to_owned(),
+        output_artifact: "heavy/world_block_statistics.normalized.json".to_owned(),
+        baseline_artifact: "heavy/world_block_statistics.normalized.json".to_owned(),
+        requested_chunk_budget,
+        notes,
     }
 }
 

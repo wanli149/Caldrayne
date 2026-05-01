@@ -4,7 +4,9 @@ param(
     [string]$CorpusRoot,
     [string]$BaselineRoot,
     [string]$OutputRoot,
-    [int]$SampleChunks = 0
+    [int]$SampleChunks = 0,
+    [bool]$HeavyWorldBlockStatistics = $false,
+    [int]$HeavyWorldBlockStatisticsChunkBudget = 0
 )
 
 Set-StrictMode -Version Latest
@@ -42,6 +44,25 @@ if ($PSVersionTable.PSEdition -ne "Core" -or $PSVersionTable.PSVersion.Major -lt
     exit $LASTEXITCODE
 }
 
+function ConvertTo-BoolOrNull {
+    param([Parameter(Mandatory = $true)][AllowNull()]$Value)
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    if ($Value -is [bool]) {
+        return [bool]$Value
+    }
+
+    $stringValue = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($stringValue)) {
+        return $null
+    }
+
+    return [System.Convert]::ToBoolean($stringValue)
+}
+
 function Resolve-RepoPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -74,6 +95,8 @@ function Normalize-PreviewMetrics {
         seed = $json.seed
         gen_opts = $json.gen_opts
         recipe = $json.recipe
+        world_generate_time_contract = $json.world_generate_time_contract
+        world_generate_ms = $json.world_generate_ms
         dimensions_lg = $json.dimensions_lg
         chunk_dimensions = $json.chunk_dimensions
         max_height = $json.max_height
@@ -165,14 +188,54 @@ function Normalize-RuntimeMatrix {
         runtime_audit_mode = $json.runtime_audit_mode
         strict_determinism = $json.strict_determinism
         runtime_chunk_contract = $json.runtime_chunk_contract
+        contexts = $json.contexts
         fixed_overlay_fixture = $json.fixed_overlay_fixture
+        rtsim_resource_sampling_contract = $json.rtsim_resource_sampling_contract
+        rtsim_resource_fixture = $json.rtsim_resource_fixture
+        rtsim_resource_samples = @(
+            $json.rtsim_resource_samples | ForEach-Object {
+                [pscustomobject]@{
+                    chunk_pos = $_.chunk_pos
+                    selection_score = $_.selection_score
+                    resource_kind_count = $_.resource_kind_count
+                    baseline_night_full_density_runtime_chunk = $_.baseline_night_full_density_runtime_chunk
+                    baseline_night_full_density_runtime_supplement = [pscustomobject]@{
+                        entity_signature_count = $_.baseline_night_full_density_runtime_supplement.entity_signature_count
+                        entity_signatures = @($_.baseline_night_full_density_runtime_supplement.entity_signatures | Sort-Object)
+                        rtsim_max_resources = $_.baseline_night_full_density_runtime_supplement.rtsim_max_resources
+                    }
+                    baseline_night_full_density_rtsim_resource_block_counts = $_.baseline_night_full_density_rtsim_resource_block_counts
+                    baseline_night_thinned_runtime_chunk = $_.baseline_night_thinned_runtime_chunk
+                    baseline_night_thinned_runtime_supplement = [pscustomobject]@{
+                        entity_signature_count = $_.baseline_night_thinned_runtime_supplement.entity_signature_count
+                        entity_signatures = @($_.baseline_night_thinned_runtime_supplement.entity_signatures | Sort-Object)
+                        rtsim_max_resources = $_.baseline_night_thinned_runtime_supplement.rtsim_max_resources
+                    }
+                    baseline_night_thinned_rtsim_resource_block_counts = $_.baseline_night_thinned_rtsim_resource_block_counts
+                }
+            }
+        )
         sampled_chunks = @(
             $json.sampled_chunks | ForEach-Object {
                 [pscustomobject]@{
                     chunk_pos = $_.chunk_pos
                     base_runtime_chunk = $_.base_runtime_chunk
+                    base_runtime_supplement = [pscustomobject]@{
+                        entity_signature_count = $_.base_runtime_supplement.entity_signature_count
+                        entity_signatures = @($_.base_runtime_supplement.entity_signatures | Sort-Object)
+                    }
                     empty_overlay_runtime_chunk = $_.empty_overlay_runtime_chunk
                     fixed_overlay_runtime_chunk = $_.fixed_overlay_runtime_chunk
+                    baseline_night_runtime_chunk = $_.baseline_night_runtime_chunk
+                    baseline_night_runtime_supplement = [pscustomobject]@{
+                        entity_signature_count = $_.baseline_night_runtime_supplement.entity_signature_count
+                        entity_signatures = @($_.baseline_night_runtime_supplement.entity_signatures | Sort-Object)
+                    }
+                    halloween_night_runtime_chunk = $_.halloween_night_runtime_chunk
+                    halloween_night_runtime_supplement = [pscustomobject]@{
+                        entity_signature_count = $_.halloween_night_runtime_supplement.entity_signature_count
+                        entity_signatures = @($_.halloween_night_runtime_supplement.entity_signatures | Sort-Object)
+                    }
                 }
             }
         )
@@ -239,6 +302,51 @@ function Normalize-WildlifeRuntimeMatrix {
                         entity_signature_count = $_.halloween_night.entity_signature_count
                         entity_signatures = $_.halloween_night.entity_signatures
                     }
+                }
+            }
+        )
+    }
+}
+
+function Normalize-WorldBlockStatistics {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $json = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    return [pscustomobject]@{
+        schema_version = $json.schema_version
+        contract = $json.contract
+        comparability = $json.comparability
+        input_contract = $json.input_contract
+        runtime_chunk_entry = $json.runtime_chunk_entry
+        selection_contract = $json.selection_contract
+        strict_determinism = [bool]$json.strict_determinism
+        requested_chunk_budget = [int]$json.requested_chunk_budget
+        sampled_chunk_count = [int]$json.sampled_chunk_count
+        map_size_chunks = $json.map_size_chunks
+        world_recipe_hash = $json.world_recipe_hash
+        chunk_recipe_hash = $json.chunk_recipe_hash
+        topology_id = $json.topology_id
+        chunk_pass_version = $json.chunk_pass_version
+        aggregate = [pscustomobject]@{
+            block_total = $json.aggregate.block_total
+            non_air_blocks = $json.aggregate.non_air_blocks
+            sprite_total = $json.aggregate.sprite_total
+            block_kind_counts = $json.aggregate.block_kind_counts
+            sprite_kind_counts = $json.aggregate.sprite_kind_counts
+        }
+        sampled_chunks = @(
+            $json.sampled_chunks | ForEach-Object {
+                [pscustomobject]@{
+                    selection_rank = $_.selection_rank
+                    chunk_pos = $_.chunk_pos
+                    min_z = $_.min_z
+                    max_z = $_.max_z
+                    height = $_.height
+                    block_total = $_.block_total
+                    non_air_blocks = $_.non_air_blocks
+                    sprite_total = $_.sprite_total
+                    block_kind_counts = $_.block_kind_counts
+                    sprite_kind_counts = $_.sprite_kind_counts
                 }
             }
         )
@@ -533,7 +641,7 @@ function Convert-VolatileFieldToMatcher {
             }
 
             $diffPathPattern += '\.' + [System.Text.RegularExpressions.Regex]::Escape($arrayName)
-            if ($arrayName -ceq "sampled_chunks") {
+            if ($arrayName -ceq "sampled_chunks" -or $arrayName -ceq "rtsim_resource_samples") {
                 $diffPathPattern += '\[(?:\d+|chunk_pos=-?\d+,-?\d+)\]'
             } else {
                 $diffPathPattern += '\[\d+\]'
@@ -723,6 +831,15 @@ function Resolve-ArtifactComparisonExecution {
                 execution_reason = $null
             }
         }
+        "bounded_runtime_chunk_block_statistics_non_gating" {
+            return [pscustomobject]@{
+                artifact = $ArtifactName
+                comparability = $Comparability
+                execution_status = "compared"
+                gates_overall_status = $false
+                execution_reason = $null
+            }
+        }
         "sample_based_non_strict" {
             return [pscustomobject]@{
                 artifact = $ArtifactName
@@ -880,7 +997,7 @@ function Test-IsChunkPositionKeyedArrayPath {
         [string]$Path
     )
 
-    return $Path -ceq "$.sampled_chunks"
+    return $Path -ceq "$.sampled_chunks" -or $Path -ceq "$.rtsim_resource_samples"
 }
 
 function Try-GetChunkPositionKey {
@@ -1156,6 +1273,37 @@ function Build-StructuredArtifactDiff {
     }
 }
 
+function Build-StructuredArtifactDiffAllowingMissingActual {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ArtifactName,
+        [Parameter(Mandatory = $true)]
+        [string]$ActualPath,
+        [Parameter(Mandatory = $true)]
+        [string]$BaselinePath,
+        [object[]]$VolatileFieldMatchers
+    )
+
+    if (-not (Test-Path -LiteralPath $ActualPath)) {
+        return [pscustomobject]@{
+            schema_version = "worldgen_compare_artifact_diff_v1"
+            artifact = $ArtifactName
+            status = "actual_missing"
+            match = $false
+            actual = $ActualPath
+            baseline = $BaselinePath
+            difference_count = 0
+            differences = [object[]]@()
+        }
+    }
+
+    return Build-StructuredArtifactDiff `
+        -ArtifactName $ArtifactName `
+        -ActualPath $ActualPath `
+        -BaselinePath $BaselinePath `
+        -VolatileFieldMatchers $VolatileFieldMatchers
+}
+
 function Build-TextArtifactDiff {
     param(
         [Parameter(Mandatory = $true)]
@@ -1280,6 +1428,203 @@ function Resolve-CaseSampleChunks {
     return 0
 }
 
+function Resolve-HeavyWorldBlockStatisticsPrecheck {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RunDirPath,
+        [Parameter(Mandatory = $true)]
+        [string]$BaselineDirPath,
+        [Parameter(Mandatory = $true)]
+        [object]$HeavyContract
+    )
+
+    $lane = Get-RequiredStringPropertyValue `
+        -Value $HeavyContract `
+        -Name "lane" `
+        -Context "compare status heavy_opt_in"
+    $executionMode = Get-RequiredStringPropertyValue `
+        -Value $HeavyContract `
+        -Name "execution_mode" `
+        -Context "compare status heavy_opt_in"
+    $inputParityContract = Get-RequiredStringPropertyValue `
+        -Value $HeavyContract `
+        -Name "input_parity_contract" `
+        -Context "compare status heavy_opt_in"
+    $comparability = Get-RequiredStringPropertyValue `
+        -Value $HeavyContract `
+        -Name "comparability" `
+        -Context "compare status heavy_opt_in"
+    $worldBinContractPath = Get-RequiredStringPropertyValue `
+        -Value $HeavyContract `
+        -Name "world_bin" `
+        -Context "compare status heavy_opt_in"
+    $recipeSidecarContractPath = Get-RequiredStringPropertyValue `
+        -Value $HeavyContract `
+        -Name "recipe_sidecar" `
+        -Context "compare status heavy_opt_in"
+    $precheckArtifactContractPath = Get-RequiredStringPropertyValue `
+        -Value $HeavyContract `
+        -Name "precheck_artifact" `
+        -Context "compare status heavy_opt_in"
+    $outputArtifactContractPath = Get-RequiredStringPropertyValue `
+        -Value $HeavyContract `
+        -Name "output_artifact" `
+        -Context "compare status heavy_opt_in"
+    $baselineArtifactContractPath = Get-RequiredStringPropertyValue `
+        -Value $HeavyContract `
+        -Name "baseline_artifact" `
+        -Context "compare status heavy_opt_in"
+    $requestedChunkBudgetRaw = Get-RequiredObjectPropertyValue `
+        -Value $HeavyContract `
+        -Name "requested_chunk_budget" `
+        -Context "compare status heavy_opt_in"
+    try {
+        $requestedChunkBudget = [int]$requestedChunkBudgetRaw
+    } catch {
+        throw "Property 'requested_chunk_budget' in compare status heavy_opt_in must be an integer"
+    }
+
+    $contractNotesValue = Get-OptionalObjectPropertyValue -Value $HeavyContract -Name "notes"
+    $contractNotes = if ($null -eq $contractNotesValue) {
+        @()
+    } else {
+        @($contractNotesValue) | ForEach-Object { [string]$_ }
+    }
+
+    $resolvedWorldBinPath = Resolve-RunOwnedContractPath `
+        -RunDirPath $RunDirPath `
+        -ContractPath $worldBinContractPath `
+        -Context "world_block_statistics heavy world.bin"
+    $resolvedRecipeSidecarPath = Resolve-RunOwnedContractPath `
+        -RunDirPath $RunDirPath `
+        -ContractPath $recipeSidecarContractPath `
+        -Context "world_block_statistics heavy recipe sidecar"
+    $resolvedPrecheckArtifactPath = Resolve-RunOwnedContractPath `
+        -RunDirPath $RunDirPath `
+        -ContractPath $precheckArtifactContractPath `
+        -Context "world_block_statistics heavy precheck artifact"
+    $resolvedOutputArtifactPath = Resolve-RunOwnedContractPath `
+        -RunDirPath $RunDirPath `
+        -ContractPath $outputArtifactContractPath `
+        -Context "world_block_statistics heavy output artifact"
+    $resolvedBaselineArtifactPath = [System.IO.Path]::GetFullPath(
+        (Join-Path $BaselineDirPath $baselineArtifactContractPath)
+    )
+    $worldBinExists = Test-Path -LiteralPath $resolvedWorldBinPath
+    $recipeSidecarExists = Test-Path -LiteralPath $resolvedRecipeSidecarPath
+    $precheckArtifactExists = Test-Path -LiteralPath $resolvedPrecheckArtifactPath
+    $outputArtifactExists = Test-Path -LiteralPath $resolvedOutputArtifactPath
+    $baselineExists = Test-Path -LiteralPath $resolvedBaselineArtifactPath
+    $precheckStatus = $null
+    if ($precheckArtifactExists) {
+        $precheckStatus = Read-JsonFile `
+            -Path $resolvedPrecheckArtifactPath `
+            -Context "world_block_statistics heavy precheck artifact"
+    }
+    $strictReloadStatus = if ($null -eq $precheckStatus) {
+        $null
+    } else {
+        Get-OptionalStringPropertyValue -Value $precheckStatus -Name "strict_reload_status"
+    }
+    $compatEntry = if ($null -eq $precheckStatus) {
+        $null
+    } else {
+        Get-OptionalStringPropertyValue -Value $precheckStatus -Name "compat_entry"
+    }
+    $compatDecision = if ($null -eq $precheckStatus) {
+        $null
+    } else {
+        Get-OptionalStringPropertyValue -Value $precheckStatus -Name "compat_decision"
+    }
+    $compatFailure = if ($null -eq $precheckStatus) {
+        $null
+    } else {
+        Get-OptionalStringPropertyValue -Value $precheckStatus -Name "compat_failure"
+    }
+    $precheckDetail = if ($null -eq $precheckStatus) {
+        $null
+    } else {
+        Get-OptionalStringPropertyValue -Value $precheckStatus -Name "detail"
+    }
+
+    $summaryNotes = [System.Collections.Generic.List[string]]::new()
+    foreach ($note in $contractNotes) {
+        $summaryNotes.Add($note)
+    }
+    if (-not $worldBinExists) {
+        $summaryNotes.Add(
+            "precheck stopped before any heavy execution because the run-owned world.bin contract path is missing"
+        )
+    } elseif (-not $recipeSidecarExists) {
+        $summaryNotes.Add(
+            "precheck stopped before any heavy execution because the run-owned recipe sidecar contract path is missing"
+        )
+    } elseif (-not $precheckArtifactExists) {
+        $summaryNotes.Add(
+            "precheck output is missing even though the heavy lane was requested; audit did not record strict reload parity"
+        )
+    } elseif ($strictReloadStatus -cne "passed") {
+        $summaryNotes.Add(
+            "the emitted heavy precheck artifact did not report a passed strict reload parity status"
+        )
+    } elseif (-not $outputArtifactExists) {
+        $summaryNotes.Add(
+            "strict reload parity passed, but the bounded heavy/world_block_statistics.normalized.json artifact was not emitted"
+        )
+    } elseif (-not $baselineExists) {
+        $summaryNotes.Add(
+            "bounded heavy compare surface was emitted, but the heavy baseline artifact is missing"
+        )
+    } else {
+        $summaryNotes.Add(
+            "saved-world parity, bounded output emission, and baseline presence all passed; the heavy diff remains non-gating in this tranche"
+        )
+    }
+    if (-not [string]::IsNullOrWhiteSpace($precheckDetail)) {
+        $summaryNotes.Add($precheckDetail)
+    }
+
+    return [pscustomobject]@{
+        requested = $true
+        lane = $lane
+        execution_mode = $executionMode
+        input_parity_contract = $inputParityContract
+        comparability = $comparability
+        requested_chunk_budget = $requestedChunkBudget
+        world_bin = $resolvedWorldBinPath
+        world_bin_exists = $worldBinExists
+        recipe_sidecar = $resolvedRecipeSidecarPath
+        recipe_sidecar_exists = $recipeSidecarExists
+        precheck_artifact = $resolvedPrecheckArtifactPath
+        precheck_artifact_exists = $precheckArtifactExists
+        strict_reload_status = $strictReloadStatus
+        compat_entry = $compatEntry
+        compat_decision = $compatDecision
+        compat_failure = $compatFailure
+        output_artifact = $resolvedOutputArtifactPath
+        output_artifact_exists = $outputArtifactExists
+        baseline_artifact = $resolvedBaselineArtifactPath
+        baseline_exists = $baselineExists
+        gates_overall_status = $false
+        status = if (-not $worldBinExists) {
+            "world_bin_missing"
+        } elseif (-not $recipeSidecarExists) {
+            "recipe_sidecar_missing"
+        } elseif (-not $precheckArtifactExists) {
+            "precheck_missing"
+        } elseif ($strictReloadStatus -cne "passed") {
+            "precheck_failed"
+        } elseif (-not $outputArtifactExists) {
+            "output_artifact_missing"
+        } elseif (-not $baselineExists) {
+            "baseline_missing"
+        } else {
+            "precheck_passed"
+        }
+        notes = @($summaryNotes)
+    }
+}
+
 function Invoke-AuditVerifyCase {
     param(
         [Parameter(Mandatory = $true)]
@@ -1291,7 +1636,11 @@ function Invoke-AuditVerifyCase {
         [Parameter(Mandatory = $true)]
         [string]$OutputRootPath,
         [Parameter(Mandatory = $true)]
-        [int]$CaseSampleChunks
+        [int]$CaseSampleChunks,
+        [Parameter(Mandatory = $true)]
+        [bool]$EnableHeavyWorldBlockStatistics,
+        [Parameter(Mandatory = $true)]
+        [int]$HeavyWorldBlockStatisticsChunkBudget
     )
 
     $corpusConfigPath = Resolve-RepoPath -RepoRoot $RepoRoot -Path $CorpusConfig
@@ -1329,6 +1678,15 @@ function Invoke-AuditVerifyCase {
         )
         if ($CaseSampleChunks -gt 0) {
             $cargoArgs += @("--sample-chunks", $CaseSampleChunks)
+        }
+        if ($EnableHeavyWorldBlockStatistics) {
+            $cargoArgs += @("--heavy-world-block-statistics")
+            if ($HeavyWorldBlockStatisticsChunkBudget -gt 0) {
+                $cargoArgs += @(
+                    "--heavy-world-block-statistics-chunk-budget",
+                    $HeavyWorldBlockStatisticsChunkBudget
+                )
+            }
         }
         & cargo @cargoArgs | Out-Host
         if ($LASTEXITCODE -ne 0) {
@@ -1391,6 +1749,26 @@ function Invoke-AuditVerifyCase {
         @()
     } else {
         @($volatileFieldsValue) | ForEach-Object { [string]$_ }
+    }
+    $deferredHeavyArtifactsValue = Get-OptionalObjectPropertyValue `
+        -Value $compareStatus `
+        -Name "deferred_heavy_artifacts"
+    $deferredHeavyArtifacts = if ($null -eq $deferredHeavyArtifactsValue) {
+        @()
+    } else {
+        @($deferredHeavyArtifactsValue) | ForEach-Object { [string]$_ }
+    }
+    $heavyOptInContract = Get-OptionalObjectPropertyValue -Value $compareStatus -Name "heavy_opt_in"
+    if ($EnableHeavyWorldBlockStatistics -and $null -eq $heavyOptInContract) {
+        throw "Heavy world_block_statistics opt-in was requested, but compare/status.json did not declare a heavy_opt_in contract."
+    }
+    $heavyWorldBlockStatisticsSummary = if ($null -eq $heavyOptInContract) {
+        $null
+    } else {
+        Resolve-HeavyWorldBlockStatisticsPrecheck `
+            -RunDirPath $runDir.FullName `
+            -BaselineDirPath $baselineDirPath `
+            -HeavyContract $heavyOptInContract
     }
 
     New-Item -ItemType Directory -Path $compareDiffDir -Force | Out-Null
@@ -1542,6 +1920,58 @@ function Invoke-AuditVerifyCase {
     $wildlifeRuntimeMatrixDiff = Convert-ToExecutedArtifactDiff -RawDiff $wildlifeRuntimeMatrixRawDiff -Execution $wildlifeRuntimeMatrixExecution
     $warningsDiff = Convert-ToExecutedArtifactDiff -RawDiff $warningsRawDiff -Execution $warningsExecution
     $artifactDiffs = @($previewDiff, $chunkDiff, $runtimeMatrixDiff, $wildlifeRuntimeMatrixDiff, $warningsDiff)
+    if ($null -ne $heavyWorldBlockStatisticsSummary) {
+        $actualHeavyWorldBlockStatisticsPath = Join-Path $compareDiffDir "world_block_statistics.normalized.json"
+        $heavyWorldBlockStatisticsDiffPath = Join-Path $compareDiffDir "world_block_statistics.diff.json"
+        if ([bool]$heavyWorldBlockStatisticsSummary.output_artifact_exists) {
+            $normalizedHeavyWorldBlockStatistics = Normalize-WorldBlockStatistics `
+                -Path $heavyWorldBlockStatisticsSummary.output_artifact
+            Write-NormalizedJson `
+                -Value $normalizedHeavyWorldBlockStatistics `
+                -Path $actualHeavyWorldBlockStatisticsPath
+        }
+        $heavyWorldBlockStatisticsExecution = Resolve-ArtifactComparisonExecution `
+            -ArtifactName "world_block_statistics" `
+            -Comparability ([string]$heavyWorldBlockStatisticsSummary.comparability)
+        $heavyWorldBlockStatisticsRawDiff = Build-StructuredArtifactDiffAllowingMissingActual `
+            -ArtifactName "world_block_statistics" `
+            -ActualPath $actualHeavyWorldBlockStatisticsPath `
+            -BaselinePath ([string]$heavyWorldBlockStatisticsSummary.baseline_artifact) `
+            -VolatileFieldMatchers @()
+        $heavyWorldBlockStatisticsDiff = Convert-ToExecutedArtifactDiff `
+            -RawDiff $heavyWorldBlockStatisticsRawDiff `
+            -Execution $heavyWorldBlockStatisticsExecution
+        Write-NormalizedJson `
+            -Value $heavyWorldBlockStatisticsDiff `
+            -Path $heavyWorldBlockStatisticsDiffPath
+        $heavyWorldBlockStatisticsSummary | Add-Member `
+            -NotePropertyName actual `
+            -NotePropertyValue $actualHeavyWorldBlockStatisticsPath `
+            -Force
+        $heavyWorldBlockStatisticsSummary | Add-Member `
+            -NotePropertyName diff `
+            -NotePropertyValue $heavyWorldBlockStatisticsDiffPath `
+            -Force
+        $heavyWorldBlockStatisticsSummary | Add-Member `
+            -NotePropertyName execution_status `
+            -NotePropertyValue $heavyWorldBlockStatisticsDiff.execution_status `
+            -Force
+        $heavyWorldBlockStatisticsSummary | Add-Member `
+            -NotePropertyName diff_status `
+            -NotePropertyValue $heavyWorldBlockStatisticsDiff.status `
+            -Force
+        $heavyWorldBlockStatisticsSummary | Add-Member `
+            -NotePropertyName difference_count `
+            -NotePropertyValue ([int]$heavyWorldBlockStatisticsDiff.difference_count) `
+            -Force
+        $heavyWorldBlockStatisticsSummary | Add-Member `
+            -NotePropertyName match `
+            -NotePropertyValue $heavyWorldBlockStatisticsDiff.match `
+            -Force
+        if ([string]$heavyWorldBlockStatisticsSummary.status -ceq "precheck_passed") {
+            $heavyWorldBlockStatisticsSummary.status = [string]$heavyWorldBlockStatisticsDiff.status
+        }
+    }
 
     $previewMatch = $previewDiff.match
     $chunkMatch = $chunkDiff.match
@@ -1582,8 +2012,16 @@ function Invoke-AuditVerifyCase {
             compare_mode = $compareMode
             diff_dir = $compareDiffDir
             volatile_fields = $compareVolatileFields
+            deferred_heavy_artifacts = $deferredHeavyArtifacts
             recognized_volatile_fields = $recognizedVolatileFields
             unrecognized_volatile_fields = $unrecognizedVolatileFields
+        }
+        heavy_lanes = if ($null -eq $heavyWorldBlockStatisticsSummary) {
+            [pscustomobject]@{}
+        } else {
+            [pscustomobject]@{
+                world_block_statistics = $heavyWorldBlockStatisticsSummary
+            }
         }
         baseline_missing = $gatingMissingBaselineFiles.Count -gt 0
         missing_baseline_files = $missingBaselineFiles
@@ -1670,6 +2108,9 @@ function Invoke-AuditVerifyCase {
         baseline_missing = $summary.baseline_missing
         missing_baseline_files = $summary.missing_baseline_files
         compared_artifacts = $summary.compared_artifacts
+        heavy_lanes = $summary.heavy_lanes
+        heavy_world_block_statistics_enabled = $EnableHeavyWorldBlockStatistics
+        heavy_world_block_statistics_chunk_budget = $HeavyWorldBlockStatisticsChunkBudget
         overall_status = $summary.overall_status
         summary_path = $summaryPath
     }
@@ -1710,7 +2151,9 @@ if ($isSingleCaseMode) {
         -CorpusConfig $CorpusConfig `
         -BaselineDir $BaselineDir `
         -OutputRootPath $resolvedOutputRoot `
-        -CaseSampleChunks $singleCaseSampleChunks
+        -CaseSampleChunks $singleCaseSampleChunks `
+        -EnableHeavyWorldBlockStatistics $HeavyWorldBlockStatistics `
+        -HeavyWorldBlockStatisticsChunkBudget $HeavyWorldBlockStatisticsChunkBudget
 
     if ($singleCaseSummary.overall_status -ne "match") {
         throw "Worldgen audit baseline verification failed with status '$($singleCaseSummary.overall_status)'. Summary: $($singleCaseSummary.summary_path)"
@@ -1757,7 +2200,9 @@ foreach ($caseFile in $caseFiles) {
             -CorpusConfig $caseFile.FullName `
             -BaselineDir $caseBaselineDir `
             -OutputRootPath $caseOutputRoot `
-            -CaseSampleChunks $caseSampleChunks
+            -CaseSampleChunks $caseSampleChunks `
+            -EnableHeavyWorldBlockStatistics $HeavyWorldBlockStatistics `
+            -HeavyWorldBlockStatisticsChunkBudget $HeavyWorldBlockStatisticsChunkBudget
 
         $caseResults += [pscustomobject]@{
             case = Normalize-PathForSummary -Path $relativeCasePath
@@ -1767,6 +2212,7 @@ foreach ($caseFile in $caseFiles) {
             baseline_dir = $caseSummary.baseline_dir
             run_dir = $caseSummary.run_dir
             summary_path = $caseSummary.summary_path
+            heavy_lanes = $caseSummary.heavy_lanes
             overall_status = $caseSummary.overall_status
             missing_baseline_files = $caseSummary.missing_baseline_files
             error_message = $null
@@ -1780,6 +2226,7 @@ foreach ($caseFile in $caseFiles) {
             baseline_dir = $caseBaselineDir
             run_dir = $null
             summary_path = $null
+            heavy_lanes = [pscustomobject]@{}
             overall_status = "error"
             missing_baseline_files = @()
             error_message = $_.Exception.Message
@@ -1790,6 +2237,44 @@ foreach ($caseFile in $caseFiles) {
 $statusCountsMap = [ordered]@{}
 foreach ($status in "match", "skipped", "baseline_missing", "mismatch", "error") {
     $statusCountsMap[$status] = @($caseResults | Where-Object { $_.overall_status -eq $status }).Count
+}
+
+$heavyLaneStatusCountsMap = [ordered]@{}
+foreach (
+    $status in
+    "not_requested",
+    "precheck_missing",
+    "precheck_failed",
+    "baseline_missing",
+    "actual_missing",
+    "match",
+    "mismatch",
+    "skipped",
+    "error"
+) {
+    $heavyLaneStatusCountsMap[$status] = 0
+}
+foreach ($caseResult in $caseResults) {
+    $heavyStatus = "not_requested"
+    $heavyLane = $null
+    if ($null -ne $caseResult.heavy_lanes) {
+        $heavyLane = Get-OptionalObjectPropertyValue `
+            -Value $caseResult.heavy_lanes `
+            -Name "world_block_statistics"
+    }
+    if ($null -ne $heavyLane) {
+        $resolvedHeavyStatus = Get-OptionalStringPropertyValue -Value $heavyLane -Name "status"
+        if (-not [string]::IsNullOrWhiteSpace($resolvedHeavyStatus)) {
+            $heavyStatus = $resolvedHeavyStatus
+        }
+    } elseif ($caseResult.overall_status -eq "error" -and [bool]$HeavyWorldBlockStatistics) {
+        $heavyStatus = "error"
+    }
+
+    if (-not $heavyLaneStatusCountsMap.Contains($heavyStatus)) {
+        $heavyLaneStatusCountsMap[$heavyStatus] = 0
+    }
+    $heavyLaneStatusCountsMap[$heavyStatus] += 1
 }
 
 $rootOverallStatus = if ($statusCountsMap["error"] -gt 0) {
@@ -1805,18 +2290,51 @@ $rootOverallStatus = if ($statusCountsMap["error"] -gt 0) {
 }
 
 $rootSummaryPath = Join-Path $resolvedOutputRoot "summary.json"
+$heavyInvocationContract = [pscustomobject]@{
+    enabled = [bool]$HeavyWorldBlockStatistics
+    requested_chunk_budget = [int]$HeavyWorldBlockStatisticsChunkBudget
+    mode = if ([bool]$HeavyWorldBlockStatistics) {
+        "opt_in_non_gating"
+    } else {
+        "disabled"
+    }
+}
 $rootSummary = [pscustomobject]@{
-    schema_version = "worldgen_compare_root_summary_v2"
+    schema_version = "worldgen_compare_root_summary_v3"
     corpus_root = $CorpusRoot
     baseline_root = $BaselineRoot
     output_root = $resolvedOutputRoot
+    heavy_world_block_statistics = $heavyInvocationContract
     case_count = $caseResults.Count
     status_counts = [pscustomobject]$statusCountsMap
+    heavy_lane_status_counts = [pscustomobject]$heavyLaneStatusCountsMap
     cases = $caseResults
     overall_status = $rootOverallStatus
 }
 
 Write-NormalizedJson -Value $rootSummary -Path $rootSummaryPath
+
+$githubStepSummaryPath = $env:GITHUB_STEP_SUMMARY
+if (-not [string]::IsNullOrWhiteSpace($githubStepSummaryPath)) {
+    $heavyMatchCount = [int]$heavyLaneStatusCountsMap["match"]
+    $heavyMismatchCount = [int]$heavyLaneStatusCountsMap["mismatch"]
+    $heavyPrecheckFailedCount = [int]$heavyLaneStatusCountsMap["precheck_failed"]
+    $heavyPrecheckMissingCount = [int]$heavyLaneStatusCountsMap["precheck_missing"]
+    $heavyBaselineMissingCount = [int]$heavyLaneStatusCountsMap["baseline_missing"]
+    $heavyActualMissingCount = [int]$heavyLaneStatusCountsMap["actual_missing"]
+    $heavyErrorCount = [int]$heavyLaneStatusCountsMap["error"]
+
+    @"
+## Worldgen audit verifier result
+- overall status: `$rootOverallStatus`
+- case count: `$($caseResults.Count)`
+- root summary: `$rootSummaryPath`
+- heavy world_block_statistics requested: `$([bool]$HeavyWorldBlockStatistics)`
+- heavy world_block_statistics chunk budget: `$([int]$HeavyWorldBlockStatisticsChunkBudget)`
+- heavy lane status counts: `match=$heavyMatchCount`, `mismatch=$heavyMismatchCount`, `precheck_failed=$heavyPrecheckFailedCount`, `precheck_missing=$heavyPrecheckMissingCount`, `baseline_missing=$heavyBaselineMissingCount`, `actual_missing=$heavyActualMissingCount`, `error=$heavyErrorCount`
+- heavy lane remains opt-in and non-gating; root verdict still follows the default gating artifacts
+"@ | Out-File -FilePath $githubStepSummaryPath -Encoding utf8 -Append
+}
 
 if ($rootOverallStatus -ne "match") {
     throw "Worldgen audit root verification failed with status '$rootOverallStatus'. Summary: $rootSummaryPath"

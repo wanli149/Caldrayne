@@ -1,10 +1,173 @@
 use super::*;
 use crate::web::bind_listener;
+#[cfg(feature = "worldgen")]
+use crate::web::{run_with_listener, smoke_http_get};
+#[cfg(feature = "worldgen")]
+use crate::{
+    StartupWorldCompatObservability, apply_startup_world_compat_observability,
+    startup_health_state, startup_runtime_observability_inventory,
+};
+#[cfg(feature = "worldgen")]
+use prometheus::Registry;
+#[cfg(feature = "worldgen")] use std::sync::Arc;
 use std::{
+    collections::BTreeMap,
     fs,
     net::SocketAddr,
     time::{SystemTime, UNIX_EPOCH},
 };
+#[cfg(feature = "worldgen")]
+use tokio::sync::Notify;
+
+#[cfg(feature = "worldgen")]
+#[derive(Clone, Debug)]
+struct SectionSnapshotFixture {
+    top_level_fields: BTreeMap<&'static str, &'static str>,
+    field_values: BTreeMap<&'static str, &'static str>,
+}
+
+#[cfg(feature = "worldgen")]
+impl SectionSnapshotFixture {
+    fn from_section_example(example: &ExternalRecordSectionExampleContract) -> Self {
+        let mut top_level_fields = BTreeMap::new();
+        top_level_fields.insert("record_kind", example.record_kind);
+        top_level_fields.insert("section_signal", example.section_signal);
+
+        let mut field_values = BTreeMap::new();
+        for field in &example.example_fields {
+            if field.name == "prior_result_statuses" {
+                top_level_fields.insert(field.name, field.value);
+            } else {
+                field_values.insert(field.name, field.value);
+            }
+        }
+
+        Self {
+            top_level_fields,
+            field_values,
+        }
+    }
+
+    fn remove_top_level_field(&mut self, name: &'static str) { self.top_level_fields.remove(name); }
+
+    fn remove_field_value(&mut self, name: &'static str) { self.field_values.remove(name); }
+
+    fn set_field_value(&mut self, name: &'static str, value: &'static str) {
+        self.field_values.insert(name, value);
+    }
+}
+
+#[cfg(feature = "worldgen")]
+#[derive(Debug, PartialEq, Eq)]
+struct SectionSnapshotValidationFixtureResult {
+    stage_status: &'static str,
+    missing_required_fields: Vec<&'static str>,
+    failed_additional_checks: Vec<&'static str>,
+}
+
+#[cfg(feature = "worldgen")]
+fn push_unique_field(fields: &mut Vec<&'static str>, field: &'static str) {
+    if !fields.contains(&field) {
+        fields.push(field);
+    }
+}
+
+#[cfg(feature = "worldgen")]
+fn validate_world_compat_follow_up_history_proof_fixture(
+    validation: &ExternalSectionInstanceValidationContract,
+    snapshot: &SectionSnapshotFixture,
+) -> SectionSnapshotValidationFixtureResult {
+    let mut missing_required_fields = Vec::new();
+    let mut failed_additional_checks = Vec::new();
+
+    for field in &validation.snapshot_input_contract.required_top_level_fields {
+        if field.name == validation.snapshot_input_contract.field_values_key {
+            continue;
+        }
+        if !snapshot.top_level_fields.contains_key(field.name) {
+            push_unique_field(&mut missing_required_fields, field.name);
+        }
+    }
+
+    for field in &validation
+        .snapshot_input_contract
+        .always_present_field_values
+    {
+        if !snapshot.field_values.contains_key(field.name) {
+            push_unique_field(&mut missing_required_fields, field.name);
+        }
+    }
+
+    let result_status = snapshot
+        .field_values
+        .get(validation.lifecycle_state_field)
+        .copied();
+
+    if let Some(result_status) = result_status {
+        if matches!(result_status, "approved" | "rolled-back") {
+            for field in [
+                "rollback_reference",
+                "archive_reference",
+                validation.source_record_state_field,
+                "post_archive_verification_reference",
+            ] {
+                if !snapshot.field_values.contains_key(field) {
+                    push_unique_field(&mut missing_required_fields, field);
+                }
+            }
+        }
+
+        let expected_prior_result_statuses = match result_status {
+            "approved" => Some("[\"exception-accepted\"]"),
+            "rolled-back" => Some("[\"approved\"]"),
+            _ => None,
+        };
+        if let Some(expected) = expected_prior_result_statuses {
+            match snapshot
+                .top_level_fields
+                .get(validation.snapshot_input_contract.prior_result_statuses_key)
+                .copied()
+            {
+                Some(actual) if actual == expected => {},
+                Some(_) => {
+                    failed_additional_checks.push("prior_result_statuses history proof mismatch")
+                },
+                None => push_unique_field(
+                    &mut missing_required_fields,
+                    validation.snapshot_input_contract.prior_result_statuses_key,
+                ),
+            }
+        }
+
+        match snapshot
+            .field_values
+            .get(validation.source_record_state_field)
+            .copied()
+        {
+            Some(source_record_state) if source_record_state == result_status => {},
+            Some(_) => {
+                failed_additional_checks.push("source_record_state must match result_status");
+            },
+            None => push_unique_field(
+                &mut missing_required_fields,
+                validation.source_record_state_field,
+            ),
+        }
+    }
+
+    let stage_status = if missing_required_fields.is_empty() && failed_additional_checks.is_empty()
+    {
+        "valid"
+    } else {
+        "invalid"
+    };
+
+    SectionSnapshotValidationFixtureResult {
+        stage_status,
+        missing_required_fields,
+        failed_additional_checks,
+    }
+}
 
 fn unique_temp_dir() -> std::path::PathBuf {
     let unique = SystemTime::now()
@@ -20,12 +183,15 @@ fn test_runtime_observability_inventory() -> RuntimeObservabilityInventory {
     set_world_compat_observability_status(
         &inventory,
         "record",
+        "allow",
+        "allow",
         server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::Load),
         &server::RecipeManifestV1::record_only(
             server::DEFAULT_WORLD_SEED,
             &server::GenOpts::default(),
             true,
         ),
+        false,
     );
     inventory
 }
@@ -1964,6 +2130,27 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
             .any(|endpoint| *endpoint == "/health/recovery/drill")
     );
     assert!(report.operator_consumption.contains("authoritative"));
+    #[cfg(feature = "worldgen")]
+    {
+        assert_eq!(report.world_compat.status, "world-compat-clear");
+        assert_eq!(report.world_compat.source_surface, "world-compat");
+        assert_eq!(
+            report.world_compat.configured_mode.as_deref(),
+            Some("record")
+        );
+        assert_eq!(
+            report.world_compat.load_legacy_mode.as_deref(),
+            Some("allow")
+        );
+        assert_eq!(
+            report.world_compat.compat_entry,
+            Some(server::CompatEntryKindV1::Load.as_str())
+        );
+        assert_eq!(
+            report.world_compat.topology_id.as_deref(),
+            Some("bounded_plane_v1")
+        );
+    }
 }
 
 #[test]
@@ -3338,6 +3525,10 @@ fn section_instance_validation_contracts_expose_snapshot_input_contracts() {
     let governance = governance_section_instance_validation_contract(
         &governance_required_decision_field_contracts(),
     );
+    #[cfg(feature = "worldgen")]
+    let world_compat = world_compat_section_instance_validation_contract(
+        &world_compat_required_decision_field_contracts(),
+    );
     let management_auth = management_auth_section_instance_validation_contract(
         &management_auth_required_decision_field_contracts(),
     );
@@ -3423,10 +3614,91 @@ fn section_instance_validation_contracts_expose_snapshot_input_contracts() {
     );
     assert!(
         governance
+            .minimum_snapshot_example
+            .field_value_entries
+            .iter()
+            .all(|field| field.name != "exception_reason" && field.name != "rollback_reference")
+    );
+    assert!(
+        governance
             .validation_result_contract
             .required_fields
             .iter()
             .any(|field| field.name == "summary")
+    );
+    #[cfg(feature = "worldgen")]
+    assert!(
+        world_compat
+            .snapshot_input_contract
+            .stage_scoped_field_values
+            .iter()
+            .any(|field| field.name == "world_compat_status")
+    );
+    #[cfg(feature = "worldgen")]
+    assert!(
+        world_compat
+            .snapshot_template_contract
+            .field_value_entries
+            .iter()
+            .any(|field| field.name == "rollback_reference")
+    );
+    #[cfg(feature = "worldgen")]
+    assert!(
+        world_compat
+            .snapshot_input_contract
+            .notes
+            .iter()
+            .any(|note| note.contains("rolled-back"))
+    );
+    #[cfg(feature = "worldgen")]
+    assert!(
+        world_compat
+            .snapshot_input_contract
+            .notes
+            .iter()
+            .any(|note| note.contains("previously reached exception-accepted"))
+    );
+    #[cfg(feature = "worldgen")]
+    assert!(
+        world_compat
+            .snapshot_input_contract
+            .notes
+            .iter()
+            .any(|note| note.contains("previously reached approved"))
+    );
+    #[cfg(feature = "worldgen")]
+    assert!(
+        world_compat
+            .snapshot_template_contract
+            .notes
+            .iter()
+            .any(|note| note.contains("prior_result_statuses"))
+    );
+    #[cfg(feature = "worldgen")]
+    assert!(
+        world_compat
+            .minimum_snapshot_example
+            .top_level_fields
+            .iter()
+            .any(|field| {
+                field.name == "prior_result_statuses" && field.value == "[\"exception-accepted\"]"
+            })
+    );
+    #[cfg(feature = "worldgen")]
+    assert!(
+        world_compat
+            .minimum_snapshot_example
+            .field_value_entries
+            .iter()
+            .any(|field| field.name == "result_status" && field.value == "approved")
+    );
+    #[cfg(feature = "worldgen")]
+    assert!(
+        world_compat
+            .minimum_validation_result_example
+            .fields
+            .iter()
+            .any(|field| field.name == "stage_status" && field.value == "valid")
     );
     assert!(
         management_auth
@@ -3455,6 +3727,15 @@ fn section_instance_validation_contracts_expose_snapshot_input_contracts() {
             .field_value_entries
             .iter()
             .any(|field| field.name == "result_status" && field.value == "approved")
+    );
+    assert!(
+        management_auth
+            .minimum_snapshot_example
+            .field_value_entries
+            .iter()
+            .all(|field| {
+                field.name != "compensating_controls" && field.name != "rollback_reference"
+            })
     );
     assert!(
         management_auth
@@ -3510,6 +3791,744 @@ fn section_instance_validation_contracts_expose_snapshot_input_contracts() {
             validation_contract.blocking_interpretation
         );
     }
+
+    #[cfg(feature = "worldgen")]
+    {
+        let root = unique_temp_dir();
+        let state = server::ServerStatePaths::new(root.join("live"));
+        let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
+        seed_live_runtime_state(&state);
+        seed_recovery_staging_restore_state(&recovery_staging_state);
+
+        let inventory = test_runtime_observability_inventory();
+        set_world_compat_observability_status(
+            &inventory,
+            "record",
+            "allow",
+            "allow",
+            server::CompatAuditV1::fallback_generate(
+                server::CompatEntryKindV1::Load,
+                server::CompatFailureKindV1::OptionMismatch,
+            ),
+            &server::RecipeManifestV1::record_only(
+                server::DEFAULT_WORLD_SEED,
+                &server::GenOpts::default(),
+                true,
+            ),
+            false,
+        );
+
+        let world_compat_preflight = HealthState {
+            environment: "local",
+            auth_server_configured: false,
+            authoritative_auth_provider: test_auth_provider(false),
+            server_state: state,
+            recovery_staging_state,
+            audit_retention: crate::settings::AuditRetentionPolicy::default(),
+            runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            runtime_observability_inventory: inventory,
+            surface_inventory: Vec::new(),
+            management_auth_inventory: Vec::new(),
+            transport_security_inventory: Vec::new(),
+            governance_findings: Vec::new(),
+        }
+        .preflight_report();
+
+        let _ = fs::remove_dir_all(root);
+
+        let contract = world_compat_preflight
+            .review_decision_contracts
+            .iter()
+            .find(|contract| contract.signal == "world-compat")
+            .expect("world-compat review decision contract should exist");
+        let validation_contract = contract
+            .section_instance_validation_contract
+            .as_ref()
+            .expect(
+                "exported preflight review decision contracts should expose section validation",
+            );
+        let readiness_summary = contract
+            .validator_integration_readiness_summary
+            .as_ref()
+            .expect(
+                "exported preflight review decision contracts should expose validator readiness",
+            );
+
+        assert_eq!(readiness_summary.status, "validator-contract-ready");
+        assert_eq!(
+            readiness_summary.input_snapshot_kind,
+            validation_contract.snapshot_input_contract.snapshot_kind
+        );
+        assert_eq!(
+            readiness_summary.field_values_key,
+            validation_contract.snapshot_input_contract.field_values_key
+        );
+        assert_eq!(
+            readiness_summary.lifecycle_state_field,
+            validation_contract.lifecycle_state_field
+        );
+        assert_eq!(
+            readiness_summary.output_result_kind,
+            validation_contract.validation_result_contract.result_kind
+        );
+        assert_eq!(
+            readiness_summary.output_stage_status_field,
+            validation_contract
+                .validation_result_contract
+                .stage_status_field
+        );
+        assert_eq!(
+            readiness_summary.blocking_interpretation,
+            validation_contract.blocking_interpretation
+        );
+        assert!(contract.accepted_exception_follow_up.iter().any(|item| {
+            item.contains("append an explicit approved follow-up")
+                && item.contains("load_legacy_mode = deny")
+                && item.contains("metadata clarification")
+                && item.contains("archive_reference")
+                && item.contains("source_record_state")
+                && item.contains("post_archive_verification_reference")
+                && item.contains("current approved terminal result_status")
+                && item.contains("prior_result_statuses")
+                && item.contains("exception-accepted")
+        }));
+        assert!(contract.accepted_exception_follow_up.iter().any(|item| {
+            item.contains("append an explicit rolled-back follow-up")
+                && item.contains("recipe and topology fingerprint")
+                && item.contains("metadata clarification")
+                && item.contains("archive_reference")
+                && item.contains("source_record_state")
+                && item.contains("post_archive_verification_reference")
+                && item.contains("current rolled-back terminal result_status")
+                && item.contains("prior_result_statuses")
+                && item.contains("approved")
+        }));
+    }
+}
+
+#[test]
+#[cfg(feature = "worldgen")]
+fn world_compat_review_contracts_encode_flip_and_removal_stage_semantics() {
+    let required_fields = world_compat_required_decision_field_contracts();
+    let exception_fields = world_compat_exception_field_contracts();
+    let load_legacy_mode = required_fields
+        .iter()
+        .find(|field| field.name == "load_legacy_mode")
+        .expect("load_legacy_mode contract should exist");
+    let sidecarless_mode = required_fields
+        .iter()
+        .find(|field| field.name == "load_or_generate_sidecarless_mode")
+        .expect("load_or_generate_sidecarless_mode contract should exist");
+    let rollback_reference = exception_fields
+        .iter()
+        .find(|field| field.name == "rollback_reference")
+        .expect("rollback_reference contract should exist");
+    let workflow = release_review_section_execution_workflow("world-compat");
+    let validation = world_compat_section_instance_validation_contract(&required_fields);
+    let result_status_model = world_compat_review_result_status_model();
+    let example = release_review_section_example_contract(
+        "world-compat",
+        "approved",
+        &required_fields,
+        Vec::new(),
+    );
+    let post_archive_writeback_fields = release_review_post_archive_writeback_field_names();
+    let archive_handoff_contract = release_review_record_archive_handoff_contract(
+        "world-compat",
+        "release-review-record reached a terminal world-compat review state with rollout posture, \
+         recipe fingerprint, and rollback path recorded where applicable",
+        vec!["approved", "exception-accepted", "rejected", "rolled-back"],
+        vec!["approved", "exception-accepted", "rejected", "rolled-back"],
+    );
+    let retention_contract =
+        release_review_record_retention_contract("world-compat", &post_archive_writeback_fields);
+    let terminal_mutation_contract = release_review_terminal_mutation_contract(
+        "world-compat",
+        &archive_handoff_contract,
+        &post_archive_writeback_fields,
+    );
+
+    assert!(
+        load_legacy_mode
+            .semantics
+            .contains("transitional compat-import window")
+    );
+    assert!(load_legacy_mode.semantics.contains("default flip/removal"));
+    assert!(
+        sidecarless_mode
+            .semantics
+            .contains("sidecarless managed reuse open as a transitional path")
+    );
+    assert!(sidecarless_mode.semantics.contains("default flip/removal"));
+    assert!(
+        rollback_reference
+            .semantics
+            .contains("approved deny rehearsals")
+    );
+    assert!(workflow.iter().any(|step| {
+        step.sequence == 2
+            && step.record_effect.contains("transitional allow window")
+            && step
+                .record_effect
+                .contains("deny rehearsal/default-flip candidate")
+            && step
+                .record_effect
+                .contains("append rollback_reference before writing approved")
+            && step
+                .record_effect
+                .contains("same-section history proof of the prior terminal result_status")
+    }));
+    assert!(workflow.iter().any(|step| {
+        step.sequence == 3
+            && step.record_effect.contains("exception-accepted")
+            && step
+                .record_effect
+                .contains("approved is reserved for deny/clear posture")
+            && step
+                .record_effect
+                .contains("deny-rehearsal rollback evidence")
+            && step
+                .record_effect
+                .contains("prior terminal state was exception-accepted")
+            && step
+                .record_effect
+                .contains("prior terminal state was approved")
+    }));
+    assert!(workflow.iter().any(|step| {
+        step.sequence == 4
+            && step
+                .record_effect
+                .contains("approved deny-rehearsal terminals must preserve rollback_reference")
+    }));
+    assert!(workflow.iter().any(|step| {
+        step.sequence == 5
+            && step
+                .record_effect
+                .contains("approved deny rehearsal rollback_reference")
+            && step.record_effect.contains("archive_reference")
+            && step.record_effect.contains("source_record_state")
+            && step
+                .record_effect
+                .contains("post_archive_verification_reference")
+    }));
+    assert!(
+        validation
+            .snapshot_input_contract
+            .notes
+            .iter()
+            .any(|note| note.contains("default flip/removal"))
+    );
+    assert!(validation.snapshot_input_contract.notes.iter().any(|note| {
+        note.contains("result_status = approved") && note.contains("rollback_reference")
+    }));
+    assert!(
+        validation
+            .snapshot_input_contract
+            .notes
+            .iter()
+            .any(|note| { note.contains("previously reached exception-accepted") })
+    );
+    assert!(validation.snapshot_input_contract.notes.iter().any(|note| {
+        note.contains("previously reached approved before the rollback follow-up")
+    }));
+    assert!(validation.snapshot_input_contract.notes.iter().any(|note| {
+        note.contains("archive_reference")
+            && note.contains("source_record_state")
+            && note.contains("post_archive_verification_reference")
+            && note.contains("archived terminal evidence")
+    }));
+    assert!(
+        validation
+            .snapshot_template_contract
+            .notes
+            .iter()
+            .any(|note| note.contains("rollback_reference may remain present for approved deny"))
+    );
+    assert!(
+        validation
+            .snapshot_template_contract
+            .notes
+            .iter()
+            .any(|note| note.contains("prior_result_statuses"))
+    );
+    assert!(
+        validation
+            .snapshot_template_contract
+            .notes
+            .iter()
+            .any(|note| {
+                note.contains("archive_reference")
+                    && note.contains("source_record_state")
+                    && note.contains("post_archive_verification_reference")
+            })
+    );
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .notes
+            .iter()
+            .any(|note| note.contains("prior_result_statuses shows how to prove"))
+    );
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .notes
+            .iter()
+            .any(|note| note.contains("same-section prior terminal history"))
+    );
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .notes
+            .iter()
+            .any(|note| {
+                note.contains("archive_reference")
+                    && note.contains("source_record_state")
+                    && note.contains("post_archive_verification_reference")
+            })
+    );
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .top_level_fields
+            .iter()
+            .any(|field| {
+                field.name == "prior_result_statuses" && field.value == "[\"exception-accepted\"]"
+            })
+    );
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .field_value_entries
+            .iter()
+            .any(|field| {
+                field.name == "rollback_reference"
+                    && field.value == "runbook://world-compat/rollback-01"
+            })
+    );
+    assert!(
+        validation
+            .evidence_linked_requirements
+            .required_additional_checks
+            .iter()
+            .any(|check| check.contains("stage markers for future default-flip/removal review"))
+    );
+    assert!(
+        validation
+            .terminal_requirements
+            .conditional_required_fields
+            .iter()
+            .any(|requirement| {
+                requirement.when_result_statuses == vec!["approved"]
+                    && requirement.required_fields == vec!["rollback_reference"]
+                    && requirement
+                        .completion_rule
+                        .contains("approved world-compat deny-rehearsal posture")
+            })
+    );
+    assert!(
+        validation
+            .terminal_requirements
+            .required_additional_checks
+            .iter()
+            .any(|check| {
+                check.contains("load_legacy_mode = allow")
+                    && check.contains("exception-accepted")
+                    && check.contains("rollback_reference")
+            })
+    );
+    assert!(
+        validation
+            .terminal_requirements
+            .required_additional_checks
+            .iter()
+            .any(|check| {
+                check.contains("load_legacy_mode = deny")
+                    && check.contains("result_status = approved")
+                    && check.contains("rollback_reference")
+            })
+    );
+    assert!(
+        validation
+            .terminal_requirements
+            .required_additional_checks
+            .iter()
+            .any(|check| {
+                check.contains("previously archived")
+                    && check.contains("exception-accepted")
+                    && check.contains("prior_result_statuses")
+            })
+    );
+    assert!(
+        validation
+            .terminal_requirements
+            .required_additional_checks
+            .iter()
+            .any(|check| {
+                check.contains(
+                    "archive_reference/source_record_state/post_archive_verification_reference",
+                ) && check.contains("exception-accepted")
+            })
+    );
+    assert!(
+        validation
+            .terminal_requirements
+            .required_additional_checks
+            .iter()
+            .any(|check| {
+                check.contains(
+                    "archive_reference/source_record_state/post_archive_verification_reference",
+                ) && check.contains("approved terminal")
+            })
+    );
+    assert!(
+        validation
+            .terminal_requirements
+            .required_additional_checks
+            .iter()
+            .any(|check| {
+                check.contains("prior approved terminal world-compat decision state")
+                    && check.contains("prior_result_statuses")
+            })
+    );
+    assert!(
+        validation
+            .terminal_requirements
+            .completion_rule
+            .contains("prior_result_statuses history proof")
+    );
+    assert!(
+        validation
+            .archive_receipt_requirements
+            .conditional_required_fields
+            .iter()
+            .any(|requirement| {
+                requirement.when_result_statuses == vec!["approved"]
+                    && requirement.required_fields == vec!["rollback_reference"]
+                    && requirement
+                        .completion_rule
+                        .contains("archive-ready approved world-compat deny-rehearsal sections")
+            })
+    );
+    assert!(
+        retention_contract
+            .required_post_archive_checks
+            .iter()
+            .any(|check| {
+                check.contains(
+                    "close accepted transition windows with an explicit approved follow-up",
+                ) && check.contains("rolled-back follow-up history entry")
+            })
+    );
+    assert!(
+        retention_contract
+            .required_post_archive_checks
+            .iter()
+            .any(|check| {
+                check.contains("archive_reference")
+                    && check.contains("source_record_state")
+                    && check.contains("post_archive_verification_reference")
+                    && check.contains("follow-up still carries the archived terminal evidence")
+            })
+    );
+    assert!(
+        validation
+            .post_archive_verification_requirements
+            .required_additional_checks
+            .iter()
+            .any(|check| {
+                check.contains("archive_reference")
+                    && check.contains("source_record_state")
+                    && check.contains("post_archive_verification_reference")
+                    && check.contains("approved or rolled-back follow-up validation is incomplete")
+            })
+    );
+    assert!(
+        terminal_mutation_contract
+            .allowed_follow_up_actions
+            .iter()
+            .any(|item| {
+                item.contains("append an explicit approved follow-up")
+                    && item.contains("deny/deny posture")
+                    && item.contains("archive_reference")
+                    && item.contains("source_record_state")
+                    && item.contains("post_archive_verification_reference")
+                    && item.contains("prior_result_statuses")
+                    && item.contains("exception-accepted")
+                    && item.contains(
+                        "do not represent that posture change as metadata clarification only",
+                    )
+            })
+    );
+    assert!(
+        terminal_mutation_contract
+            .allowed_follow_up_actions
+            .iter()
+            .any(|item| {
+                item.contains("append an explicit rolled-back follow-up")
+                    && item.contains("approved deny-rehearsal")
+                    && item.contains("archive_reference")
+                    && item.contains("source_record_state")
+                    && item.contains("post_archive_verification_reference")
+                    && item.contains("prior_result_statuses")
+                    && item.contains("approved")
+                    && item.contains(
+                        "do not represent that posture change as metadata clarification only",
+                    )
+            })
+    );
+    assert!(
+        terminal_mutation_contract
+            .forbidden_mutations
+            .iter()
+            .any(|rule| {
+                rule.contains("accepted-window closure or post-flip rollback")
+                    && rule.contains("correction-only")
+                    && rule.contains("approved or rolled-back follow-up")
+            })
+    );
+    assert!(
+        terminal_mutation_contract
+            .forbidden_mutations
+            .iter()
+            .any(|rule| {
+                rule.contains("silently replacing it with approved")
+                    && rule.contains("exception-accepted transition window")
+            })
+    );
+    assert!(
+        terminal_mutation_contract
+            .forbidden_mutations
+            .iter()
+            .any(|rule| {
+                rule.contains("archive_reference")
+                    && rule.contains("source_record_state")
+                    && rule.contains("post_archive_verification_reference")
+                    && rule.contains("prior_result_statuses")
+                    && rule.contains("approved or rolled-back world-compat follow-up")
+            })
+    );
+    assert!(
+        terminal_mutation_contract
+            .forbidden_mutations
+            .iter()
+            .any(|rule| {
+                rule.contains("silently mutating an archived approved deny-rehearsal section")
+                    && rule.contains("rolled-back follow-up")
+            })
+    );
+    assert!(
+        terminal_mutation_contract
+            .superseding_change_rule
+            .contains("close accepted transition windows with an approved follow-up")
+    );
+    assert!(
+        terminal_mutation_contract
+            .superseding_change_rule
+            .contains("post-flip rollback with a rolled-back follow-up")
+    );
+    assert!(
+        validation
+            .post_archive_verification_requirements
+            .conditional_required_fields
+            .iter()
+            .any(|requirement| {
+                requirement.when_result_statuses == vec!["approved"]
+                    && requirement.required_fields == vec!["rollback_reference"]
+                    && requirement.completion_rule.contains(
+                        "post-archive verification of approved world-compat deny-rehearsal \
+                         sections",
+                    )
+            })
+    );
+    assert!(result_status_model.iter().any(|status| {
+        status.state == "approved"
+            && status
+                .semantics
+                .contains("deny rehearsal/default-flip candidate remains reversible")
+            && status.semantics.contains("rollback_reference")
+    }));
+    assert!(result_status_model.iter().any(|status| {
+        status.state == "exception-accepted" && status.semantics.contains("transition window")
+    }));
+    assert!(example.example_fields.iter().any(|field| {
+        field.name == "world_compat_status" && field.value == "world-compat-clear"
+    }));
+    assert!(
+        example
+            .example_fields
+            .iter()
+            .any(|field| { field.name == "load_legacy_mode" && field.value == "deny" })
+    );
+    assert!(example.example_fields.iter().any(|field| {
+        field.name == "load_or_generate_sidecarless_mode" && field.value == "deny"
+    }));
+    assert!(example.example_fields.iter().any(|field| {
+        field.name == "rollback_reference" && field.value == "runbook://world-compat/rollback-01"
+    }));
+    assert!(example.example_fields.iter().any(|field| {
+        field.name == "rollback_reference"
+            && field
+                .rationale
+                .contains("closing a previously accepted transition window")
+            && field
+                .rationale
+                .contains("prior terminal state was exception-accepted")
+    }));
+    assert!(example.example_fields.iter().any(|field| {
+        field.name == "archive_reference"
+            && field.value == "archive://release-review/2026-05-01/public-entry-handoff-terminal"
+            && field
+                .rationale
+                .contains("archived terminal evidence carried forward")
+    }));
+    assert!(example.example_fields.iter().any(|field| {
+        field.name == "source_record_state"
+            && field.value == "approved"
+            && field
+                .rationale
+                .contains("archive-receipt source_record_state preserved")
+            && field
+                .rationale
+                .contains("aligned with the terminal result_status recorded for this follow-up")
+            && field
+                .rationale
+                .contains("prior_result_statuses remains the same-section history proof")
+    }));
+    assert!(example.example_fields.iter().any(|field| {
+        field.name == "post_archive_verification_reference"
+            && field.value == "note://archive-review/release-2026-05-01"
+            && field
+                .rationale
+                .contains("post-archive verification evidence")
+    }));
+    let rolled_back_example = release_review_section_example_contract(
+        "world-compat",
+        "rolled-back",
+        &required_fields,
+        Vec::new(),
+    );
+    assert!(rolled_back_example.example_fields.iter().any(|field| {
+        field.name == "rollback_reference"
+            && field.rationale.contains("post-flip rollback follow-up")
+            && field
+                .rationale
+                .contains("prior terminal state was approved")
+    }));
+    assert!(rolled_back_example.example_fields.iter().any(|field| {
+        field.name == "archive_reference"
+            && field.value == "archive://release-review/2026-05-01/public-entry-handoff-terminal"
+    }));
+    assert!(rolled_back_example.example_fields.iter().any(|field| {
+        field.name == "source_record_state"
+            && field.value == "rolled-back"
+            && field
+                .rationale
+                .contains("archive-receipt source_record_state preserved")
+            && field
+                .rationale
+                .contains("aligned with the terminal result_status recorded for this follow-up")
+            && field
+                .rationale
+                .contains("prior_result_statuses remains the same-section history proof")
+    }));
+    assert!(rolled_back_example.example_fields.iter().any(|field| {
+        field.name == "post_archive_verification_reference"
+            && field.value == "note://archive-review/release-2026-05-01"
+    }));
+
+    let approved_snapshot_validation = validate_world_compat_follow_up_history_proof_fixture(
+        &validation,
+        &SectionSnapshotFixture::from_section_example(&example),
+    );
+    assert_eq!(approved_snapshot_validation.stage_status, "valid");
+    assert!(
+        approved_snapshot_validation
+            .missing_required_fields
+            .is_empty()
+    );
+    assert!(
+        approved_snapshot_validation
+            .failed_additional_checks
+            .is_empty()
+    );
+
+    let mut approved_missing_history = SectionSnapshotFixture::from_section_example(&example);
+    approved_missing_history.remove_top_level_field("prior_result_statuses");
+    let approved_missing_history_validation = validate_world_compat_follow_up_history_proof_fixture(
+        &validation,
+        &approved_missing_history,
+    );
+    assert_eq!(approved_missing_history_validation.stage_status, "invalid");
+    assert!(
+        approved_missing_history_validation
+            .missing_required_fields
+            .contains(&"prior_result_statuses")
+    );
+
+    let rolled_back_snapshot_validation = validate_world_compat_follow_up_history_proof_fixture(
+        &validation,
+        &SectionSnapshotFixture::from_section_example(&rolled_back_example),
+    );
+    assert_eq!(rolled_back_snapshot_validation.stage_status, "valid");
+    assert!(
+        rolled_back_snapshot_validation
+            .missing_required_fields
+            .is_empty()
+    );
+    assert!(
+        rolled_back_snapshot_validation
+            .failed_additional_checks
+            .is_empty()
+    );
+
+    let mut rolled_back_missing_archive =
+        SectionSnapshotFixture::from_section_example(&rolled_back_example);
+    rolled_back_missing_archive.remove_field_value("archive_reference");
+    rolled_back_missing_archive.remove_field_value("source_record_state");
+    rolled_back_missing_archive.remove_field_value("post_archive_verification_reference");
+    let rolled_back_missing_archive_validation =
+        validate_world_compat_follow_up_history_proof_fixture(
+            &validation,
+            &rolled_back_missing_archive,
+        );
+    assert_eq!(
+        rolled_back_missing_archive_validation.stage_status,
+        "invalid"
+    );
+    assert!(
+        rolled_back_missing_archive_validation
+            .missing_required_fields
+            .contains(&"archive_reference")
+    );
+    assert!(
+        rolled_back_missing_archive_validation
+            .missing_required_fields
+            .contains(&"source_record_state")
+    );
+    assert!(
+        rolled_back_missing_archive_validation
+            .missing_required_fields
+            .contains(&"post_archive_verification_reference")
+    );
+
+    let mut rolled_back_mismatched_source_state =
+        SectionSnapshotFixture::from_section_example(&rolled_back_example);
+    rolled_back_mismatched_source_state.set_field_value("source_record_state", "approved");
+    let rolled_back_mismatched_source_state_validation =
+        validate_world_compat_follow_up_history_proof_fixture(
+            &validation,
+            &rolled_back_mismatched_source_state,
+        );
+    assert_eq!(
+        rolled_back_mismatched_source_state_validation.stage_status,
+        "invalid"
+    );
+    assert!(
+        rolled_back_mismatched_source_state_validation
+            .failed_additional_checks
+            .contains(&"source_record_state must match result_status")
+    );
 }
 
 #[test]
@@ -4427,6 +5446,52 @@ fn runtime_observability_report_exposes_metrics_export_failures() {
     }));
 }
 
+#[test]
+fn runtime_observability_report_exposes_chunk_lifecycle_surface_as_structured_status() {
+    let inventory = test_runtime_observability_inventory();
+    set_chunk_lifecycle_observability_status(
+        &inventory,
+        Some(server::ChunkLifecycleAbnormalSummary::new(
+            3,
+            [8, 13],
+            "dropped",
+            None,
+        )),
+    );
+
+    let report = HealthState {
+        environment: "production",
+        auth_server_configured: true,
+        authoritative_auth_provider: test_auth_provider(true),
+        server_state: server::ServerStatePaths::new(Path::new("test-root").join("live")),
+        recovery_staging_state: server::ServerStatePaths::new(
+            Path::new("test-root").join("recovery-staging"),
+        ),
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .runtime_observability_report();
+
+    assert_eq!(report.status, "operator_review_required");
+    assert!(report.requires_operator_review);
+    assert!(report.entries.iter().any(|entry| {
+        entry.surface == "chunk-lifecycle"
+            && entry.state == "failing"
+            && entry.recent_abnormal_count == Some(3)
+            && entry.latest_chunk_key == Some([8, 13])
+            && entry.latest_terminal == Some("dropped")
+            && entry.latest_tick.is_none()
+            && entry
+                .detail
+                .contains("recent abnormal chunk lifecycle terminal")
+    }));
+}
+
 #[cfg(feature = "worldgen")]
 #[test]
 fn world_compat_report_exposes_structured_runtime_contract_status() {
@@ -4439,11 +5504,14 @@ fn world_compat_report_exposes_structured_runtime_contract_status() {
     set_world_compat_observability_status(
         &inventory,
         "record",
+        "deny",
+        "allow",
         server::CompatAuditV1::fallback_generate(
             server::CompatEntryKindV1::Load,
             server::CompatFailureKindV1::MissingInput,
         ),
         &manifest,
+        false,
     );
 
     let report = HealthState {
@@ -4467,10 +5535,50 @@ fn world_compat_report_exposes_structured_runtime_contract_status() {
     assert_eq!(report.status, "world-compat-review-required");
     assert!(report.requires_operator_review);
     assert_eq!(report.configured_mode.as_deref(), Some("record"));
+    assert_eq!(report.load_legacy_mode.as_deref(), Some("deny"));
+    assert_eq!(
+        report.load_or_generate_sidecarless_mode.as_deref(),
+        Some("allow")
+    );
     assert_eq!(report.compat_entry, Some("load"));
     assert_eq!(report.compat_decision, Some("fallback_generate"));
     assert_eq!(report.compat_failure, Some("missing_input"));
     assert_eq!(report.strict_load_contract_gap, Some(true));
+    assert_eq!(report.managed_recipe_sidecar_missing, Some(false));
+    assert_eq!(report.transition_window_open, Some(true));
+    assert_eq!(report.review_result_status_hint, Some("exception-accepted"));
+    assert_eq!(report.required_terminal_record_fields, vec![
+        "exception_reason",
+        "rollback_reference"
+    ]);
+    assert_eq!(report.required_archive_receipt_fields_when_terminal, vec![
+        "archive_reference",
+        "archived_at_utc",
+        "archived_by",
+        "source_record_state"
+    ]);
+    assert_eq!(
+        report.required_post_archive_writeback_fields_after_archive,
+        vec![
+            "post_archive_verified_by",
+            "post_archive_verified_at_utc",
+            "post_archive_verification_result",
+            "post_archive_verification_reference"
+        ]
+    );
+    assert_eq!(
+        report.required_archive_correlation_dimensions_when_terminal,
+        vec![
+            "release_reference",
+            "section_signal",
+            "terminal_result_status"
+        ]
+    );
+    assert_eq!(report.same_section_archive_receipt_required, Some(true));
+    assert_eq!(
+        report.same_section_post_archive_verification_required,
+        Some(true)
+    );
     assert_eq!(
         report.world_recipe_hash.as_deref(),
         Some(manifest.world_recipe_hash.as_str())
@@ -4489,6 +5597,179 @@ fn world_compat_report_exposes_structured_runtime_contract_status() {
     );
     assert_eq!(report.source_surface, "world-compat");
 }
+
+#[cfg(feature = "worldgen")]
+#[test]
+fn world_compat_report_stays_clear_for_strict_load_under_deny_posture() {
+    let inventory = test_runtime_observability_inventory();
+    let manifest = server::RecipeManifestV1::record_only(
+        server::DEFAULT_WORLD_SEED,
+        &server::GenOpts::default(),
+        true,
+    );
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        "deny",
+        "deny",
+        server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::Load),
+        &manifest,
+        false,
+    );
+
+    let report = HealthState {
+        environment: "production",
+        auth_server_configured: true,
+        authoritative_auth_provider: test_auth_provider(true),
+        server_state: server::ServerStatePaths::new(Path::new("test-root").join("live")),
+        recovery_staging_state: server::ServerStatePaths::new(
+            Path::new("test-root").join("recovery-staging"),
+        ),
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .world_compat_report();
+
+    assert_eq!(report.status, "world-compat-clear");
+    assert!(!report.requires_operator_review);
+    assert_eq!(report.configured_mode.as_deref(), Some("record"));
+    assert_eq!(report.load_legacy_mode.as_deref(), Some("deny"));
+    assert_eq!(
+        report.load_or_generate_sidecarless_mode.as_deref(),
+        Some("deny")
+    );
+    assert_eq!(report.compat_entry, Some("load"));
+    assert_eq!(report.compat_decision, Some("loaded_existing"));
+    assert_eq!(report.compat_failure, Some("none"));
+    assert_eq!(report.strict_load_contract_gap, Some(false));
+    assert_eq!(report.managed_recipe_sidecar_missing, Some(false));
+    assert_eq!(report.transition_window_open, Some(false));
+    assert_eq!(report.review_result_status_hint, Some("approved"));
+    assert_eq!(report.required_terminal_record_fields, vec![
+        "rollback_reference"
+    ]);
+    assert_eq!(report.required_archive_receipt_fields_when_terminal, vec![
+        "archive_reference",
+        "archived_at_utc",
+        "archived_by",
+        "source_record_state"
+    ]);
+    assert_eq!(
+        report.required_post_archive_writeback_fields_after_archive,
+        vec![
+            "post_archive_verified_by",
+            "post_archive_verified_at_utc",
+            "post_archive_verification_result",
+            "post_archive_verification_reference"
+        ]
+    );
+    assert_eq!(
+        report.required_archive_correlation_dimensions_when_terminal,
+        vec![
+            "release_reference",
+            "section_signal",
+            "terminal_result_status"
+        ]
+    );
+    assert_eq!(report.same_section_archive_receipt_required, Some(true));
+    assert_eq!(
+        report.same_section_post_archive_verification_required,
+        Some(true)
+    );
+    assert!(report.detail.contains("without strict fallback"));
+    assert_eq!(report.source_surface, "world-compat");
+}
+
+#[cfg(feature = "worldgen")]
+#[test]
+fn world_compat_report_stays_clear_for_load_asset_under_deny_posture() {
+    let inventory = test_runtime_observability_inventory();
+    let manifest = server::RecipeManifestV1::record_only(
+        server::DEFAULT_WORLD_SEED,
+        &server::GenOpts::default(),
+        true,
+    );
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        "deny",
+        "deny",
+        server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::LoadAsset),
+        &manifest,
+        false,
+    );
+
+    let report = HealthState {
+        environment: "production",
+        auth_server_configured: true,
+        authoritative_auth_provider: test_auth_provider(true),
+        server_state: server::ServerStatePaths::new(Path::new("test-root").join("live")),
+        recovery_staging_state: server::ServerStatePaths::new(
+            Path::new("test-root").join("recovery-staging"),
+        ),
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .world_compat_report();
+
+    assert_eq!(report.status, "world-compat-clear");
+    assert!(!report.requires_operator_review);
+    assert_eq!(report.load_legacy_mode.as_deref(), Some("deny"));
+    assert_eq!(
+        report.load_or_generate_sidecarless_mode.as_deref(),
+        Some("deny")
+    );
+    assert_eq!(report.compat_entry, Some("load_asset"));
+    assert_eq!(report.compat_decision, Some("loaded_existing"));
+    assert_eq!(report.compat_failure, Some("none"));
+    assert_eq!(report.strict_load_contract_gap, Some(false));
+    assert_eq!(report.managed_recipe_sidecar_missing, Some(false));
+    assert_eq!(report.transition_window_open, Some(false));
+    assert_eq!(report.review_result_status_hint, Some("approved"));
+    assert_eq!(report.required_terminal_record_fields, vec![
+        "rollback_reference"
+    ]);
+    assert_eq!(report.required_archive_receipt_fields_when_terminal, vec![
+        "archive_reference",
+        "archived_at_utc",
+        "archived_by",
+        "source_record_state"
+    ]);
+    assert_eq!(
+        report.required_post_archive_writeback_fields_after_archive,
+        vec![
+            "post_archive_verified_by",
+            "post_archive_verified_at_utc",
+            "post_archive_verification_result",
+            "post_archive_verification_reference"
+        ]
+    );
+    assert_eq!(
+        report.required_archive_correlation_dimensions_when_terminal,
+        vec![
+            "release_reference",
+            "section_signal",
+            "terminal_result_status"
+        ]
+    );
+    assert_eq!(report.same_section_archive_receipt_required, Some(true));
+    assert_eq!(
+        report.same_section_post_archive_verification_required,
+        Some(true)
+    );
+    assert!(report.detail.contains("without strict fallback"));
+}
+
 #[cfg(feature = "worldgen")]
 #[test]
 fn world_compat_report_marks_load_legacy_as_review_required_without_strict_gap() {
@@ -4501,8 +5782,11 @@ fn world_compat_report_marks_load_legacy_as_review_required_without_strict_gap()
     set_world_compat_observability_status(
         &inventory,
         "record",
+        "allow",
+        "allow",
         server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::LoadLegacy),
         &manifest,
+        false,
     );
 
     let report = HealthState {
@@ -4526,14 +5810,141 @@ fn world_compat_report_marks_load_legacy_as_review_required_without_strict_gap()
     assert_eq!(report.status, "world-compat-review-required");
     assert!(report.requires_operator_review);
     assert_eq!(report.configured_mode.as_deref(), Some("record"));
+    assert_eq!(report.load_legacy_mode.as_deref(), Some("allow"));
+    assert_eq!(
+        report.load_or_generate_sidecarless_mode.as_deref(),
+        Some("allow")
+    );
     assert_eq!(report.compat_entry, Some("load_legacy"));
     assert_eq!(report.compat_decision, Some("loaded_existing"));
     assert_eq!(report.compat_failure, Some("none"));
     assert_eq!(report.strict_load_contract_gap, Some(false));
+    assert_eq!(report.managed_recipe_sidecar_missing, Some(false));
+    assert_eq!(report.transition_window_open, Some(true));
+    assert_eq!(report.review_result_status_hint, Some("exception-accepted"));
+    assert_eq!(report.required_terminal_record_fields, vec![
+        "exception_reason",
+        "rollback_reference"
+    ]);
+    assert_eq!(report.required_archive_receipt_fields_when_terminal, vec![
+        "archive_reference",
+        "archived_at_utc",
+        "archived_by",
+        "source_record_state"
+    ]);
+    assert_eq!(
+        report.required_post_archive_writeback_fields_after_archive,
+        vec![
+            "post_archive_verified_by",
+            "post_archive_verified_at_utc",
+            "post_archive_verification_result",
+            "post_archive_verification_reference"
+        ]
+    );
+    assert_eq!(
+        report.required_archive_correlation_dimensions_when_terminal,
+        vec![
+            "release_reference",
+            "section_signal",
+            "terminal_result_status"
+        ]
+    );
+    assert_eq!(report.same_section_archive_receipt_required, Some(true));
+    assert_eq!(
+        report.same_section_post_archive_verification_required,
+        Some(true)
+    );
     assert!(report.detail.contains("transitional compat import path"));
     assert!(report.detail.contains("load_legacy"));
     assert_eq!(report.source_surface, "world-compat");
 }
+
+#[cfg(feature = "worldgen")]
+#[test]
+fn world_compat_report_marks_sidecarless_load_or_generate_as_review_required() {
+    let inventory = test_runtime_observability_inventory();
+    let manifest = server::RecipeManifestV1::record_only(
+        server::DEFAULT_WORLD_SEED,
+        &server::GenOpts::default(),
+        true,
+    );
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        "allow",
+        "allow",
+        server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::LoadOrGenerate),
+        &manifest,
+        true,
+    );
+
+    let report = HealthState {
+        environment: "production",
+        auth_server_configured: true,
+        authoritative_auth_provider: test_auth_provider(true),
+        server_state: server::ServerStatePaths::new(Path::new("test-root").join("live")),
+        recovery_staging_state: server::ServerStatePaths::new(
+            Path::new("test-root").join("recovery-staging"),
+        ),
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .world_compat_report();
+
+    assert_eq!(report.status, "world-compat-review-required");
+    assert!(report.requires_operator_review);
+    assert_eq!(
+        report.load_or_generate_sidecarless_mode.as_deref(),
+        Some("allow")
+    );
+    assert_eq!(report.compat_entry, Some("load_or_generate"));
+    assert_eq!(report.compat_decision, Some("loaded_existing"));
+    assert_eq!(report.compat_failure, Some("none"));
+    assert_eq!(report.strict_load_contract_gap, Some(false));
+    assert_eq!(report.managed_recipe_sidecar_missing, Some(true));
+    assert_eq!(report.transition_window_open, Some(true));
+    assert_eq!(report.review_result_status_hint, Some("exception-accepted"));
+    assert_eq!(report.required_terminal_record_fields, vec![
+        "exception_reason",
+        "rollback_reference"
+    ]);
+    assert_eq!(report.required_archive_receipt_fields_when_terminal, vec![
+        "archive_reference",
+        "archived_at_utc",
+        "archived_by",
+        "source_record_state"
+    ]);
+    assert_eq!(
+        report.required_post_archive_writeback_fields_after_archive,
+        vec![
+            "post_archive_verified_by",
+            "post_archive_verified_at_utc",
+            "post_archive_verification_result",
+            "post_archive_verification_reference"
+        ]
+    );
+    assert_eq!(
+        report.required_archive_correlation_dimensions_when_terminal,
+        vec![
+            "release_reference",
+            "section_signal",
+            "terminal_result_status"
+        ]
+    );
+    assert_eq!(report.same_section_archive_receipt_required, Some(true));
+    assert_eq!(
+        report.same_section_post_archive_verification_required,
+        Some(true)
+    );
+    assert!(report.detail.contains("adjacent recipe sidecar"));
+    assert!(report.detail.contains("load_or_generate"));
+}
+
 #[cfg(feature = "worldgen")]
 #[test]
 fn runtime_observability_report_exposes_world_compat_surface_as_structured_status() {
@@ -4546,11 +5957,14 @@ fn runtime_observability_report_exposes_world_compat_surface_as_structured_statu
     set_world_compat_observability_status(
         &inventory,
         "record",
+        "allow",
+        "allow",
         server::CompatAuditV1::fallback_generate(
             server::CompatEntryKindV1::Load,
             server::CompatFailureKindV1::MissingInput,
         ),
         &manifest,
+        false,
     );
 
     let report = HealthState {
@@ -4577,63 +5991,20 @@ fn runtime_observability_report_exposes_world_compat_surface_as_structured_statu
         entry.surface == "world-compat"
             && entry.state == "failing"
             && entry.configured_mode.as_deref() == Some("record")
+            && entry.load_legacy_mode.as_deref() == Some("allow")
+            && entry.load_or_generate_sidecarless_mode.as_deref() == Some("allow")
             && entry.compat_entry == Some("load")
             && entry.compat_decision == Some("fallback_generate")
             && entry.compat_failure == Some("missing_input")
             && entry.strict_load_contract_gap == Some(true)
+            && entry.managed_recipe_sidecar_missing == Some(false)
             && entry.world_recipe_hash.as_deref() == Some(manifest.world_recipe_hash.as_str())
             && entry.chunk_recipe_hash.as_deref() == Some(manifest.chunk_recipe_hash.as_str())
             && entry.topology_id.as_deref() == Some(manifest.world_recipe.topology_id.as_str())
             && entry.preset_id.as_deref() == Some(manifest.world_recipe.preset_id.as_str())
     }));
 }
-#[cfg(feature = "worldgen")]
-#[test]
-fn runtime_observability_report_marks_load_legacy_surface_for_operator_review() {
-    let inventory = test_runtime_observability_inventory();
-    let manifest = server::RecipeManifestV1::record_only(
-        server::DEFAULT_WORLD_SEED,
-        &server::GenOpts::default(),
-        true,
-    );
-    set_world_compat_observability_status(
-        &inventory,
-        "record",
-        server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::LoadLegacy),
-        &manifest,
-    );
 
-    let report = HealthState {
-        environment: "production",
-        auth_server_configured: true,
-        authoritative_auth_provider: test_auth_provider(true),
-        server_state: server::ServerStatePaths::new(Path::new("test-root").join("live")),
-        recovery_staging_state: server::ServerStatePaths::new(
-            Path::new("test-root").join("recovery-staging"),
-        ),
-        audit_retention: crate::settings::AuditRetentionPolicy::default(),
-        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-        runtime_observability_inventory: inventory,
-        surface_inventory: Vec::new(),
-        management_auth_inventory: Vec::new(),
-        transport_security_inventory: Vec::new(),
-        governance_findings: Vec::new(),
-    }
-    .runtime_observability_report();
-
-    assert_eq!(report.status, "operator_review_required");
-    assert!(report.requires_operator_review);
-    assert!(report.entries.iter().any(|entry| {
-        entry.surface == "world-compat"
-            && entry.state == "failing"
-            && entry.configured_mode.as_deref() == Some("record")
-            && entry.compat_entry == Some("load_legacy")
-            && entry.compat_decision == Some("loaded_existing")
-            && entry.compat_failure == Some("none")
-            && entry.strict_load_contract_gap == Some(false)
-            && entry.detail.contains("transitional compat import path")
-    }));
-}
 #[test]
 fn preflight_report_blocks_when_required_runtime_checks_fail() {
     let report = test_health_state(Path::new("test-root")).preflight_report();
@@ -4718,6 +6089,112 @@ fn preflight_report_blocks_when_required_runtime_checks_fail() {
 
 #[cfg(feature = "worldgen")]
 #[test]
+fn runtime_observability_report_marks_load_legacy_surface_for_operator_review() {
+    let inventory = test_runtime_observability_inventory();
+    let manifest = server::RecipeManifestV1::record_only(
+        server::DEFAULT_WORLD_SEED,
+        &server::GenOpts::default(),
+        true,
+    );
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        "allow",
+        "allow",
+        server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::LoadLegacy),
+        &manifest,
+        false,
+    );
+
+    let report = HealthState {
+        environment: "production",
+        auth_server_configured: true,
+        authoritative_auth_provider: test_auth_provider(true),
+        server_state: server::ServerStatePaths::new(Path::new("test-root").join("live")),
+        recovery_staging_state: server::ServerStatePaths::new(
+            Path::new("test-root").join("recovery-staging"),
+        ),
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .runtime_observability_report();
+
+    assert_eq!(report.status, "operator_review_required");
+    assert!(report.requires_operator_review);
+    assert!(report.entries.iter().any(|entry| {
+        entry.surface == "world-compat"
+            && entry.state == "failing"
+            && entry.configured_mode.as_deref() == Some("record")
+            && entry.load_legacy_mode.as_deref() == Some("allow")
+            && entry.load_or_generate_sidecarless_mode.as_deref() == Some("allow")
+            && entry.compat_entry == Some("load_legacy")
+            && entry.compat_decision == Some("loaded_existing")
+            && entry.compat_failure == Some("none")
+            && entry.strict_load_contract_gap == Some(false)
+            && entry.managed_recipe_sidecar_missing == Some(false)
+            && entry.detail.contains("transitional compat import path")
+    }));
+}
+
+#[cfg(feature = "worldgen")]
+#[test]
+fn runtime_observability_report_marks_sidecarless_load_or_generate_for_operator_review() {
+    let inventory = test_runtime_observability_inventory();
+    let manifest = server::RecipeManifestV1::record_only(
+        server::DEFAULT_WORLD_SEED,
+        &server::GenOpts::default(),
+        true,
+    );
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        "allow",
+        "allow",
+        server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::LoadOrGenerate),
+        &manifest,
+        true,
+    );
+
+    let report = HealthState {
+        environment: "production",
+        auth_server_configured: true,
+        authoritative_auth_provider: test_auth_provider(true),
+        server_state: server::ServerStatePaths::new(Path::new("test-root").join("live")),
+        recovery_staging_state: server::ServerStatePaths::new(
+            Path::new("test-root").join("recovery-staging"),
+        ),
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .runtime_observability_report();
+
+    assert_eq!(report.status, "operator_review_required");
+    assert!(report.requires_operator_review);
+    assert!(report.entries.iter().any(|entry| {
+        entry.surface == "world-compat"
+            && entry.state == "failing"
+            && entry.load_or_generate_sidecarless_mode.as_deref() == Some("allow")
+            && entry.compat_entry == Some("load_or_generate")
+            && entry.compat_decision == Some("loaded_existing")
+            && entry.compat_failure == Some("none")
+            && entry.strict_load_contract_gap == Some(false)
+            && entry.managed_recipe_sidecar_missing == Some(true)
+            && entry.detail.contains("adjacent recipe sidecar")
+    }));
+}
+
+#[cfg(feature = "worldgen")]
+#[test]
 fn preflight_report_routes_world_compat_surface_to_operator_review() {
     let root = unique_temp_dir();
     let state = server::ServerStatePaths::new(root.join("live"));
@@ -4729,6 +6206,8 @@ fn preflight_report_routes_world_compat_surface_to_operator_review() {
     set_world_compat_observability_status(
         &inventory,
         "record",
+        "allow",
+        "allow",
         server::CompatAuditV1::fallback_generate(
             server::CompatEntryKindV1::Load,
             server::CompatFailureKindV1::OptionMismatch,
@@ -4738,6 +6217,7 @@ fn preflight_report_routes_world_compat_surface_to_operator_review() {
             &server::GenOpts::default(),
             true,
         ),
+        false,
     );
 
     let report = HealthState {
@@ -4780,8 +6260,101 @@ fn preflight_report_routes_world_compat_surface_to_operator_review() {
             && !item.blocking
             && item.detail.contains("option_mismatch")
             && item.detail.contains("/health/world-compat")
+            && item
+                .detail
+                .contains("result_status_hint=exception-accepted")
+            && item
+                .detail
+                .contains("terminal_record_fields=[exception_reason, rollback_reference]")
+            && item.detail.contains(
+                "archive_receipt_fields_when_terminal=[archive_reference, archived_at_utc, \
+                 archived_by, source_record_state]",
+            )
+            && item.detail.contains(
+                "post_archive_writeback_fields_after_archive=[post_archive_verified_by, \
+                 post_archive_verified_at_utc, post_archive_verification_result, \
+                 post_archive_verification_reference]",
+            )
+            && item.detail.contains(
+                "archive_correlation_dimensions_when_terminal=[release_reference, section_signal, \
+                 terminal_result_status]",
+            )
+            && item
+                .detail
+                .contains("same_section_archive_receipt_required=true")
+            && item
+                .detail
+                .contains("same_section_post_archive_verification_required=true")
+            && item.detail.contains("follow_up_action=")
+            && item
+                .detail
+                .contains("append an explicit approved follow-up on the same release-review-record")
+            && item.detail.contains(
+                "do not treat that posture change as correction-only metadata clarification",
+            )
+            && item.detail.contains(
+                "archive_reference/source_record_state/post_archive_verification_reference",
+            )
+            && item.detail.contains(
+                "source_record_state must stay aligned with the current approved terminal \
+                 result_status",
+            )
+            && item.detail.contains("prior_result_statuses")
+            && item.detail.contains("exception-accepted")
+    }));
+    assert_eq!(
+        report
+            .review_decision_contracts
+            .iter()
+            .map(|contract| contract.signal)
+            .collect::<Vec<_>>(),
+        vec!["world-compat"]
+    );
+    assert!(report.review_decision_contracts.iter().any(|contract| {
+        contract.signal == "world-compat"
+            && contract.current_result_status_hint == Some("exception-accepted")
+            && contract.current_terminal_record_fields
+                == vec!["exception_reason", "rollback_reference"]
+            && contract.required_archive_receipt_fields_when_terminal
+                == vec![
+                    "archive_reference",
+                    "archived_at_utc",
+                    "archived_by",
+                    "source_record_state",
+                ]
+            && contract.required_post_archive_writeback_fields_after_archive
+                == vec![
+                    "post_archive_verified_by",
+                    "post_archive_verified_at_utc",
+                    "post_archive_verification_result",
+                    "post_archive_verification_reference",
+                ]
+            && contract.required_archive_correlation_dimensions_when_terminal
+                == vec![
+                    "release_reference",
+                    "section_signal",
+                    "terminal_result_status",
+                ]
+            && contract.same_section_archive_receipt_required
+            && contract.same_section_post_archive_verification_required
+            && contract.section_instance_validation_contract.is_some()
+            && contract.validator_integration_readiness_summary.is_some()
+            && contract
+                .required_decision_fields
+                .iter()
+                .any(|field| *field == "world_compat_status")
+            && contract
+                .exception_record_fields
+                .iter()
+                .any(|field| *field == "rollback_reference")
+            && contract.supporting_endpoints.iter().any(|endpoint| {
+                endpoint.signal == "world-compat"
+                    && endpoint.endpoint == "/health/world-compat"
+                    && endpoint.owner == "release-operator"
+            })
     }));
 }
+
 #[test]
 #[cfg(feature = "worldgen")]
 fn preflight_report_routes_load_legacy_world_compat_to_operator_review() {
@@ -4795,12 +6368,15 @@ fn preflight_report_routes_load_legacy_world_compat_to_operator_review() {
     set_world_compat_observability_status(
         &inventory,
         "record",
+        "allow",
+        "allow",
         server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::LoadLegacy),
         &server::RecipeManifestV1::record_only(
             server::DEFAULT_WORLD_SEED,
             &server::GenOpts::default(),
             true,
         ),
+        false,
     );
 
     let report = HealthState {
@@ -4837,8 +6413,705 @@ fn preflight_report_routes_load_legacy_world_compat_to_operator_review() {
             && !item.blocking
             && item.detail.contains("transitional compat import path")
             && item.detail.contains("/health/world-compat")
+            && item
+                .detail
+                .contains("result_status_hint=exception-accepted")
+            && item
+                .detail
+                .contains("terminal_record_fields=[exception_reason, rollback_reference]")
+            && item
+                .detail
+                .contains("same_section_archive_receipt_required=true")
+            && item
+                .detail
+                .contains("same_section_post_archive_verification_required=true")
+            && item.detail.contains("follow_up_action=")
+            && item
+                .detail
+                .contains("append an explicit approved follow-up on the same release-review-record")
+            && item.detail.contains(
+                "do not treat that posture change as correction-only metadata clarification",
+            )
+            && item.detail.contains(
+                "archive_reference/source_record_state/post_archive_verification_reference",
+            )
+            && item.detail.contains(
+                "source_record_state must stay aligned with the current approved terminal \
+                 result_status",
+            )
+            && item.detail.contains("prior_result_statuses")
+            && item.detail.contains("exception-accepted")
+    }));
+    let contract = report
+        .review_decision_contracts
+        .iter()
+        .find(|contract| contract.signal == "world-compat")
+        .expect("world-compat review decision contract should be exported");
+    let validation = contract
+        .section_instance_validation_contract
+        .as_ref()
+        .expect("world-compat export should carry validator contract");
+
+    assert_eq!(
+        contract.current_result_status_hint,
+        Some("exception-accepted")
+    );
+    assert_eq!(contract.current_terminal_record_fields, vec![
+        "exception_reason",
+        "rollback_reference"
+    ]);
+    assert_eq!(
+        contract.required_archive_receipt_fields_when_terminal,
+        vec![
+            "archive_reference",
+            "archived_at_utc",
+            "archived_by",
+            "source_record_state"
+        ]
+    );
+    assert_eq!(
+        contract.required_post_archive_writeback_fields_after_archive,
+        vec![
+            "post_archive_verified_by",
+            "post_archive_verified_at_utc",
+            "post_archive_verification_result",
+            "post_archive_verification_reference"
+        ]
+    );
+    assert_eq!(
+        contract.required_archive_correlation_dimensions_when_terminal,
+        vec![
+            "release_reference",
+            "section_signal",
+            "terminal_result_status"
+        ]
+    );
+    assert!(contract.same_section_archive_receipt_required);
+    assert!(contract.same_section_post_archive_verification_required);
+    assert_eq!(
+        contract.required_archive_receipt_fields_when_terminal,
+        contract
+            .archive_handoff_contract
+            .required_archive_receipt_fields
+    );
+    assert_eq!(
+        contract.required_archive_correlation_dimensions_when_terminal,
+        contract
+            .archive_handoff_contract
+            .required_archive_correlation_dimensions
+    );
+    assert_eq!(
+        contract.required_post_archive_writeback_fields_after_archive,
+        contract
+            .retention_contract
+            .required_post_archive_writeback_fields
+    );
+    assert_eq!(
+        contract.same_section_archive_receipt_required,
+        contract
+            .archive_handoff_contract
+            .terminal_section_not_complete_without_archive_receipt
+    );
+    assert_eq!(
+        contract.same_section_post_archive_verification_required,
+        contract
+            .retention_contract
+            .post_archive_verification_required
+    );
+    assert!(contract.result_status_model.iter().any(|status| {
+        status.state == "approved"
+            && status
+                .semantics
+                .contains("transitional legacy-tail allow posture")
+    }));
+    assert!(contract.result_status_model.iter().any(|status| {
+        status.state == "exception-accepted" && status.semantics.contains("transition window")
+    }));
+    assert!(
+        contract
+            .required_decision_fields
+            .iter()
+            .any(|field| { *field == "world_compat_status" })
+    );
+    assert!(
+        contract
+            .required_decision_fields
+            .iter()
+            .any(|field| { *field == "load_legacy_mode" })
+    );
+    assert!(
+        contract
+            .required_decision_fields
+            .iter()
+            .any(|field| { *field == "load_or_generate_sidecarless_mode" })
+    );
+    assert!(
+        contract
+            .required_decision_fields
+            .iter()
+            .any(|field| { *field == "world_recipe_hash" })
+    );
+    assert!(
+        contract
+            .exception_record_fields
+            .iter()
+            .any(|field| { *field == "rollback_reference" })
+    );
+    assert!(
+        contract
+            .section_record_template
+            .required_fields
+            .iter()
+            .any(|field| {
+                field.name == "load_legacy_mode"
+                    && field.placeholder == "<load-legacy-mode-or-unrecorded>"
+            })
+    );
+    assert!(
+        contract
+            .section_record_template
+            .required_fields
+            .iter()
+            .any(|field| {
+                field.name == "load_or_generate_sidecarless_mode"
+                    && field.placeholder == "<load-or-generate-sidecarless-mode-or-unrecorded>"
+            })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| {
+                field.name == "world_compat_status" && field.value == "world-compat-clear"
+            })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| { field.name == "load_legacy_mode" && field.value == "deny" })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| {
+                field.name == "load_or_generate_sidecarless_mode" && field.value == "deny"
+            })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| { field.name == "compat_entry" && field.value == "load" })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| { field.name == "compat_decision" && field.value == "loaded_existing" })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| { field.name == "strict_load_contract_gap" && field.value == "false" })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| {
+                field.name == "managed_recipe_sidecar_missing" && field.value == "false"
+            })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| {
+                field.name == "rollback_reference"
+                    && field.value == "runbook://world-compat/rollback-01"
+                    && field
+                        .rationale
+                        .contains("closing a previously accepted transition window")
+                    && field
+                        .rationale
+                        .contains("prior terminal state was exception-accepted")
+            })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| {
+                field.name == "archive_reference"
+                    && field.value
+                        == "archive://release-review/2026-05-01/public-entry-handoff-terminal"
+                    && field
+                        .rationale
+                        .contains("archived terminal evidence carried forward")
+            })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| {
+                field.name == "source_record_state"
+                    && field.value == "approved"
+                    && field
+                        .rationale
+                        .contains("archive-receipt source_record_state preserved")
+            })
+    );
+    assert!(
+        contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| {
+                field.name == "post_archive_verification_reference"
+                    && field.value == "note://archive-review/release-2026-05-01"
+                    && field
+                        .rationale
+                        .contains("post-archive verification evidence")
+            })
+    );
+    assert!(contract.section_execution_workflow.iter().any(|step| {
+        step.sequence == 3
+            && step.record_effect.contains("exception-accepted")
+            && step.record_effect.contains("deny/clear posture")
+    }));
+    assert!(contract.section_execution_workflow.iter().any(|step| {
+        step.sequence == 5
+            && step.record_effect.contains("archive_reference")
+            && step.record_effect.contains("source_record_state")
+            && step
+                .record_effect
+                .contains("post_archive_verification_reference")
+    }));
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .field_value_entries
+            .iter()
+            .any(|field| { field.name == "result_status" && field.value == "approved" })
+    );
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .field_value_entries
+            .iter()
+            .any(|field| {
+                field.name == "world_compat_status" && field.value == "world-compat-clear"
+            })
+    );
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .field_value_entries
+            .iter()
+            .any(|field| { field.name == "load_legacy_mode" && field.value == "deny" })
+    );
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .field_value_entries
+            .iter()
+            .any(|field| {
+                field.name == "load_or_generate_sidecarless_mode" && field.value == "deny"
+            })
+    );
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .field_value_entries
+            .iter()
+            .any(|field| {
+                field.name == "rollback_reference"
+                    && field.value == "runbook://world-compat/rollback-01"
+            })
+    );
+    assert!(
+        validation
+            .minimum_snapshot_example
+            .field_value_entries
+            .iter()
+            .all(|field| !(field.name == "exception_reason"))
+    );
+    assert!(
+        validation
+            .terminal_requirements
+            .required_additional_checks
+            .iter()
+            .any(|check| {
+                check.contains("load_legacy_mode = allow") && check.contains("rollback_reference")
+            })
+    );
+    assert!(
+        validation
+            .terminal_requirements
+            .conditional_required_fields
+            .iter()
+            .any(|requirement| {
+                requirement.when_result_statuses == vec!["approved"]
+                    && requirement.required_fields == vec!["rollback_reference"]
+            })
+    );
+    assert!(
+        validation
+            .archive_receipt_requirements
+            .conditional_required_fields
+            .iter()
+            .any(|requirement| {
+                requirement.when_result_statuses == vec!["approved"]
+                    && requirement.required_fields == vec!["rollback_reference"]
+            })
+    );
+
+    let approved_runtime_contract =
+        world_compat_preflight_review_decision_contract(&WorldCompatReport {
+            status: "world-compat-clear",
+            environment: "local",
+            requires_operator_review: false,
+            detail: "deny posture rehearse then rollback".to_owned(),
+            transition_window_open: Some(false),
+            review_result_status_hint: Some("approved"),
+            required_terminal_record_fields: vec!["rollback_reference"],
+            required_archive_receipt_fields_when_terminal:
+                release_review_archive_receipt_field_names(),
+            required_post_archive_writeback_fields_after_archive:
+                release_review_post_archive_writeback_field_names(),
+            required_archive_correlation_dimensions_when_terminal:
+                release_review_archive_correlation_dimensions("world-compat"),
+            same_section_archive_receipt_required: Some(true),
+            same_section_post_archive_verification_required: Some(true),
+            configured_mode: Some("record".to_owned()),
+            load_legacy_mode: Some("deny".to_owned()),
+            load_or_generate_sidecarless_mode: Some("deny".to_owned()),
+            compat_entry: Some("load"),
+            compat_decision: Some("loaded_existing"),
+            compat_failure: Some("none"),
+            strict_load_contract_gap: Some(false),
+            managed_recipe_sidecar_missing: Some(false),
+            world_recipe_hash: Some("world-recipe-hash".to_owned()),
+            chunk_recipe_hash: Some("chunk-recipe-hash".to_owned()),
+            topology_id: Some("bounded_plane_v1".to_owned()),
+            preset_id: Some("balanced".to_owned()),
+            source_surface: "world-compat",
+        });
+    assert!(
+        approved_runtime_contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| { field.name == "result_status" && field.value == "rolled-back" })
+    );
+    assert!(
+        approved_runtime_contract
+            .minimum_section_example
+            .section_state
+            == "rolled-back"
+    );
+    assert!(
+        approved_runtime_contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| {
+                field.name == "source_record_state"
+                    && field.value == "rolled-back"
+                    && field
+                        .rationale
+                        .contains("archive-receipt source_record_state preserved")
+                    && field.rationale.contains(
+                        "aligned with the terminal result_status recorded for this follow-up",
+                    )
+                    && field
+                        .rationale
+                        .contains("prior_result_statuses remains the same-section history proof")
+            })
+    );
+    assert!(
+        approved_runtime_contract
+            .minimum_section_example
+            .example_fields
+            .iter()
+            .any(|field| {
+                field.name == "prior_result_statuses"
+                    && field.value == "[\"approved\"]"
+                    && field.rationale.contains("same-section history proof")
+            })
+    );
+    let approved_follow_up_snapshot = &validation.minimum_snapshot_example;
+    let approved_follow_up_section = &contract.minimum_section_example;
+    assert_eq!(
+        approved_follow_up_snapshot.snapshot_kind,
+        "external-release-review-section-snapshot-v1"
+    );
+    assert_eq!(approved_follow_up_section.section_state, "approved");
+    assert!(
+        approved_follow_up_snapshot
+            .field_value_entries
+            .iter()
+            .any(|field| field.name == "result_status" && field.value == "approved")
+    );
+    assert!(
+        approved_follow_up_snapshot
+            .top_level_fields
+            .iter()
+            .any(|field| field.name == "prior_result_statuses"
+                && field.value == "[\"exception-accepted\"]")
+    );
+    assert!(
+        approved_follow_up_snapshot
+            .field_value_entries
+            .iter()
+            .any(|field| field.name == "source_record_state" && field.value == "approved")
+    );
+    assert!(
+        approved_follow_up_snapshot
+            .field_value_entries
+            .iter()
+            .any(|field| field.name == "archive_reference")
+    );
+    assert!(
+        approved_follow_up_snapshot
+            .field_value_entries
+            .iter()
+            .any(|field| field.name == "post_archive_verification_reference")
+    );
+    assert!(
+        approved_follow_up_section
+            .example_fields
+            .iter()
+            .any(|field| field.name == "prior_result_statuses"
+                && field.value == "[\"exception-accepted\"]")
+    );
+    assert!(
+        approved_follow_up_section
+            .example_fields
+            .iter()
+            .any(|field| field.name == "source_record_state" && field.value == "approved")
+    );
+    assert!(
+        approved_follow_up_section
+            .example_fields
+            .iter()
+            .any(|field| field.name == "archive_reference")
+    );
+    assert!(
+        approved_follow_up_section
+            .example_fields
+            .iter()
+            .any(|field| field.name == "post_archive_verification_reference")
+    );
+}
+
+#[test]
+#[cfg(feature = "worldgen")]
+fn preflight_report_routes_sidecarless_load_or_generate_world_compat_to_operator_review() {
+    let root = unique_temp_dir();
+    let state = server::ServerStatePaths::new(root.join("live"));
+    let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
+    seed_live_runtime_state(&state);
+    seed_recovery_staging_restore_state(&recovery_staging_state);
+
+    let inventory = test_runtime_observability_inventory();
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        "allow",
+        "allow",
+        server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::LoadOrGenerate),
+        &server::RecipeManifestV1::record_only(
+            server::DEFAULT_WORLD_SEED,
+            &server::GenOpts::default(),
+            true,
+        ),
+        true,
+    );
+
+    let report = HealthState {
+        environment: "local",
+        auth_server_configured: false,
+        authoritative_auth_provider: test_auth_provider(false),
+        server_state: state,
+        recovery_staging_state,
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .preflight_report();
+
+    let _ = fs::remove_dir_all(root);
+
+    assert_eq!(report.status, "operator_review_required");
+    assert!(!report.release_blocked);
+    assert!(report.requires_operator_review);
+    assert!(report.operator_review_items.iter().any(|item| {
+        item.kind == "world-compat-review"
+            && !item.blocking
+            && item.detail.contains("adjacent recipe sidecar")
+            && item.detail.contains("/health/world-compat")
+            && item
+                .detail
+                .contains("result_status_hint=exception-accepted")
+            && item
+                .detail
+                .contains("terminal_record_fields=[exception_reason, rollback_reference]")
+            && item
+                .detail
+                .contains("same_section_archive_receipt_required=true")
+            && item
+                .detail
+                .contains("same_section_post_archive_verification_required=true")
+            && item.detail.contains("follow_up_action=")
+            && item
+                .detail
+                .contains("append an explicit approved follow-up on the same release-review-record")
+            && item.detail.contains(
+                "archive_reference/source_record_state/post_archive_verification_reference",
+            )
+            && item.detail.contains("prior_result_statuses")
+            && item.detail.contains("exception-accepted")
     }));
 }
+
+#[test]
+#[cfg(feature = "worldgen")]
+fn preflight_report_keeps_strict_world_compat_clear_under_deny_posture() {
+    let root = unique_temp_dir();
+    let state = server::ServerStatePaths::new(root.join("live"));
+    let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
+    seed_live_runtime_state(&state);
+    seed_recovery_staging_restore_state(&recovery_staging_state);
+
+    let inventory = test_runtime_observability_inventory();
+    set_world_compat_observability_status(
+        &inventory,
+        "record",
+        "deny",
+        "deny",
+        server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::Load),
+        &server::RecipeManifestV1::record_only(
+            server::DEFAULT_WORLD_SEED,
+            &server::GenOpts::default(),
+            true,
+        ),
+        false,
+    );
+
+    let report = HealthState {
+        environment: "local",
+        auth_server_configured: true,
+        authoritative_auth_provider: test_auth_provider(true),
+        server_state: state,
+        recovery_staging_state,
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .preflight_report();
+
+    let _ = fs::remove_dir_all(root);
+
+    assert_eq!(report.status, "preflight_clear");
+    assert!(!report.release_blocked);
+    assert!(!report.requires_operator_review);
+    assert!(report.review_signals.is_empty());
+    assert!(report.review_decision_contracts.is_empty());
+    assert!(report.operator_review_items.is_empty());
+    assert!(report.components.iter().any(|component| {
+        component.signal == "world-compat"
+            && component.endpoint == "/health/world-compat"
+            && component.status == "world-compat-clear"
+            && !component.blocking
+            && !component.requires_operator_review
+    }));
+}
+
+#[test]
+fn preflight_report_routes_chunk_lifecycle_surface_to_operator_review() {
+    let root = unique_temp_dir();
+    let state = server::ServerStatePaths::new(root.join("live"));
+    let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
+    seed_live_runtime_state(&state);
+    seed_recovery_staging_restore_state(&recovery_staging_state);
+
+    let inventory = test_runtime_observability_inventory();
+    set_chunk_lifecycle_observability_status(
+        &inventory,
+        Some(server::ChunkLifecycleAbnormalSummary::new(
+            2,
+            [21, 34],
+            "partial_send_fail",
+            Some(144),
+        )),
+    );
+
+    let report = HealthState {
+        environment: "local",
+        auth_server_configured: false,
+        authoritative_auth_provider: test_auth_provider(false),
+        server_state: state,
+        recovery_staging_state,
+        audit_retention: crate::settings::AuditRetentionPolicy::default(),
+        runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        runtime_observability_inventory: inventory,
+        surface_inventory: Vec::new(),
+        management_auth_inventory: Vec::new(),
+        transport_security_inventory: Vec::new(),
+        governance_findings: Vec::new(),
+    }
+    .preflight_report();
+
+    let _ = fs::remove_dir_all(root);
+
+    assert_eq!(report.status, "operator_review_required");
+    assert!(!report.release_blocked);
+    assert!(report.requires_operator_review);
+    assert!(report.review_signals.contains(&"chunk-lifecycle"));
+    assert!(report.components.iter().any(|component| {
+        component.signal == "chunk-lifecycle"
+            && component.endpoint == "/health/observability"
+            && component.status == "chunk-lifecycle-review-required"
+            && !component.blocking
+            && component.requires_operator_review
+    }));
+    assert!(report.follow_up_endpoints.iter().any(|follow_up| {
+        follow_up.signal == "chunk-lifecycle"
+            && follow_up.endpoint == "/health/observability"
+            && !follow_up.blocking
+            && follow_up.owner == "release-operator"
+    }));
+    assert!(report.operator_review_items.iter().any(|item| {
+        item.kind == "chunk-lifecycle-review"
+            && !item.blocking
+            && item.detail.contains("partial_send_fail")
+            && item.detail.contains("/health/observability")
+    }));
+}
+
 #[test]
 fn preflight_report_blocks_on_compatibility_contract_drift() {
     let root = unique_temp_dir();
@@ -6232,4 +8505,117 @@ fn bind_listener_fails_when_port_is_already_in_use() {
 
         assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
     });
+}
+
+#[cfg(feature = "worldgen")]
+#[test]
+fn startup_health_wiring_smoke_serves_world_compat_and_preflight_happy_path() {
+    let root = unique_temp_dir();
+    let server_state = server::ServerStatePaths::new(root.join("live"));
+    let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
+    seed_live_runtime_state(&server_state);
+    seed_recovery_staging_restore_state(&recovery_staging_state);
+
+    let runtime_layout = crate::settings::RuntimeLayout {
+        userdata_dir: root.clone(),
+        server_cli_settings_dir: root.join("server-cli"),
+        server_state,
+        recovery_staging_state,
+    };
+    let settings = crate::settings::Settings::default();
+    let runtime_listener_inventory = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let runtime_observability_inventory = startup_runtime_observability_inventory(None);
+    let manifest = server::RecipeManifestV1::record_only(
+        server::DEFAULT_WORLD_SEED,
+        &server::GenOpts::default(),
+        true,
+    );
+    apply_startup_world_compat_observability(
+        &runtime_observability_inventory,
+        StartupWorldCompatObservability {
+            configured_mode: "record",
+            load_legacy_mode: "deny",
+            load_or_generate_sidecarless_mode: "deny",
+            compat_audit: server::CompatAuditV1::loaded_existing(server::CompatEntryKindV1::Load),
+            recipe_manifest: &manifest,
+            managed_recipe_sidecar_missing: false,
+        },
+    );
+    let health_state = startup_health_state(
+        &settings,
+        &runtime_layout,
+        runtime_listener_inventory,
+        runtime_observability_inventory,
+        true,
+        test_auth_provider(true),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("should create smoke runtime");
+    let (chat_cache, _chat_exporter) =
+        server::chat::ChatCache::new(std::time::Duration::from_secs(60), &runtime);
+
+    runtime.block_on(async move {
+        let listener = bind_listener("127.0.0.1:0".parse::<SocketAddr>().unwrap())
+            .await
+            .expect("should bind smoke listener");
+        let bind_address = listener
+            .local_addr()
+            .expect("listener should expose local addr");
+        let (web_ui_request_s, _web_ui_request_r) = tokio::sync::mpsc::channel(8);
+        let shutdown = Arc::new(Notify::new());
+        let shutdown_for_server = Arc::clone(&shutdown);
+        let join = tokio::spawn(async move {
+            run_with_listener(
+                Arc::new(Registry::new()),
+                chat_cache,
+                None,
+                "smoke-ui-secret".to_owned(),
+                web_ui_request_s,
+                health_state,
+                listener,
+                shutdown_for_server.notified(),
+            )
+            .await
+        });
+
+        tokio::task::yield_now().await;
+
+        let world_compat = smoke_http_get(bind_address, "/health/world-compat")
+            .await
+            .expect("world-compat smoke request should succeed");
+        assert!(world_compat.status_line.contains("200 OK"));
+        assert!(
+            world_compat
+                .body
+                .contains("\"status\":\"world-compat-clear\"")
+        );
+        assert!(world_compat.body.contains("\"configured_mode\":\"record\""));
+        assert!(world_compat.body.contains("\"load_legacy_mode\":\"deny\""));
+        assert!(
+            world_compat
+                .body
+                .contains("\"load_or_generate_sidecarless_mode\":\"deny\"")
+        );
+        assert!(world_compat.body.contains("\"compat_entry\":\"load\""));
+
+        let preflight = smoke_http_get(bind_address, "/health/preflight")
+            .await
+            .expect("preflight smoke request should succeed");
+        assert!(preflight.status_line.contains("200 OK"));
+        assert!(preflight.body.contains("\"status\":\"preflight_clear\""));
+        assert!(preflight.body.contains("\"world-compat\""));
+
+        shutdown.notify_one();
+        let server_result = join.await.expect("smoke web task should join");
+        assert!(server_result.is_ok());
+    });
+
+    let _ = fs::remove_dir_all(root);
 }

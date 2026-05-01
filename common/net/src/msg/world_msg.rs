@@ -3,6 +3,105 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use vek::*;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeTopologyDescriptor {
+    /// Runtime topology identifier for the loaded world.
+    pub topology_id: String,
+    /// Canonical finite chunk-key query domain under the current topology
+    /// policy. This does not encode runtime load state.
+    pub query_chunk_key_aabr: Aabr<i32>,
+    /// Finite chunk-key subdomain where runtime chunk generation is guaranteed
+    /// to produce a real non-default chunk product under the current topology
+    /// and generation contract.
+    pub runtime_chunk_product_key_aabr: Aabr<i32>,
+    /// Policy used when a runtime consumer has no world chunk product available
+    /// under the current topology contract. This includes keys outside the
+    /// canonical query domain and queryable keys that intentionally fall back
+    /// to the default chunk product.
+    pub missing_world_bounds_policy: MissingWorldBoundsPolicy,
+}
+
+impl RuntimeTopologyDescriptor {
+    pub fn wraps_x(&self) -> bool {
+        matches!(
+            self.topology_id.as_str(),
+            "wrap_toroidal_exp_v1" | "wrap_cylindrical_exp_v1"
+        )
+    }
+
+    pub fn wraps_y(&self) -> bool { self.topology_id.as_str() == "wrap_toroidal_exp_v1" }
+
+    pub fn query_chunk_dimensions(&self) -> Vec2<i32> {
+        self.query_chunk_key_aabr.max - self.query_chunk_key_aabr.min + 1
+    }
+
+    pub fn contains_query_chunk_key(&self, chunk_key: Vec2<i32>) -> bool {
+        let bounds = self.query_chunk_key_aabr;
+        (bounds.min.x..=bounds.max.x).contains(&chunk_key.x)
+            && (bounds.min.y..=bounds.max.y).contains(&chunk_key.y)
+    }
+
+    pub fn normalize_query_chunk_key(&self, chunk_key: Vec2<i32>) -> Option<Vec2<i32>> {
+        let dims = self.query_chunk_dimensions();
+        let min = self.query_chunk_key_aabr.min;
+        let normalize_axis = |coord: i32, axis_min: i32, axis_len: i32, wraps: bool| {
+            if wraps {
+                Some((coord - axis_min).rem_euclid(axis_len) + axis_min)
+            } else if (axis_min..axis_min + axis_len).contains(&coord) {
+                Some(coord)
+            } else {
+                None
+            }
+        };
+
+        Some(Vec2::new(
+            normalize_axis(chunk_key.x, min.x, dims.x, self.wraps_x())?,
+            normalize_axis(chunk_key.y, min.y, dims.y, self.wraps_y())?,
+        ))
+    }
+
+    pub fn query_chunk_key_delta(&self, from: Vec2<i32>, to: Vec2<i32>) -> Option<Vec2<i32>> {
+        let from = self.normalize_query_chunk_key(from)?;
+        let to = self.normalize_query_chunk_key(to)?;
+        let dims = self.query_chunk_dimensions();
+        Some(Vec2::new(
+            shortest_axis_delta(to.x - from.x, dims.x, self.wraps_x()),
+            shortest_axis_delta(to.y - from.y, dims.y, self.wraps_y()),
+        ))
+    }
+
+    pub fn contains_runtime_chunk_product_key(&self, chunk_key: Vec2<i32>) -> bool {
+        let bounds = self.runtime_chunk_product_key_aabr;
+        (bounds.min.x..=bounds.max.x).contains(&chunk_key.x)
+            && (bounds.min.y..=bounds.max.y).contains(&chunk_key.y)
+    }
+}
+
+fn shortest_axis_delta(delta: i32, axis_len: i32, wraps: bool) -> i32 {
+    if !wraps {
+        return delta;
+    }
+
+    let wrapped_positive = delta.rem_euclid(axis_len);
+    let wrapped_negative = wrapped_positive - axis_len;
+    let positive_abs = wrapped_positive.unsigned_abs();
+    let negative_abs = wrapped_negative.unsigned_abs();
+    if positive_abs < negative_abs {
+        wrapped_positive
+    } else if negative_abs < positive_abs {
+        wrapped_negative
+    } else if delta >= 0 {
+        wrapped_positive
+    } else {
+        wrapped_negative
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum MissingWorldBoundsPolicy {
+    BoundedOceanDefaultChunk,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// World map information.  Note that currently, we always send the whole thing
 /// in one go, but the structure aims to try to provide information as locally
@@ -123,10 +222,58 @@ pub struct WorldMapMsg {
     pub sites: Vec<Marker>,
     pub possible_starting_sites: Vec<SiteId>,
     pub pois: Vec<PoiInfo>,
-    /// Default chunk (representing the ocean outside the map bounds).  Sea
-    /// level (used to provide a base altitude) is the lower bound of this
-    /// chunk.
+    /// Runtime topology/query-domain descriptor for chunk-level world access.
+    pub runtime_topology: RuntimeTopologyDescriptor,
+    /// Default chunk used when no world chunk product is available for a query
+    /// under the current topology contract. At present this is still the
+    /// bounded ocean fallback product, and sea level (used to provide a base
+    /// altitude) is the lower bound of this chunk.
     pub default_chunk: Arc<TerrainChunk>,
+}
+
+impl WorldMapMsg {
+    pub fn topology_id(&self) -> &str { &self.runtime_topology.topology_id }
+
+    pub fn query_chunk_key_aabr(&self) -> Aabr<i32> { self.runtime_topology.query_chunk_key_aabr }
+
+    pub fn wraps_x(&self) -> bool { self.runtime_topology.wraps_x() }
+
+    pub fn wraps_y(&self) -> bool { self.runtime_topology.wraps_y() }
+
+    pub fn query_chunk_dimensions(&self) -> Vec2<i32> {
+        self.runtime_topology.query_chunk_dimensions()
+    }
+
+    pub fn contains_query_chunk_key(&self, chunk_key: Vec2<i32>) -> bool {
+        self.runtime_topology.contains_query_chunk_key(chunk_key)
+    }
+
+    pub fn normalize_query_chunk_key(&self, chunk_key: Vec2<i32>) -> Option<Vec2<i32>> {
+        self.runtime_topology.normalize_query_chunk_key(chunk_key)
+    }
+
+    pub fn query_chunk_key_delta(&self, from: Vec2<i32>, to: Vec2<i32>) -> Option<Vec2<i32>> {
+        self.runtime_topology.query_chunk_key_delta(from, to)
+    }
+
+    pub fn runtime_chunk_product_key_aabr(&self) -> Aabr<i32> {
+        self.runtime_topology.runtime_chunk_product_key_aabr
+    }
+
+    pub fn contains_runtime_chunk_product_key(&self, chunk_key: Vec2<i32>) -> bool {
+        self.runtime_topology
+            .contains_runtime_chunk_product_key(chunk_key)
+    }
+
+    pub fn missing_world_bounds_policy(&self) -> MissingWorldBoundsPolicy {
+        self.runtime_topology.missing_world_bounds_policy
+    }
+
+    pub fn default_chunk_for_missing_world_bounds(&self) -> Arc<TerrainChunk> {
+        Arc::clone(&self.default_chunk)
+    }
+
+    pub fn default_chunk_sea_level(&self) -> f32 { self.default_chunk.get_min_z() as f32 }
 }
 
 pub type SiteId = common::trade::SiteId;
@@ -141,6 +288,168 @@ pub struct EconomyInfo {
     pub labors: Vec<f32>,
     pub last_exports: HashMap<Good, f32>,
     pub resources: HashMap<Good, f32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_chunk_helpers_preserve_current_bounded_ocean_contract() {
+        let msg = WorldMapMsg {
+            dimensions_lg: Vec2::zero(),
+            max_height: 1.0,
+            rgba: Grid::new(Vec2::one(), 0),
+            alt: Grid::new(Vec2::one(), 0),
+            horizons: [(vec![0], vec![0]), (vec![0], vec![0])],
+            sites: Vec::new(),
+            possible_starting_sites: Vec::new(),
+            pois: Vec::new(),
+            runtime_topology: RuntimeTopologyDescriptor {
+                topology_id: "bounded_plane_v1".to_owned(),
+                query_chunk_key_aabr: Aabr {
+                    min: Vec2::zero(),
+                    max: Vec2::new(3, 3),
+                },
+                runtime_chunk_product_key_aabr: Aabr {
+                    min: Vec2::new(1, 1),
+                    max: Vec2::new(2, 2),
+                },
+                missing_world_bounds_policy: MissingWorldBoundsPolicy::BoundedOceanDefaultChunk,
+            },
+            default_chunk: Arc::new(TerrainChunk::water(123)),
+        };
+
+        assert_eq!(msg.topology_id(), "bounded_plane_v1");
+        assert_eq!(msg.query_chunk_key_aabr(), Aabr {
+            min: Vec2::zero(),
+            max: Vec2::new(3, 3),
+        });
+        assert!(msg.contains_query_chunk_key(Vec2::zero()));
+        assert!(msg.contains_query_chunk_key(Vec2::new(1, 0)));
+        assert_eq!(msg.runtime_chunk_product_key_aabr(), Aabr {
+            min: Vec2::new(1, 1),
+            max: Vec2::new(2, 2),
+        });
+        assert!(!msg.contains_runtime_chunk_product_key(Vec2::zero()));
+        assert!(msg.contains_runtime_chunk_product_key(Vec2::new(1, 1)));
+        assert_eq!(
+            msg.missing_world_bounds_policy(),
+            MissingWorldBoundsPolicy::BoundedOceanDefaultChunk
+        );
+        let cloned_default_chunk = msg.default_chunk_for_missing_world_bounds();
+        assert!(Arc::ptr_eq(&msg.default_chunk, &cloned_default_chunk));
+        assert_eq!(msg.default_chunk_sea_level(), 123.0);
+    }
+
+    #[test]
+    fn runtime_topology_descriptor_normalizes_and_wraps_query_chunk_keys() {
+        let toroidal = RuntimeTopologyDescriptor {
+            topology_id: "wrap_toroidal_exp_v1".to_owned(),
+            query_chunk_key_aabr: Aabr {
+                min: Vec2::zero(),
+                max: Vec2::new(15, 15),
+            },
+            runtime_chunk_product_key_aabr: Aabr {
+                min: Vec2::zero(),
+                max: Vec2::new(15, 15),
+            },
+            missing_world_bounds_policy: MissingWorldBoundsPolicy::BoundedOceanDefaultChunk,
+        };
+        let cylindrical = RuntimeTopologyDescriptor {
+            topology_id: "wrap_cylindrical_exp_v1".to_owned(),
+            query_chunk_key_aabr: Aabr {
+                min: Vec2::zero(),
+                max: Vec2::new(15, 15),
+            },
+            runtime_chunk_product_key_aabr: Aabr {
+                min: Vec2::zero(),
+                max: Vec2::new(15, 13),
+            },
+            missing_world_bounds_policy: MissingWorldBoundsPolicy::BoundedOceanDefaultChunk,
+        };
+        let bounded = RuntimeTopologyDescriptor {
+            topology_id: "bounded_plane_v1".to_owned(),
+            query_chunk_key_aabr: Aabr {
+                min: Vec2::zero(),
+                max: Vec2::new(15, 15),
+            },
+            runtime_chunk_product_key_aabr: Aabr {
+                min: Vec2::one(),
+                max: Vec2::new(13, 13),
+            },
+            missing_world_bounds_policy: MissingWorldBoundsPolicy::BoundedOceanDefaultChunk,
+        };
+
+        assert_eq!(
+            toroidal.normalize_query_chunk_key(Vec2::new(-1, 16)),
+            Some(Vec2::new(15, 0))
+        );
+        assert_eq!(
+            cylindrical.normalize_query_chunk_key(Vec2::new(-1, 7)),
+            Some(Vec2::new(15, 7))
+        );
+        assert_eq!(
+            cylindrical.normalize_query_chunk_key(Vec2::new(3, -1)),
+            None
+        );
+        assert_eq!(bounded.normalize_query_chunk_key(Vec2::new(-1, 0)), None);
+    }
+
+    #[test]
+    fn runtime_topology_descriptor_exposes_shortest_query_chunk_delta() {
+        let toroidal = RuntimeTopologyDescriptor {
+            topology_id: "wrap_toroidal_exp_v1".to_owned(),
+            query_chunk_key_aabr: Aabr {
+                min: Vec2::zero(),
+                max: Vec2::new(15, 15),
+            },
+            runtime_chunk_product_key_aabr: Aabr {
+                min: Vec2::zero(),
+                max: Vec2::new(15, 15),
+            },
+            missing_world_bounds_policy: MissingWorldBoundsPolicy::BoundedOceanDefaultChunk,
+        };
+        let cylindrical = RuntimeTopologyDescriptor {
+            topology_id: "wrap_cylindrical_exp_v1".to_owned(),
+            query_chunk_key_aabr: Aabr {
+                min: Vec2::zero(),
+                max: Vec2::new(15, 15),
+            },
+            runtime_chunk_product_key_aabr: Aabr {
+                min: Vec2::zero(),
+                max: Vec2::new(15, 13),
+            },
+            missing_world_bounds_policy: MissingWorldBoundsPolicy::BoundedOceanDefaultChunk,
+        };
+        let bounded = RuntimeTopologyDescriptor {
+            topology_id: "bounded_plane_v1".to_owned(),
+            query_chunk_key_aabr: Aabr {
+                min: Vec2::zero(),
+                max: Vec2::new(15, 15),
+            },
+            runtime_chunk_product_key_aabr: Aabr {
+                min: Vec2::one(),
+                max: Vec2::new(13, 13),
+            },
+            missing_world_bounds_policy: MissingWorldBoundsPolicy::BoundedOceanDefaultChunk,
+        };
+
+        assert!(toroidal.wraps_x());
+        assert!(toroidal.wraps_y());
+        assert_eq!(
+            toroidal.query_chunk_key_delta(Vec2::new(0, 0), Vec2::new(15, 15)),
+            Some(Vec2::new(-1, -1))
+        );
+        assert_eq!(
+            cylindrical.query_chunk_key_delta(Vec2::new(0, 7), Vec2::new(15, 7)),
+            Some(Vec2::new(-1, 0))
+        );
+        assert_eq!(
+            bounded.query_chunk_key_delta(Vec2::new(1, 1), Vec2::new(14, 1)),
+            Some(Vec2::new(13, 0))
+        );
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

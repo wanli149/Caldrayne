@@ -40,7 +40,9 @@ use std::{
     path::{Path, PathBuf},
 };
 use tracing::{error, warn};
-use world::sim::{CompatMode, DEFAULT_WORLD_SEED, FileOpts};
+use world::sim::{
+    CompatMode, DEFAULT_WORLD_SEED, FileOpts, LoadLegacyMode, LoadOrGenerateSidecarlessMode,
+};
 
 use self::server_physics::ServerPhysicsForceList;
 use crate::data_dir;
@@ -53,6 +55,13 @@ const ADMINS_FILENAME: &str = "admins.ron";
 const SERVER_PHYSICS_FORCE_FILENAME: &str = "server_physics_force.ron";
 
 pub const SINGLEPLAYER_SERVER_NAME: &str = "Singleplayer";
+pub const DEFAULT_COMPLETED_CHUNK_INTAKE_BUDGET_PER_TICK: usize = 64;
+pub const DEFAULT_CHUNK_GENERATION_SUBMIT_BUDGET_PER_TICK: Option<usize> = None;
+pub const DEFAULT_CHUNK_SERIALIZE_DISTINCT_BUDGET_PER_SERIALIZE_TICK: Option<usize> = None;
+pub const DEFAULT_CHUNK_SERIALIZE_BATCH_SIZE_PER_JOB: usize = 10;
+pub const DEFAULT_CHUNK_SERIALIZE_INTERVAL_TICKS: u64 = 15;
+pub const DEFAULT_CHUNK_SERIALIZE_MAX_JOBS_PER_SERIALIZE_TICK: Option<usize> = None;
+pub const DEFAULT_CHUNK_SEND_BUDGET_PER_TICK: Option<usize> = None;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SettingsFileProbe {
@@ -453,7 +462,50 @@ pub struct Settings {
     /// may still surface operator review in health during the deprecation
     /// window.
     pub world_compat_mode: CompatMode,
+    /// Controls whether the transitional `LoadLegacy(path)` compat-import
+    /// entry is still admitted (`allow`) or rejected at startup (`deny`).
+    ///
+    /// Dedicated defaults now seed `deny`, while singleplayer preserves
+    /// `allow` when loading older settings files that omit the field.
+    pub load_legacy_mode: LoadLegacyMode,
+    /// Controls whether managed `LoadOrGenerate` may still reuse an existing
+    /// world when its adjacent recipe sidecar is missing (`allow`) or must
+    /// reject startup instead (`deny`).
+    ///
+    /// Dedicated defaults now seed `deny`, while singleplayer preserves
+    /// `allow` when loading older settings files that omit the field.
+    pub load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
     pub max_view_distance: Option<u32>,
+    /// Maximum number of completed generated chunks that `terrain::Sys`
+    /// will intake into `TerrainGrid` per tick.
+    pub completed_chunk_intake_budget_per_tick: usize,
+    /// Optional per-tick budget for how many queued chunk-generation requests
+    /// `terrain::Sys` may admit into `ChunkGenerator`.
+    ///
+    /// `None` preserves the legacy drain-all submission behavior.
+    pub chunk_generation_submit_budget_per_tick: Option<usize>,
+    /// Optional per-serialize-tick budget for how many distinct chunks
+    /// `chunk_serialize::Sys` may admit into serialization work.
+    ///
+    /// `None` preserves the legacy unbounded distinct admission behavior.
+    pub chunk_serialize_distinct_budget_per_serialize_tick: Option<usize>,
+    /// Maximum number of admitted distinct chunks packed into one
+    /// `CHUNK_SERIALIZER` slowjob batch.
+    pub chunk_serialize_batch_size_per_job: usize,
+    /// How many server ticks `chunk_serialize::Sys` waits between destructive
+    /// bus drains and serialize admissions.
+    pub chunk_serialize_interval_ticks: u64,
+    /// Optional per-serialize-tick budget for how many `CHUNK_SERIALIZER`
+    /// slowjob batches `chunk_serialize::Sys` may spawn from its admitted
+    /// serialize-ready backlog.
+    ///
+    /// `None` preserves the legacy unbounded spawn behavior.
+    pub chunk_serialize_max_jobs_per_serialize_tick: Option<usize>,
+    /// Optional per-tick budget for how many serialized chunks
+    /// `chunk_send::Sys` may drain from the serialize-to-send queue.
+    ///
+    /// `None` preserves the legacy drain-all send behavior.
+    pub chunk_send_budget_per_tick: Option<usize>,
     pub max_player_group_size: u32,
     pub client_timeout: Duration,
     pub max_player_for_kill_broadcast: Option<usize>,
@@ -471,6 +523,21 @@ pub struct Settings {
 
     #[serde(default)]
     pub world: WorldSettings,
+}
+
+struct CompatGatePresence {
+    load_legacy_mode: bool,
+    load_or_generate_sidecarless_mode: bool,
+}
+
+impl CompatGatePresence {
+    fn from_settings_text(contents: &str) -> Self {
+        Self {
+            load_legacy_mode: contents.contains("load_legacy_mode:"),
+            load_or_generate_sidecarless_mode: contents
+                .contains("load_or_generate_sidecarless_mode:"),
+        }
+    }
 }
 
 impl Default for Settings {
@@ -493,7 +560,19 @@ impl Default for Settings {
             day_length: DAY_LENGTH_DEFAULT,
             map_file: None,
             world_compat_mode: CompatMode::Record,
+            load_legacy_mode: LoadLegacyMode::Deny,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
             max_view_distance: Some(65),
+            completed_chunk_intake_budget_per_tick: DEFAULT_COMPLETED_CHUNK_INTAKE_BUDGET_PER_TICK,
+            chunk_generation_submit_budget_per_tick:
+                DEFAULT_CHUNK_GENERATION_SUBMIT_BUDGET_PER_TICK,
+            chunk_serialize_distinct_budget_per_serialize_tick:
+                DEFAULT_CHUNK_SERIALIZE_DISTINCT_BUDGET_PER_SERIALIZE_TICK,
+            chunk_serialize_batch_size_per_job: DEFAULT_CHUNK_SERIALIZE_BATCH_SIZE_PER_JOB,
+            chunk_serialize_interval_ticks: DEFAULT_CHUNK_SERIALIZE_INTERVAL_TICKS,
+            chunk_serialize_max_jobs_per_serialize_tick:
+                DEFAULT_CHUNK_SERIALIZE_MAX_JOBS_PER_SERIALIZE_TICK,
+            chunk_send_budget_per_tick: DEFAULT_CHUNK_SEND_BUDGET_PER_TICK,
             max_player_group_size: 6,
             calendar_mode: CalendarMode::Auto,
             client_timeout: Duration::from_secs(40),
@@ -508,16 +587,331 @@ impl Default for Settings {
 
 #[cfg(test)]
 mod tests {
-    use super::Settings;
-    use world::sim::CompatMode;
+    use super::{
+        DEFAULT_CHUNK_GENERATION_SUBMIT_BUDGET_PER_TICK, DEFAULT_CHUNK_SEND_BUDGET_PER_TICK,
+        DEFAULT_CHUNK_SERIALIZE_BATCH_SIZE_PER_JOB,
+        DEFAULT_CHUNK_SERIALIZE_DISTINCT_BUDGET_PER_SERIALIZE_TICK,
+        DEFAULT_CHUNK_SERIALIZE_INTERVAL_TICKS,
+        DEFAULT_CHUNK_SERIALIZE_MAX_JOBS_PER_SERIALIZE_TICK,
+        DEFAULT_COMPLETED_CHUNK_INTAKE_BUDGET_PER_TICK, Settings, settings_file_path,
+    };
+    use std::{
+        env, fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    use world::sim::{CompatMode, LoadLegacyMode, LoadOrGenerateSidecarlessMode};
+
+    fn unique_temp_dir(label: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        env::temp_dir().join(format!("caldrayne-{label}-{nanos}"))
+    }
 
     #[test]
-    fn legacy_settings_without_world_compat_mode_default_to_record() {
+    fn legacy_settings_without_world_compat_mode_follow_dedicated_defaults() {
         let ron = "(world_seed: 1337)";
 
         let settings: Settings = ron::from_str(ron).expect("legacy settings should deserialize");
 
         assert_eq!(settings.world_compat_mode, CompatMode::Record);
+        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Deny);
+        assert_eq!(
+            settings.load_or_generate_sidecarless_mode,
+            LoadOrGenerateSidecarlessMode::Deny
+        );
+        assert_eq!(
+            settings.completed_chunk_intake_budget_per_tick,
+            DEFAULT_COMPLETED_CHUNK_INTAKE_BUDGET_PER_TICK
+        );
+        assert_eq!(
+            settings.chunk_generation_submit_budget_per_tick,
+            DEFAULT_CHUNK_GENERATION_SUBMIT_BUDGET_PER_TICK
+        );
+        assert_eq!(
+            settings.chunk_serialize_distinct_budget_per_serialize_tick,
+            DEFAULT_CHUNK_SERIALIZE_DISTINCT_BUDGET_PER_SERIALIZE_TICK
+        );
+        assert_eq!(
+            settings.chunk_serialize_batch_size_per_job,
+            DEFAULT_CHUNK_SERIALIZE_BATCH_SIZE_PER_JOB
+        );
+        assert_eq!(
+            settings.chunk_serialize_interval_ticks,
+            DEFAULT_CHUNK_SERIALIZE_INTERVAL_TICKS
+        );
+        assert_eq!(
+            settings.chunk_serialize_max_jobs_per_serialize_tick,
+            DEFAULT_CHUNK_SERIALIZE_MAX_JOBS_PER_SERIALIZE_TICK
+        );
+        assert_eq!(
+            settings.chunk_send_budget_per_tick,
+            DEFAULT_CHUNK_SEND_BUDGET_PER_TICK
+        );
+    }
+
+    #[test]
+    fn dedicated_missing_settings_file_persists_compat_gates_deny() {
+        let root = unique_temp_dir("dedicated-settings");
+        let settings_path = settings_file_path(&root);
+
+        let _ = fs::remove_dir_all(&root);
+
+        let settings = Settings::load(&root);
+
+        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Deny);
+        assert_eq!(
+            settings.load_or_generate_sidecarless_mode,
+            LoadOrGenerateSidecarlessMode::Deny
+        );
+
+        let persisted: Settings = ron::de::from_reader(
+            fs::File::open(&settings_path).expect("dedicated settings file should be created"),
+        )
+        .expect("persisted dedicated settings should deserialize");
+        assert_eq!(persisted.load_legacy_mode, LoadLegacyMode::Deny);
+        assert_eq!(
+            persisted.load_or_generate_sidecarless_mode,
+            LoadOrGenerateSidecarlessMode::Deny
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn singleplayer_missing_settings_file_keeps_compat_gates_allow() {
+        let root = unique_temp_dir("singleplayer-settings");
+        let settings_path = settings_file_path(&root);
+
+        let _ = fs::remove_dir_all(&root);
+
+        let settings = Settings::singleplayer(&root);
+
+        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Allow);
+        assert_eq!(
+            settings.load_or_generate_sidecarless_mode,
+            LoadOrGenerateSidecarlessMode::Allow
+        );
+
+        let persisted: Settings = ron::de::from_reader(
+            fs::File::open(&settings_path).expect("singleplayer settings file should be created"),
+        )
+        .expect("persisted singleplayer settings should deserialize");
+        assert_eq!(persisted.load_legacy_mode, LoadLegacyMode::Allow);
+        assert_eq!(
+            persisted.load_or_generate_sidecarless_mode,
+            LoadOrGenerateSidecarlessMode::Allow
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dedicated_legacy_settings_file_without_compat_fields_defaults_missing_fields_to_deny() {
+        let root = unique_temp_dir("dedicated-legacy-settings");
+        let settings_path = settings_file_path(&root);
+
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(
+            settings_path
+                .parent()
+                .expect("settings path should have parent"),
+        )
+        .expect("settings dir should be created");
+        fs::write(&settings_path, "(world_seed: 1337)")
+            .expect("legacy dedicated settings file should be written");
+
+        let settings = Settings::load(&root);
+
+        assert_eq!(settings.world_compat_mode, CompatMode::Record);
+        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Deny);
+        assert_eq!(
+            settings.load_or_generate_sidecarless_mode,
+            LoadOrGenerateSidecarlessMode::Deny
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn singleplayer_legacy_settings_file_without_compat_fields_keeps_compat_gates_allow() {
+        let root = unique_temp_dir("singleplayer-legacy-settings");
+        let settings_path = settings_file_path(&root);
+
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(
+            settings_path
+                .parent()
+                .expect("settings path should have parent"),
+        )
+        .expect("settings dir should be created");
+        fs::write(&settings_path, "(world_seed: 1337)")
+            .expect("legacy singleplayer settings file should be written");
+
+        let settings = Settings::singleplayer(&root);
+
+        assert_eq!(settings.world_compat_mode, CompatMode::Record);
+        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Allow);
+        assert_eq!(
+            settings.load_or_generate_sidecarless_mode,
+            LoadOrGenerateSidecarlessMode::Allow
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dedicated_explicit_allow_compat_override_is_preserved() {
+        let root = unique_temp_dir("dedicated-explicit-allow");
+        let settings_path = settings_file_path(&root);
+
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(
+            settings_path
+                .parent()
+                .expect("settings path should have parent"),
+        )
+        .expect("settings dir should be created");
+        Settings {
+            world_seed: 1337,
+            load_legacy_mode: LoadLegacyMode::Allow,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+            ..Settings::default()
+        }
+        .save_to_file(&settings_path)
+        .expect("dedicated settings override file should be written");
+
+        let settings = Settings::load(&root);
+
+        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Allow);
+        assert_eq!(
+            settings.load_or_generate_sidecarless_mode,
+            LoadOrGenerateSidecarlessMode::Allow
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn singleplayer_explicit_deny_compat_override_is_preserved() {
+        let root = unique_temp_dir("singleplayer-explicit-deny");
+        let settings_path = settings_file_path(&root);
+
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(
+            settings_path
+                .parent()
+                .expect("settings path should have parent"),
+        )
+        .expect("settings dir should be created");
+        Settings {
+            world_seed: 1337,
+            load_legacy_mode: LoadLegacyMode::Deny,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
+            ..Settings::singleplayer_default_settings()
+        }
+        .save_to_file(&settings_path)
+        .expect("singleplayer settings override file should be written");
+
+        let settings = Settings::singleplayer(&root);
+
+        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Deny);
+        assert_eq!(
+            settings.load_or_generate_sidecarless_mode,
+            LoadOrGenerateSidecarlessMode::Deny
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn zero_completed_chunk_intake_budget_is_reset_to_default_on_validate() {
+        let ron = "(completed_chunk_intake_budget_per_tick: 0)";
+
+        let mut settings: Settings =
+            ron::from_str(ron).expect("settings should deserialize before validation");
+        settings.validate();
+
+        assert_eq!(
+            settings.completed_chunk_intake_budget_per_tick,
+            DEFAULT_COMPLETED_CHUNK_INTAKE_BUDGET_PER_TICK
+        );
+    }
+
+    #[test]
+    fn zero_chunk_generation_submit_budget_is_cleared_to_unbounded_on_validate() {
+        let ron = "(chunk_generation_submit_budget_per_tick: Some(0))";
+
+        let mut settings: Settings =
+            ron::from_str(ron).expect("settings should deserialize before validation");
+        settings.validate();
+
+        assert_eq!(settings.chunk_generation_submit_budget_per_tick, None);
+    }
+
+    #[test]
+    fn zero_chunk_serialize_distinct_budget_is_cleared_to_unbounded_on_validate() {
+        let ron = "(chunk_serialize_distinct_budget_per_serialize_tick: Some(0))";
+
+        let mut settings: Settings =
+            ron::from_str(ron).expect("settings should deserialize before validation");
+        settings.validate();
+
+        assert_eq!(
+            settings.chunk_serialize_distinct_budget_per_serialize_tick,
+            None
+        );
+    }
+
+    #[test]
+    fn zero_chunk_serialize_batch_size_is_cleared_to_default_on_validate() {
+        let ron = "(chunk_serialize_batch_size_per_job: 0)";
+
+        let mut settings: Settings =
+            ron::from_str(ron).expect("settings should deserialize before validation");
+        settings.validate();
+
+        assert_eq!(
+            settings.chunk_serialize_batch_size_per_job,
+            DEFAULT_CHUNK_SERIALIZE_BATCH_SIZE_PER_JOB
+        );
+    }
+
+    #[test]
+    fn zero_chunk_serialize_interval_ticks_is_cleared_to_default_on_validate() {
+        let ron = "(chunk_serialize_interval_ticks: 0)";
+
+        let mut settings: Settings =
+            ron::from_str(ron).expect("settings should deserialize before validation");
+        settings.validate();
+
+        assert_eq!(
+            settings.chunk_serialize_interval_ticks,
+            DEFAULT_CHUNK_SERIALIZE_INTERVAL_TICKS
+        );
+    }
+
+    #[test]
+    fn zero_chunk_serialize_max_jobs_is_cleared_to_unbounded_on_validate() {
+        let ron = "(chunk_serialize_max_jobs_per_serialize_tick: Some(0))";
+
+        let mut settings: Settings =
+            ron::from_str(ron).expect("settings should deserialize before validation");
+        settings.validate();
+
+        assert_eq!(settings.chunk_serialize_max_jobs_per_serialize_tick, None);
+    }
+
+    #[test]
+    fn zero_chunk_send_budget_is_cleared_to_unbounded_on_validate() {
+        let ron = "(chunk_send_budget_per_tick: Some(0))";
+
+        let mut settings: Settings =
+            ron::from_str(ron).expect("settings should deserialize before validation");
+        settings.validate();
+
+        assert_eq!(settings.chunk_send_budget_per_tick, None);
     }
 }
 
@@ -539,15 +933,42 @@ impl Settings {
         }
     }
 
-    /// path: Directory that contains the server config directory
-    pub fn load(path: &Path) -> Self {
+    fn singleplayer_default_settings() -> Self {
+        Self {
+            load_legacy_mode: LoadLegacyMode::Allow,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+            ..Self::default()
+        }
+    }
+
+    fn merge_missing_compat_gate_defaults(
+        &mut self,
+        default_settings: &Self,
+        compat_gate_presence: CompatGatePresence,
+    ) {
+        if !compat_gate_presence.load_legacy_mode {
+            self.load_legacy_mode = default_settings.load_legacy_mode;
+        }
+        if !compat_gate_presence.load_or_generate_sidecarless_mode {
+            self.load_or_generate_sidecarless_mode =
+                default_settings.load_or_generate_sidecarless_mode;
+        }
+    }
+
+    fn load_with_defaults(path: &Path, default_settings: Self) -> Self {
         let path = settings_file_path(path);
 
-        let mut settings = if let Ok(file) = fs::File::open(&path) {
-            match ron::de::from_reader(file) {
-                Ok(x) => x,
+        let mut settings = if let Ok(contents) = fs::read_to_string(&path) {
+            match ron::from_str::<Self>(&contents) {
+                Ok(mut settings) => {
+                    let compat_gate_presence = CompatGatePresence::from_settings_text(&contents);
+                    settings.merge_missing_compat_gate_defaults(
+                        &default_settings,
+                        compat_gate_presence,
+                    );
+                    settings
+                },
                 Err(e) => {
-                    let default_settings = Self::default();
                     let template_path = path.with_extension("template.ron");
                     warn!(
                         ?e,
@@ -563,8 +984,6 @@ impl Settings {
                 },
             }
         } else {
-            let default_settings = Self::default();
-
             if let Err(e) = default_settings.save_to_file(&path) {
                 error!(?e, "Failed to create default settings file!");
             }
@@ -574,6 +993,9 @@ impl Settings {
         settings.validate();
         settings
     }
+
+    /// path: Directory that contains the server config directory
+    pub fn load(path: &Path) -> Self { Self::load_with_defaults(path, Self::default()) }
 
     fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
         // Create dir if it doesn't exist
@@ -588,7 +1010,7 @@ impl Settings {
 
     /// path: Directory that contains the server config directory
     pub fn singleplayer(path: &Path) -> Self {
-        let load = Self::load(path);
+        let load = Self::load_with_defaults(path, Self::singleplayer_default_settings());
         Self {
             // BUG: theoretically another process can grab the port between here and server
             // creation, however the time window is quite small.
@@ -626,6 +1048,87 @@ impl Settings {
                 INVALID_SETTING_MSG, self.day_length, default_values.day_length
             );
             self.day_length = default_values.day_length;
+        }
+
+        if self.completed_chunk_intake_budget_per_tick == 0 {
+            warn!(
+                "{} Setting: completed_chunk_intake_budget_per_tick, Value: {}. Set \
+                 completed_chunk_intake_budget_per_tick to its default value of {}. Help: \
+                 completed_chunk_intake_budget_per_tick must be a positive integer above 0.",
+                INVALID_SETTING_MSG,
+                self.completed_chunk_intake_budget_per_tick,
+                default_values.completed_chunk_intake_budget_per_tick
+            );
+            self.completed_chunk_intake_budget_per_tick =
+                default_values.completed_chunk_intake_budget_per_tick;
+        }
+
+        if self.chunk_generation_submit_budget_per_tick == Some(0) {
+            warn!(
+                "{} Setting: chunk_generation_submit_budget_per_tick, Value: 0. Reset \
+                 chunk_generation_submit_budget_per_tick to its default value of {:?}. Help: \
+                 chunk_generation_submit_budget_per_tick must be omitted or set to a positive \
+                 integer above 0.",
+                INVALID_SETTING_MSG, default_values.chunk_generation_submit_budget_per_tick
+            );
+            self.chunk_generation_submit_budget_per_tick =
+                default_values.chunk_generation_submit_budget_per_tick;
+        }
+
+        if self.chunk_serialize_distinct_budget_per_serialize_tick == Some(0) {
+            warn!(
+                "{} Setting: chunk_serialize_distinct_budget_per_serialize_tick, Value: 0. Reset \
+                 chunk_serialize_distinct_budget_per_serialize_tick to its default value of {:?}. \
+                 Help: chunk_serialize_distinct_budget_per_serialize_tick must be omitted or set \
+                 to a positive integer above 0.",
+                INVALID_SETTING_MSG,
+                default_values.chunk_serialize_distinct_budget_per_serialize_tick
+            );
+            self.chunk_serialize_distinct_budget_per_serialize_tick =
+                default_values.chunk_serialize_distinct_budget_per_serialize_tick;
+        }
+
+        if self.chunk_serialize_batch_size_per_job == 0 {
+            warn!(
+                "{} Setting: chunk_serialize_batch_size_per_job, Value: 0. Reset \
+                 chunk_serialize_batch_size_per_job to its default value of {}. Help: \
+                 chunk_serialize_batch_size_per_job must be a positive integer above 0.",
+                INVALID_SETTING_MSG, default_values.chunk_serialize_batch_size_per_job
+            );
+            self.chunk_serialize_batch_size_per_job =
+                default_values.chunk_serialize_batch_size_per_job;
+        }
+
+        if self.chunk_serialize_interval_ticks == 0 {
+            warn!(
+                "{} Setting: chunk_serialize_interval_ticks, Value: 0. Reset \
+                 chunk_serialize_interval_ticks to its default value of {}. Help: \
+                 chunk_serialize_interval_ticks must be a positive integer above 0.",
+                INVALID_SETTING_MSG, default_values.chunk_serialize_interval_ticks
+            );
+            self.chunk_serialize_interval_ticks = default_values.chunk_serialize_interval_ticks;
+        }
+
+        if self.chunk_serialize_max_jobs_per_serialize_tick == Some(0) {
+            warn!(
+                "{} Setting: chunk_serialize_max_jobs_per_serialize_tick, Value: 0. Reset \
+                 chunk_serialize_max_jobs_per_serialize_tick to its default value of {:?}. Help: \
+                 chunk_serialize_max_jobs_per_serialize_tick must be omitted or set to a positive \
+                 integer above 0.",
+                INVALID_SETTING_MSG, default_values.chunk_serialize_max_jobs_per_serialize_tick
+            );
+            self.chunk_serialize_max_jobs_per_serialize_tick =
+                default_values.chunk_serialize_max_jobs_per_serialize_tick;
+        }
+
+        if self.chunk_send_budget_per_tick == Some(0) {
+            warn!(
+                "{} Setting: chunk_send_budget_per_tick, Value: 0. Reset \
+                 chunk_send_budget_per_tick to its default value of {:?}. Help: \
+                 chunk_send_budget_per_tick must be omitted or set to a positive integer above 0.",
+                INVALID_SETTING_MSG, default_values.chunk_send_budget_per_tick
+            );
+            self.chunk_send_budget_per_tick = default_values.chunk_send_budget_per_tick;
         }
     }
 

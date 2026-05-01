@@ -1,5 +1,8 @@
 use crate::client::PreparedMsg;
+use common::terrain::TerrainChunk;
+use network::StreamParams;
 use specs::Entity;
+use std::sync::Arc;
 use vek::Vec2;
 
 /// Sending a chunk to the user works the following way:
@@ -17,6 +20,21 @@ use vek::Vec2;
 pub struct ChunkSendEntry {
     pub(crate) entity: Entity,
     pub(crate) chunk_key: Vec2<i32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AdmittedSerializableChunk {
+    pub(crate) chunk: Arc<TerrainChunk>,
+    pub(crate) chunk_key: Vec2<i32>,
+    pub(crate) lossy_compression: bool,
+    pub(crate) recipients: Vec<Entity>,
+    pub(crate) params: StreamParams,
+}
+
+#[derive(Default)]
+pub struct ChunkSerializeQueue {
+    pub(crate) entries: Vec<ChunkSendEntry>,
+    pub(crate) ready_chunks: Vec<AdmittedSerializableChunk>,
 }
 
 pub struct SerializedChunk {

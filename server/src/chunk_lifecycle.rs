@@ -107,18 +107,32 @@ struct ChunkLifecycleTerminalRecord {
 pub struct ChunkLifecycleAbnormalSummary {
     recent_abnormal_count: usize,
     latest_chunk_key: Vec2<i32>,
-    latest_terminal: ChunkLifecycleTerminal,
+    latest_terminal: &'static str,
     latest_tick: Option<u64>,
 }
 
 impl ChunkLifecycleAbnormalSummary {
+    pub fn new(
+        recent_abnormal_count: usize,
+        latest_chunk_key: [i32; 2],
+        latest_terminal: &'static str,
+        latest_tick: Option<u64>,
+    ) -> Self {
+        Self {
+            recent_abnormal_count,
+            latest_chunk_key: Vec2::new(latest_chunk_key[0], latest_chunk_key[1]),
+            latest_terminal,
+            latest_tick,
+        }
+    }
+
     pub const fn recent_abnormal_count(&self) -> usize { self.recent_abnormal_count }
 
     pub const fn latest_chunk_key(&self) -> [i32; 2] {
         [self.latest_chunk_key.x, self.latest_chunk_key.y]
     }
 
-    pub const fn latest_terminal_str(&self) -> &'static str { self.latest_terminal.as_str() }
+    pub const fn latest_terminal_str(&self) -> &'static str { self.latest_terminal }
 
     pub const fn latest_tick(&self) -> Option<u64> { self.latest_tick }
 }
@@ -201,15 +215,16 @@ impl ChunkLifecycleTable {
 
     pub fn abnormal_summary(&self) -> Option<ChunkLifecycleAbnormalSummary> {
         let latest = self.recent_abnormal_terminals.front()?;
-        Some(ChunkLifecycleAbnormalSummary {
-            recent_abnormal_count: self.recent_abnormal_terminals.len(),
-            latest_chunk_key: latest.chunk_key,
-            latest_terminal: latest
+        Some(ChunkLifecycleAbnormalSummary::new(
+            self.recent_abnormal_terminals.len(),
+            [latest.chunk_key.x, latest.chunk_key.y],
+            latest
                 .entry
                 .terminal
-                .expect("abnormal terminal record should always include terminal"),
-            latest_tick: latest.entry.send_attempted_tick,
-        })
+                .expect("abnormal terminal record should always include terminal")
+                .as_str(),
+            latest.entry.send_attempted_tick,
+        ))
     }
 
     pub fn prune_stale(&mut self, oldest_allowed_tick: u64) {

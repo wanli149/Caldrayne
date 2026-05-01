@@ -8,6 +8,7 @@ use common::{
     },
     vol::RectVolSize,
 };
+use common_net::msg::world_msg;
 use enum_map::EnumMap;
 use rand::{prelude::*, rngs::SmallRng};
 use std::time::Duration;
@@ -45,7 +46,35 @@ impl World {
     #[inline(always)]
     pub const fn map_size_lg(&self) -> MapSizeLg { DEFAULT_WORLD_CHUNKS_LG }
 
-    pub fn generate_oob_chunk(&self) -> TerrainChunk { TerrainChunk::water(0) }
+    pub fn query_chunk_key_aabr(&self) -> Aabr<i32> {
+        Aabr {
+            min: Vec2::zero(),
+            max: self.map_size_lg().chunks().map(i32::from) - 1,
+        }
+    }
+
+    pub fn runtime_chunk_product_key_aabr(&self) -> Aabr<i32> {
+        Aabr {
+            min: Vec2::one(),
+            max: self.map_size_lg().chunks().map(i32::from) - Vec2::new(3, 3),
+        }
+    }
+
+    pub fn runtime_topology_descriptor(&self) -> world_msg::RuntimeTopologyDescriptor {
+        world_msg::RuntimeTopologyDescriptor {
+            topology_id: "bounded_plane_v1".to_owned(),
+            query_chunk_key_aabr: self.query_chunk_key_aabr(),
+            runtime_chunk_product_key_aabr: self.runtime_chunk_product_key_aabr(),
+            missing_world_bounds_policy:
+                world_msg::MissingWorldBoundsPolicy::BoundedOceanDefaultChunk,
+        }
+    }
+
+    pub fn default_chunk_for_missing_world_bounds(&self) -> TerrainChunk { TerrainChunk::water(0) }
+
+    pub fn generate_oob_chunk(&self) -> TerrainChunk {
+        self.default_chunk_for_missing_world_bounds()
+    }
 
     pub fn generate_chunk(
         &self,

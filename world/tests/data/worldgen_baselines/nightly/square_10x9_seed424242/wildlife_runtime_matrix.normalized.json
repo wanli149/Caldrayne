@@ -9,11 +9,14 @@
   },
   "recipe": {
     "world_recipe_hash": "8f9a066089d1025a1e7a3e150234c8fdc27ea74f763e48d6119d0eecf50173c4",
-    "chunk_recipe_hash": "d6a12f45c3446e02368855edbcbe0ad6f229f2fc7c33dc9ba1390764430be354",
+    "chunk_recipe_hash": "5f518f86954051faa8c597bc3a1c578756232676d1957ae30b8947f267d3b6bc",
     "topology_id": "bounded_plane_v1",
     "preset_id": "custom_gen_opts_v1",
     "world_alg_version": "world-sim-v1-record-only",
+    "config_hash": "f6eab7a2620dbc1c6b444f38d88c2a00acc30a3c572df318244e0f11d5316fa9",
+    "asset_hash": "139767e1b9722892d03330eff1f4b86c749d04a49a1cdf9cf39a2ee5fe6e16e5",
     "chunk_pass_version": "chunk-static-v1-record-only",
+    "static_feature_profile": "static_feature_profile_v1(caverns=0,caves=1,rocks=1,shrubs=1,trees=1,scatter=1,paths=1,spots=1,peak_naming=1,biome_naming=1,train_tracks=0)",
     "seed_elements": false
   },
   "sample_chunks": 9,

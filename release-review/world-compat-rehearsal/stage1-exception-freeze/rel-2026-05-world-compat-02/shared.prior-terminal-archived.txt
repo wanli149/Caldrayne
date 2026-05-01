@@ -1,0 +1,13 @@
+sample_kind = world-compat-stage1-shared
+sample_status = rehearsal-only
+release_reference = rel-2026-05-world-compat-02
+section_signal = world-compat
+material_kind = archived-terminal-snapshot
+terminal_reference = terminal-11
+result_status = approved
+
+notes = [
+  "rehearsal sample only",
+  "represents the direct-prior archived terminal on the same world-compat section for Cycle N+1",
+  "replace with the real archived section snapshot during a live freeze cycle"
+]

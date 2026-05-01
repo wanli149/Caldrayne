@@ -40,6 +40,7 @@ pub mod wiring;
 
 // Reexports
 pub use crate::{
+    chunk_lifecycle::ChunkLifecycleAbnormalSummary,
     data_dir::{
         DEFAULT_DATA_DIR_NAME, RecoveryClass, ServerStateConsistency, ServerStateDomain,
         ServerStateEntry, ServerStateKind, ServerStateMigration, ServerStatePaths,
@@ -153,8 +154,8 @@ use common::comp::Anchor;
 pub use world::{
     IndexOwned, World,
     recipe::{
-        CompatAuditV1, CompatDecisionV1, CompatEntryKindV1, CompatFailureKindV1, RecipeManifestV1,
-        TopologyId,
+        CompatAuditV1, CompatDecisionV1, CompatEntryKindV1, CompatFailureDetailV1,
+        CompatFailureKindV1, CompatFailureSubjectV1, RecipeManifestV1, TopologyId,
     },
     sim::{DEFAULT_WORLD_MAP, DEFAULT_WORLD_SEED, FileOpts, GenOpts, WorldOpts},
 };
@@ -442,6 +443,8 @@ impl Server {
                 },
                 calendar: Some(settings.calendar_mode.calendar_now()),
                 compat_mode: settings.world_compat_mode,
+                load_legacy_mode: settings.load_legacy_mode,
+                load_or_generate_sidecarless_mode: settings.load_or_generate_sidecarless_mode,
             },
             &pools,
             &|stage| {
@@ -463,7 +466,8 @@ impl Server {
             sites: Vec::new(),
             possible_starting_sites: Vec::new(),
             pois: Vec::new(),
-            default_chunk: Arc::new(world.generate_oob_chunk()),
+            runtime_topology: world.runtime_topology_descriptor(),
+            default_chunk: Arc::new(world.default_chunk_for_missing_world_bounds()),
         };
 
         #[cfg(feature = "worldgen")]
@@ -506,6 +510,9 @@ impl Server {
         state
             .ecs_mut()
             .insert(EventBus::<chunk_serialize::ChunkSendEntry>::default());
+        state
+            .ecs_mut()
+            .insert(chunk_serialize::ChunkSerializeQueue::default());
         state.ecs_mut().insert(new_chunk_lifecycle_handle());
         state.ecs_mut().insert(Locations::default());
         state.ecs_mut().insert(LoginProvider::new(
@@ -943,6 +950,14 @@ impl Server {
 
     /// Get a reference to the Chat Cache
     pub fn chat_cache(&self) -> &ChatCache { &self.chat_cache }
+
+    pub fn chunk_lifecycle_abnormal_summary(&self) -> Option<ChunkLifecycleAbnormalSummary> {
+        let chunk_lifecycle = self
+            .state
+            .ecs()
+            .read_resource::<crate::chunk_lifecycle::ChunkLifecycleHandle>();
+        chunk_lifecycle.lock().expect("Poisoned").abnormal_summary()
+    }
 
     pub fn runtime_listener_inventory(&self) -> RuntimeListenerInventory {
         Arc::clone(&self.runtime_listener_inventory)

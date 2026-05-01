@@ -23,6 +23,15 @@ pub enum SingleplayerWorldSource {
     DefaultAsset,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SingleplayerLegacyOrigin {
+    LoadPath(String),
+    LoadLegacyPath(String),
+    LoadAsset(String),
+    LoadOrGenerate { name: String, overwrite: bool },
+}
+
 #[derive(Clone)]
 pub struct SingleplayerWorld {
     pub world_id: Uuid,
@@ -33,7 +42,9 @@ pub struct SingleplayerWorld {
     pub seed: u32,
     pub world_source: SingleplayerWorldSource,
     pub source_ref: Option<String>,
+    pub legacy_origin: Option<SingleplayerLegacyOrigin>,
     pub compat_audit: Option<CompatAuditV1>,
+    pub managed_recipe_sidecar_missing: bool,
     pub world_recipe_hash: Option<String>,
     pub topology_id: Option<String>,
     pub is_generated: bool,
@@ -57,16 +68,19 @@ impl SingleplayerWorld {
         }
 
         self.compat_audit = None;
+        self.managed_recipe_sidecar_missing = false;
 
         if let Some(gen_opts) = &self.gen_opts {
             let recipe_manifest = RecipeManifestV1::record_only(self.seed, gen_opts, true);
             self.world_source = SingleplayerWorldSource::Generated;
             self.source_ref = None;
+            self.legacy_origin = None;
             self.world_recipe_hash = Some(recipe_manifest.world_recipe_hash);
             self.topology_id = Some(recipe_manifest.world_recipe.topology_id.as_str().to_owned());
         } else {
             self.world_source = SingleplayerWorldSource::DefaultAsset;
             self.source_ref = Some(DEFAULT_WORLD_MAP.to_string());
+            self.legacy_origin = None;
             self.world_recipe_hash = None;
             self.topology_id = Some(TopologyId::BoundedPlaneV1.as_str().to_owned());
         }
@@ -76,14 +90,17 @@ impl SingleplayerWorld {
         &mut self,
         compat_audit: CompatAuditV1,
         recipe_manifest: &RecipeManifestV1,
+        managed_recipe_sidecar_missing: bool,
     ) {
         self.is_generated = fs::metadata(&self.map_path).is_ok_and(|f| f.is_file());
         self.compat_audit = Some(compat_audit);
+        self.managed_recipe_sidecar_missing = managed_recipe_sidecar_missing;
 
         match compat_audit.decision {
             CompatDecisionV1::LoadedExisting => match self.world_source {
                 SingleplayerWorldSource::Generated => {
                     self.source_ref = None;
+                    self.legacy_origin = None;
                     self.world_recipe_hash = Some(recipe_manifest.world_recipe_hash.clone());
                     self.topology_id =
                         Some(recipe_manifest.world_recipe.topology_id.as_str().to_owned());
@@ -94,6 +111,7 @@ impl SingleplayerWorld {
                             .clone()
                             .unwrap_or_else(|| DEFAULT_WORLD_MAP.to_string()),
                     );
+                    self.legacy_origin = None;
                     self.world_recipe_hash = None;
                     self.topology_id =
                         Some(recipe_manifest.world_recipe.topology_id.as_str().to_owned());
@@ -108,6 +126,7 @@ impl SingleplayerWorld {
             CompatDecisionV1::GenerateRequested | CompatDecisionV1::FallbackGenerate => {
                 self.world_source = SingleplayerWorldSource::Generated;
                 self.source_ref = None;
+                self.legacy_origin = None;
                 self.gen_opts = Some(recipe_manifest.world_recipe.gen_opts.clone());
                 self.world_recipe_hash = Some(recipe_manifest.world_recipe_hash.clone());
                 self.topology_id =
@@ -123,27 +142,37 @@ impl SingleplayerWorld {
     pub fn sync_runtime_failure_source_contract(&mut self, compat_audit: Option<CompatAuditV1>) {
         self.is_generated = fs::metadata(&self.map_path).is_ok_and(|f| f.is_file());
         self.compat_audit = compat_audit;
+        self.managed_recipe_sidecar_missing = false;
 
-        match compat_audit.map(|audit| audit.decision) {
-            Some(CompatDecisionV1::LoadedExisting) => match self.world_source {
-                SingleplayerWorldSource::Generated => {
-                    self.source_ref = None;
-                },
-                SingleplayerWorldSource::DefaultAsset => {
-                    self.source_ref = Some(
-                        self.source_ref
-                            .clone()
-                            .unwrap_or_else(|| DEFAULT_WORLD_MAP.to_string()),
-                    );
-                },
-                SingleplayerWorldSource::LegacyUnknown
-                | SingleplayerWorldSource::LegacyMigrated => {},
+        match compat_audit {
+            Some(audit) if matches!(audit.decision, CompatDecisionV1::LoadedExisting) => {
+                match self.world_source {
+                    SingleplayerWorldSource::Generated => {
+                        self.source_ref = None;
+                        self.legacy_origin = None;
+                    },
+                    SingleplayerWorldSource::DefaultAsset => {
+                        self.source_ref = Some(
+                            self.source_ref
+                                .clone()
+                                .unwrap_or_else(|| DEFAULT_WORLD_MAP.to_string()),
+                        );
+                        self.legacy_origin = None;
+                    },
+                    SingleplayerWorldSource::LegacyUnknown
+                    | SingleplayerWorldSource::LegacyMigrated => {},
+                }
             },
-            Some(CompatDecisionV1::GenerateRequested | CompatDecisionV1::FallbackGenerate)
-                if self.is_generated =>
+            Some(audit)
+                if matches!(
+                    audit.decision,
+                    CompatDecisionV1::GenerateRequested | CompatDecisionV1::FallbackGenerate
+                ) && !audit.is_rejected()
+                    && self.is_generated =>
             {
                 self.world_source = SingleplayerWorldSource::Generated;
                 self.source_ref = None;
+                self.legacy_origin = None;
                 if self.gen_opts.is_none() {
                     self.topology_id = None;
                 }
@@ -157,6 +186,26 @@ impl SingleplayerWorld {
     }
 
     pub fn persist_meta(&self) { write_world_meta(self); }
+
+    pub fn runtime_file_opts(&self) -> FileOpts {
+        if let Some(gen_opts) = &self.gen_opts
+            && !self.is_generated
+        {
+            return FileOpts::Save(self.map_path.clone(), gen_opts.clone());
+        }
+
+        match &self.world_source {
+            SingleplayerWorldSource::Generated => FileOpts::Load(self.map_path.clone()),
+            SingleplayerWorldSource::DefaultAsset => FileOpts::LoadAsset(
+                self.source_ref
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_WORLD_MAP.to_string()),
+            ),
+            SingleplayerWorldSource::LegacyUnknown | SingleplayerWorldSource::LegacyMigrated => {
+                FileOpts::LoadLegacy(self.map_path.clone())
+            },
+        }
+    }
 }
 
 fn new_singleplayer_identity() -> (Uuid, Uuid) {
@@ -213,6 +262,12 @@ fn asset_path(asset: &str) -> PathBuf {
     ASSETS_PATH.join(s)
 }
 
+fn legacy_load_or_generate_map_path(name: &str) -> PathBuf {
+    // Mirrors the historical `FileOpts::LoadOrGenerate` path resolution used
+    // before singleplayer metadata migration.
+    Path::new("./maps").join(format!("{name}.bin"))
+}
+
 fn migrate_old_singleplayer(from: &Path, to: &Path) {
     if fs::metadata(from).is_ok_and(|meta| meta.is_dir()) {
         if let Err(e) = fs::rename(from, to) {
@@ -222,7 +277,7 @@ fn migrate_old_singleplayer(from: &Path, to: &Path) {
 
         let mut seed = DEFAULT_WORLD_SEED;
         let mut day_length = DAY_LENGTH_DEFAULT;
-        let (map_file, gen_opts, world_source, source_ref) =
+        let (map_file, gen_opts, world_source, source_ref, legacy_origin) =
             fs::read_to_string(to.join("server_config/settings.ron"))
                 .ok()
                 .and_then(|settings| {
@@ -230,43 +285,61 @@ fn migrate_old_singleplayer(from: &Path, to: &Path) {
                     seed = settings.world_seed;
                     day_length = settings.day_length;
                     Some(match settings.map_file? {
-                        FileOpts::LoadOrGenerate { name, opts, .. } => (
-                            Some(PathBuf::from(name)),
+                        FileOpts::LoadOrGenerate {
+                            name,
+                            opts,
+                            overwrite,
+                        } => (
+                            Some(legacy_load_or_generate_map_path(&name)),
                             Some(opts),
                             SingleplayerWorldSource::LegacyMigrated,
                             None,
+                            Some(SingleplayerLegacyOrigin::LoadOrGenerate { name, overwrite }),
                         ),
-                        FileOpts::Generate(opts) => {
-                            (None, Some(opts), SingleplayerWorldSource::Generated, None)
-                        },
+                        FileOpts::Generate(opts) => (
+                            None,
+                            Some(opts),
+                            SingleplayerWorldSource::Generated,
+                            None,
+                            None,
+                        ),
                         FileOpts::LoadLegacy(path) => (
-                            Some(path),
+                            Some(path.clone()),
                             None,
                             SingleplayerWorldSource::LegacyMigrated,
                             None,
+                            Some(SingleplayerLegacyOrigin::LoadLegacyPath(
+                                path.to_string_lossy().into_owned(),
+                            )),
                         ),
                         FileOpts::Load(path) => (
-                            Some(path),
+                            Some(path.clone()),
                             None,
                             SingleplayerWorldSource::LegacyMigrated,
                             None,
+                            Some(SingleplayerLegacyOrigin::LoadPath(
+                                path.to_string_lossy().into_owned(),
+                            )),
                         ),
                         FileOpts::LoadAsset(asset) if asset == DEFAULT_WORLD_MAP => (
                             Some(asset_path(&asset)),
                             None,
                             SingleplayerWorldSource::DefaultAsset,
                             Some(asset),
+                            None,
                         ),
                         FileOpts::LoadAsset(asset) => (
                             Some(asset_path(&asset)),
                             None,
                             SingleplayerWorldSource::LegacyMigrated,
                             None,
+                            Some(SingleplayerLegacyOrigin::LoadAsset(asset)),
                         ),
                         FileOpts::Save(_, gen_opts) => (
                             None,
                             Some(gen_opts),
                             SingleplayerWorldSource::Generated,
+                            None,
                             None,
                         ),
                     })
@@ -276,6 +349,7 @@ fn migrate_old_singleplayer(from: &Path, to: &Path) {
                     None,
                     SingleplayerWorldSource::DefaultAsset,
                     Some(DEFAULT_WORLD_MAP.to_string()),
+                    None,
                 ));
 
         let map_path = to.join("map.bin");
@@ -296,7 +370,9 @@ fn migrate_old_singleplayer(from: &Path, to: &Path) {
             day_length,
             world_source,
             source_ref,
+            legacy_origin,
             compat_audit: None,
+            managed_recipe_sidecar_missing: false,
             world_recipe_hash: None,
             topology_id: None,
             path: to.to_path_buf(),
@@ -337,6 +413,18 @@ pub struct SingleplayerWorlds {
     pub worlds: Vec<SingleplayerWorld>,
     pub current: Option<usize>,
     worlds_folder: PathBuf,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SingleplayerLegacyInventory {
+    pub total_worlds: usize,
+    pub legacy_worlds: usize,
+    pub legacy_unknown_worlds: usize,
+    pub legacy_migrated_worlds: usize,
+    pub legacy_worlds_with_typed_origin: usize,
+    pub legacy_worlds_without_typed_origin: usize,
+    pub legacy_worlds_without_compat_audit: usize,
+    pub legacy_worlds_with_sidecarless_managed_residual: usize,
 }
 
 impl SingleplayerWorlds {
@@ -419,6 +507,45 @@ impl SingleplayerWorlds {
         self.current.and_then(|i| self.worlds.get(i))
     }
 
+    pub fn legacy_inventory(&self) -> SingleplayerLegacyInventory {
+        let mut inventory = SingleplayerLegacyInventory {
+            total_worlds: self.worlds.len(),
+            ..SingleplayerLegacyInventory::default()
+        };
+
+        for world in &self.worlds {
+            if !matches!(
+                world.world_source,
+                SingleplayerWorldSource::LegacyUnknown | SingleplayerWorldSource::LegacyMigrated
+            ) {
+                continue;
+            }
+
+            inventory.legacy_worlds += 1;
+            if matches!(world.world_source, SingleplayerWorldSource::LegacyUnknown) {
+                inventory.legacy_unknown_worlds += 1;
+            } else {
+                inventory.legacy_migrated_worlds += 1;
+            }
+
+            if world.legacy_origin.is_some() {
+                inventory.legacy_worlds_with_typed_origin += 1;
+            } else {
+                inventory.legacy_worlds_without_typed_origin += 1;
+            }
+
+            if world.compat_audit.is_none() {
+                inventory.legacy_worlds_without_compat_audit += 1;
+            }
+
+            if world.managed_recipe_sidecar_missing {
+                inventory.legacy_worlds_with_sidecarless_managed_residual += 1;
+            }
+        }
+
+        inventory
+    }
+
     pub fn new_world(&mut self) {
         let folder_name = self.world_folder_name();
         let path = self.worlds_folder.join(folder_name);
@@ -433,7 +560,9 @@ impl SingleplayerWorlds {
             seed: DEFAULT_WORLD_SEED,
             world_source: SingleplayerWorldSource::DefaultAsset,
             source_ref: Some(DEFAULT_WORLD_MAP.to_string()),
+            legacy_origin: None,
             compat_audit: None,
+            managed_recipe_sidecar_missing: false,
             world_recipe_hash: None,
             topology_id: Some(TopologyId::BoundedPlaneV1.as_str().to_owned()),
             is_generated: false,
@@ -451,6 +580,8 @@ impl SingleplayerWorlds {
             write_world_meta(world);
         }
     }
+
+    pub fn save_world_meta(&self, idx: usize) { write_world_meta(&self.worlds[idx]); }
 }
 
 mod version {
@@ -504,7 +635,9 @@ mod version {
                     day_length: DAY_LENGTH_DEFAULT,
                     world_source: SingleplayerWorldSource::LegacyUnknown,
                     source_ref: None,
+                    legacy_origin: None,
                     compat_audit: None,
+                    managed_recipe_sidecar_missing: false,
                     world_recipe_hash: None,
                     topology_id: None,
                     is_generated,
@@ -542,7 +675,9 @@ mod version {
                     day_length: self.day_length,
                     world_source: SingleplayerWorldSource::LegacyUnknown,
                     source_ref: None,
+                    legacy_origin: None,
                     compat_audit: None,
+                    managed_recipe_sidecar_missing: false,
                     world_recipe_hash: None,
                     topology_id: None,
                     is_generated,
@@ -598,7 +733,11 @@ mod version {
         world_source: SingleplayerWorldSource,
         source_ref: Option<String>,
         #[serde(default)]
+        legacy_origin: Option<SingleplayerLegacyOrigin>,
+        #[serde(default)]
         compat_audit: Option<CompatAuditV1>,
+        #[serde(default)]
+        managed_recipe_sidecar_missing: bool,
         world_recipe_hash: Option<String>,
         topology_id: Option<String>,
     }
@@ -616,7 +755,9 @@ mod version {
                 day_length: world.day_length,
                 world_source: world.world_source.clone(),
                 source_ref: world.source_ref.clone(),
+                legacy_origin: world.legacy_origin.clone(),
                 compat_audit: world.compat_audit,
+                managed_recipe_sidecar_missing: world.managed_recipe_sidecar_missing,
                 world_recipe_hash: world.world_recipe_hash.clone(),
                 topology_id: world.topology_id.clone(),
             }
@@ -638,7 +779,9 @@ mod version {
                     day_length: self.day_length,
                     world_source: self.world_source,
                     source_ref: self.source_ref,
+                    legacy_origin: self.legacy_origin,
                     compat_audit: self.compat_audit,
+                    managed_recipe_sidecar_missing: self.managed_recipe_sidecar_missing,
                     world_recipe_hash: self.world_recipe_hash,
                     topology_id: self.topology_id,
                     is_generated,
@@ -665,7 +808,9 @@ mod version {
                     day_length: self.day_length,
                     world_source: self.world_source,
                     source_ref: self.source_ref,
+                    legacy_origin: None,
                     compat_audit: None,
+                    managed_recipe_sidecar_missing: false,
                     world_recipe_hash: self.world_recipe_hash,
                     topology_id: self.topology_id,
                     is_generated,
@@ -692,7 +837,9 @@ mod version {
                     day_length: self.day_length,
                     world_source: SingleplayerWorldSource::LegacyUnknown,
                     source_ref: None,
+                    legacy_origin: None,
                     compat_audit: None,
+                    managed_recipe_sidecar_missing: false,
                     world_recipe_hash: None,
                     topology_id: None,
                     is_generated,
@@ -763,6 +910,168 @@ mod version {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use world::recipe::{CompatFailureDetailV1, CompatFailureSubjectV1};
+
+    fn legacy_unknown_runtime_world(world_dir: &Path) -> SingleplayerWorld {
+        SingleplayerWorld {
+            world_id: Uuid::new_v4(),
+            realm_id: Uuid::new_v4(),
+            name: "Legacy Unknown".to_string(),
+            gen_opts: None,
+            day_length: DAY_LENGTH_DEFAULT,
+            seed: DEFAULT_WORLD_SEED,
+            world_source: SingleplayerWorldSource::LegacyUnknown,
+            source_ref: None,
+            legacy_origin: None,
+            compat_audit: None,
+            managed_recipe_sidecar_missing: false,
+            world_recipe_hash: None,
+            topology_id: None,
+            is_generated: true,
+            path: world_dir.to_path_buf(),
+            map_path: world_dir.join("map.bin"),
+        }
+    }
+
+    fn inventory_world(
+        world_dir: &Path,
+        world_source: SingleplayerWorldSource,
+        legacy_origin: Option<SingleplayerLegacyOrigin>,
+        compat_audit: Option<CompatAuditV1>,
+    ) -> SingleplayerWorld {
+        SingleplayerWorld {
+            world_id: Uuid::new_v4(),
+            realm_id: Uuid::new_v4(),
+            name: "Inventory World".to_string(),
+            gen_opts: None,
+            day_length: DAY_LENGTH_DEFAULT,
+            seed: DEFAULT_WORLD_SEED,
+            world_source,
+            source_ref: None,
+            legacy_origin,
+            compat_audit,
+            managed_recipe_sidecar_missing: false,
+            world_recipe_hash: None,
+            topology_id: None,
+            is_generated: true,
+            path: world_dir.to_path_buf(),
+            map_path: world_dir.join("map.bin"),
+        }
+    }
+
+    #[test]
+    fn loading_v1_world_upgrades_to_v5_and_persists_legacy_unknown() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        fs::create_dir_all(&world_dir).unwrap();
+
+        let legacy_meta = format!(
+            "(\n    version: 1,\n    name: \"Legacy World\",\n    gen_opts: None,\n    seed: \
+             {},\n)\n",
+            DEFAULT_WORLD_SEED
+        );
+        fs::write(world_dir.join("meta.ron"), legacy_meta).unwrap();
+
+        let first = load_map(&world_dir).expect("legacy world should load");
+        let second = load_map(&world_dir).expect("upgraded world should load");
+
+        assert_eq!(first.world_id, second.world_id);
+        assert_eq!(first.realm_id, second.realm_id);
+        assert!(!first.world_id.is_nil());
+        assert!(!first.realm_id.is_nil());
+        assert!(matches!(
+            first.world_source,
+            SingleplayerWorldSource::LegacyUnknown
+        ));
+        assert_eq!(first.source_ref, None);
+        assert_eq!(first.legacy_origin, None);
+
+        let meta = fs::read_to_string(world_dir.join("meta.ron")).unwrap();
+        assert!(meta.contains("version: 5"));
+        assert!(meta.contains("schema_version: 2"));
+        assert!(meta.contains("world_source: legacy_unknown"));
+        assert!(meta.contains("compat_audit: None"));
+
+        let _ = fs::remove_dir_all(world_dir);
+    }
+
+    #[test]
+    fn legacy_inventory_counts_residual_legacy_stock_truthfully() {
+        let root =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        let worlds = SingleplayerWorlds {
+            worlds: vec![
+                inventory_world(
+                    &root.join("legacy-unknown"),
+                    SingleplayerWorldSource::LegacyUnknown,
+                    None,
+                    None,
+                ),
+                inventory_world(
+                    &root.join("legacy-migrated-typed"),
+                    SingleplayerWorldSource::LegacyMigrated,
+                    Some(SingleplayerLegacyOrigin::LoadPath(
+                        root.join("typed-source.bin").to_string_lossy().into_owned(),
+                    )),
+                    Some(CompatAuditV1::loaded_existing(
+                        server::CompatEntryKindV1::LoadLegacy,
+                    )),
+                ),
+                inventory_world(
+                    &root.join("legacy-migrated-untyped"),
+                    SingleplayerWorldSource::LegacyMigrated,
+                    None,
+                    None,
+                ),
+                {
+                    let mut world = inventory_world(
+                        &root.join("legacy-migrated-sidecarless"),
+                        SingleplayerWorldSource::LegacyMigrated,
+                        Some(SingleplayerLegacyOrigin::LoadOrGenerate {
+                            name: "managed-sidecarless".to_owned(),
+                            overwrite: false,
+                        }),
+                        Some(CompatAuditV1::loaded_existing(
+                            server::CompatEntryKindV1::LoadLegacy,
+                        )),
+                    );
+                    world.managed_recipe_sidecar_missing = true;
+                    world
+                },
+                inventory_world(
+                    &root.join("generated"),
+                    SingleplayerWorldSource::Generated,
+                    None,
+                    Some(CompatAuditV1::loaded_existing(
+                        server::CompatEntryKindV1::Load,
+                    )),
+                ),
+                inventory_world(
+                    &root.join("default-asset"),
+                    SingleplayerWorldSource::DefaultAsset,
+                    None,
+                    None,
+                ),
+            ],
+            current: None,
+            worlds_folder: root.clone(),
+        };
+
+        let inventory = worlds.legacy_inventory();
+
+        assert_eq!(inventory, SingleplayerLegacyInventory {
+            total_worlds: 6,
+            legacy_worlds: 4,
+            legacy_unknown_worlds: 1,
+            legacy_migrated_worlds: 3,
+            legacy_worlds_with_typed_origin: 2,
+            legacy_worlds_without_typed_origin: 2,
+            legacy_worlds_without_compat_audit: 2,
+            legacy_worlds_with_sidecarless_managed_residual: 1,
+        });
+
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn loading_v2_world_upgrades_to_v5_and_persists_ids() {
@@ -790,6 +1099,40 @@ mod tests {
         assert!(meta.contains("schema_version: 2"));
         assert!(meta.contains("world_id"));
         assert!(meta.contains("realm_id"));
+        assert!(meta.contains("world_source: legacy_unknown"));
+        assert!(meta.contains("compat_audit: None"));
+
+        let _ = fs::remove_dir_all(world_dir);
+    }
+
+    #[test]
+    fn loading_v3_world_upgrades_to_v5_and_persists_legacy_unknown() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        fs::create_dir_all(&world_dir).unwrap();
+
+        let world_id = Uuid::new_v4();
+        let realm_id = Uuid::new_v4();
+        let legacy_meta = format!(
+            "(\n    version: 3,\n    world_id: \"{}\",\n    realm_id: \"{}\",\n    name: \"Legacy \
+             V3\",\n    gen_opts: None,\n    seed: {},\n    day_length: {},\n)\n",
+            world_id, realm_id, DEFAULT_WORLD_SEED, DAY_LENGTH_DEFAULT
+        );
+        fs::write(world_dir.join("meta.ron"), legacy_meta).unwrap();
+
+        let loaded = load_map(&world_dir).expect("legacy world should load");
+        let meta = fs::read_to_string(world_dir.join("meta.ron")).unwrap();
+
+        assert_eq!(loaded.world_id, world_id);
+        assert_eq!(loaded.realm_id, realm_id);
+        assert!(matches!(
+            loaded.world_source,
+            SingleplayerWorldSource::LegacyUnknown
+        ));
+        assert_eq!(loaded.source_ref, None);
+        assert_eq!(loaded.legacy_origin, None);
+        assert!(meta.contains("version: 5"));
+        assert!(meta.contains("schema_version: 2"));
         assert!(meta.contains("world_source: legacy_unknown"));
         assert!(meta.contains("compat_audit: None"));
 
@@ -868,6 +1211,12 @@ mod tests {
             SingleplayerWorldSource::LegacyMigrated
         ));
         assert_eq!(migrated.source_ref, None);
+        assert_eq!(
+            migrated.legacy_origin,
+            Some(SingleplayerLegacyOrigin::LoadLegacyPath(
+                legacy_map_path.to_string_lossy().into_owned()
+            ))
+        );
         assert!(migrated.is_generated);
         assert_eq!(
             fs::read(migrated_world.join("map.bin")).unwrap(),
@@ -876,9 +1225,208 @@ mod tests {
 
         let meta = fs::read_to_string(migrated_world.join("meta.ron")).unwrap();
         assert!(meta.contains("world_source: legacy_migrated"));
+        assert!(meta.contains("legacy_origin: Some(load_legacy_path("));
         assert!(meta.contains("compat_audit: None"));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn migrating_old_singleplayer_preserves_strict_load_origin_metadata() {
+        let root =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-migrate-{}", Uuid::new_v4()));
+        let old_world = root.join("singleplayer");
+        let migrated_world = root.join("singleplayer_worlds").join("singleplayer");
+        fs::create_dir_all(old_world.join("server_config")).unwrap();
+        fs::create_dir_all(root.join("singleplayer_worlds")).unwrap();
+
+        let strict_map_path = root.join("strict-source-world.bin");
+        let strict_map_bytes = b"strict-world-map";
+        fs::write(&strict_map_path, strict_map_bytes).unwrap();
+
+        let mut settings = server::Settings::default();
+        settings.map_file = Some(FileOpts::Load(strict_map_path.clone()));
+        let settings_ron = ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default())
+            .expect("settings should serialize");
+        fs::write(old_world.join("server_config/settings.ron"), settings_ron).unwrap();
+
+        migrate_old_singleplayer(&old_world, &migrated_world);
+
+        let migrated = load_map(&migrated_world).expect("migrated world should load");
+        assert!(matches!(
+            migrated.world_source,
+            SingleplayerWorldSource::LegacyMigrated
+        ));
+        assert_eq!(migrated.source_ref, None);
+        assert_eq!(
+            migrated.legacy_origin,
+            Some(SingleplayerLegacyOrigin::LoadPath(
+                strict_map_path.to_string_lossy().into_owned()
+            ))
+        );
+        assert_eq!(
+            fs::read(migrated_world.join("map.bin")).unwrap(),
+            strict_map_bytes
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn migrating_old_singleplayer_preserves_non_default_asset_origin_metadata() {
+        let root =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-migrate-{}", Uuid::new_v4()));
+        let old_world = root.join("singleplayer");
+        let migrated_world = root.join("singleplayer_worlds").join("singleplayer");
+        fs::create_dir_all(old_world.join("server_config")).unwrap();
+        fs::create_dir_all(root.join("singleplayer_worlds")).unwrap();
+
+        let asset_name = format!("world.test.singleplayer-asset-{}", Uuid::new_v4());
+        let mut settings = server::Settings::default();
+        settings.map_file = Some(FileOpts::LoadAsset(asset_name.clone()));
+        let settings_ron = ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default())
+            .expect("settings should serialize");
+        fs::write(old_world.join("server_config/settings.ron"), settings_ron).unwrap();
+
+        migrate_old_singleplayer(&old_world, &migrated_world);
+
+        let migrated = load_map(&migrated_world).expect("migrated world should load");
+        assert!(matches!(
+            migrated.world_source,
+            SingleplayerWorldSource::LegacyMigrated
+        ));
+        assert_eq!(migrated.source_ref, None);
+        assert_eq!(
+            migrated.legacy_origin,
+            Some(SingleplayerLegacyOrigin::LoadAsset(asset_name))
+        );
+        assert!(!migrated.is_generated);
+
+        let meta = fs::read_to_string(migrated_world.join("meta.ron")).unwrap();
+        assert!(meta.contains("legacy_origin: Some(load_asset("));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn migrating_old_singleplayer_preserves_load_or_generate_origin_metadata() {
+        let root =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-migrate-{}", Uuid::new_v4()));
+        let old_world = root.join("singleplayer");
+        let migrated_world = root.join("singleplayer_worlds").join("singleplayer");
+        fs::create_dir_all(old_world.join("server_config")).unwrap();
+        fs::create_dir_all(root.join("singleplayer_worlds")).unwrap();
+
+        let managed_name = format!("singleplayer-managed-world-{}", Uuid::new_v4());
+        let managed_map_path = legacy_load_or_generate_map_path(&managed_name);
+        let managed_map_bytes = b"managed-world-map";
+        if let Some(parent) = managed_map_path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&managed_map_path, managed_map_bytes).unwrap();
+
+        let gen_opts = GenOpts {
+            x_lg: 8,
+            y_lg: 9,
+            scale: 3.25,
+            ..GenOpts::default()
+        };
+
+        let mut settings = server::Settings::default();
+        settings.map_file = Some(FileOpts::LoadOrGenerate {
+            name: managed_name.clone(),
+            opts: gen_opts.clone(),
+            overwrite: true,
+        });
+        let settings_ron = ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default())
+            .expect("settings should serialize");
+        fs::write(old_world.join("server_config/settings.ron"), settings_ron).unwrap();
+
+        migrate_old_singleplayer(&old_world, &migrated_world);
+
+        let migrated = load_map(&migrated_world).expect("migrated world should load");
+        assert!(matches!(
+            migrated.world_source,
+            SingleplayerWorldSource::LegacyMigrated
+        ));
+        assert_eq!(migrated.source_ref, None);
+        assert_eq!(
+            migrated.legacy_origin,
+            Some(SingleplayerLegacyOrigin::LoadOrGenerate {
+                name: managed_name,
+                overwrite: true,
+            })
+        );
+        let migrated_gen_opts = migrated
+            .gen_opts
+            .as_ref()
+            .expect("load_or_generate migration should retain gen opts");
+        assert_eq!(migrated_gen_opts.x_lg, gen_opts.x_lg);
+        assert_eq!(migrated_gen_opts.y_lg, gen_opts.y_lg);
+        assert_eq!(migrated_gen_opts.scale, gen_opts.scale);
+        assert_eq!(migrated_gen_opts.map_kind, gen_opts.map_kind);
+        assert_eq!(migrated_gen_opts.erosion_quality, gen_opts.erosion_quality);
+        assert!(migrated.is_generated);
+        assert_eq!(
+            fs::read(migrated_world.join("map.bin")).unwrap(),
+            managed_map_bytes
+        );
+
+        let meta = fs::read_to_string(migrated_world.join("meta.ron")).unwrap();
+        assert!(meta.contains("legacy_origin: Some(load_or_generate("));
+        assert!(meta.contains("overwrite: true"));
+
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_file(managed_map_path);
+    }
+
+    #[test]
+    fn missing_migrated_load_or_generate_keeps_save_runtime_contract() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        let map_path = world_dir.join("map.bin");
+        let gen_opts = GenOpts {
+            x_lg: 7,
+            y_lg: 8,
+            scale: 2.5,
+            ..GenOpts::default()
+        };
+        let managed_name = format!("singleplayer-missing-world-{}", Uuid::new_v4());
+        let world = SingleplayerWorld {
+            world_id: Uuid::new_v4(),
+            realm_id: Uuid::new_v4(),
+            name: "Managed Legacy".to_string(),
+            gen_opts: Some(gen_opts.clone()),
+            day_length: DAY_LENGTH_DEFAULT,
+            seed: DEFAULT_WORLD_SEED,
+            world_source: SingleplayerWorldSource::LegacyMigrated,
+            source_ref: None,
+            legacy_origin: Some(SingleplayerLegacyOrigin::LoadOrGenerate {
+                name: managed_name,
+                overwrite: false,
+            }),
+            compat_audit: None,
+            managed_recipe_sidecar_missing: false,
+            world_recipe_hash: None,
+            topology_id: None,
+            is_generated: false,
+            path: world_dir.clone(),
+            map_path: map_path.clone(),
+        };
+
+        match world.runtime_file_opts() {
+            FileOpts::Save(path, opts) => {
+                assert_eq!(path, map_path);
+                assert_eq!(opts.x_lg, gen_opts.x_lg);
+                assert_eq!(opts.y_lg, gen_opts.y_lg);
+                assert_eq!(opts.scale, gen_opts.scale);
+                assert_eq!(opts.map_kind, gen_opts.map_kind);
+                assert_eq!(opts.erosion_quality, gen_opts.erosion_quality);
+            },
+            other => {
+                panic!("pending migrated load_or_generate world should use Save(..), got {other:?}")
+            },
+        }
     }
 
     #[test]
@@ -902,7 +1450,9 @@ mod tests {
             seed: DEFAULT_WORLD_SEED,
             world_source: SingleplayerWorldSource::Generated,
             source_ref: None,
+            legacy_origin: None,
             compat_audit: Some(compat_audit),
+            managed_recipe_sidecar_missing: false,
             world_recipe_hash: Some(manifest.world_recipe_hash.clone()),
             topology_id: Some(manifest.world_recipe.topology_id.as_str().to_owned()),
             is_generated: false,
@@ -970,7 +1520,9 @@ mod tests {
             seed: DEFAULT_WORLD_SEED,
             world_source: SingleplayerWorldSource::DefaultAsset,
             source_ref: Some(DEFAULT_WORLD_MAP.to_string()),
+            legacy_origin: None,
             compat_audit: None,
+            managed_recipe_sidecar_missing: false,
             world_recipe_hash: None,
             topology_id: Some(TopologyId::BoundedPlaneV1.as_str().to_owned()),
             is_generated: false,
@@ -984,6 +1536,7 @@ mod tests {
                 server::CompatFailureKindV1::MissingInput,
             ),
             &manifest,
+            false,
         );
 
         assert!(matches!(
@@ -991,6 +1544,7 @@ mod tests {
             SingleplayerWorldSource::Generated
         ));
         assert_eq!(world.source_ref, None);
+        assert_eq!(world.legacy_origin, None);
         assert_eq!(
             world.compat_audit,
             Some(CompatAuditV1::fallback_generate(
@@ -1039,7 +1593,9 @@ mod tests {
             seed: DEFAULT_WORLD_SEED,
             world_source: SingleplayerWorldSource::DefaultAsset,
             source_ref: Some(DEFAULT_WORLD_MAP.to_string()),
+            legacy_origin: None,
             compat_audit: None,
+            managed_recipe_sidecar_missing: false,
             world_recipe_hash: None,
             topology_id: None,
             is_generated: false,
@@ -1050,6 +1606,7 @@ mod tests {
         world.sync_runtime_source_contract(
             CompatAuditV1::loaded_existing(server::CompatEntryKindV1::Load),
             &manifest,
+            false,
         );
 
         assert!(matches!(
@@ -1089,7 +1646,9 @@ mod tests {
             seed: DEFAULT_WORLD_SEED,
             world_source: SingleplayerWorldSource::DefaultAsset,
             source_ref: Some(DEFAULT_WORLD_MAP.to_string()),
+            legacy_origin: None,
             compat_audit: None,
+            managed_recipe_sidecar_missing: false,
             world_recipe_hash: None,
             topology_id: Some(TopologyId::BoundedPlaneV1.as_str().to_owned()),
             is_generated: false,
@@ -1109,6 +1668,175 @@ mod tests {
             SingleplayerWorldSource::Generated
         ));
         assert_eq!(world.source_ref, None);
+        assert_eq!(world.legacy_origin, None);
+        assert_eq!(world.world_recipe_hash, None);
+        assert_eq!(world.topology_id, None);
+        assert!(world.is_generated);
+
+        let _ = fs::remove_dir_all(world_dir);
+    }
+
+    #[test]
+    fn runtime_failure_sync_keeps_rejected_legacy_world_provenance() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        fs::create_dir_all(&world_dir).unwrap();
+        fs::write(world_dir.join("map.bin"), b"map").unwrap();
+
+        let legacy_origin = SingleplayerLegacyOrigin::LoadLegacyPath(
+            world_dir
+                .join("legacy-source-world.bin")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let mut world = SingleplayerWorld {
+            world_id: Uuid::new_v4(),
+            realm_id: Uuid::new_v4(),
+            name: "Rejected Legacy".to_string(),
+            gen_opts: None,
+            day_length: DAY_LENGTH_DEFAULT,
+            seed: DEFAULT_WORLD_SEED,
+            world_source: SingleplayerWorldSource::LegacyMigrated,
+            source_ref: None,
+            legacy_origin: Some(legacy_origin.clone()),
+            compat_audit: None,
+            managed_recipe_sidecar_missing: false,
+            world_recipe_hash: None,
+            topology_id: None,
+            is_generated: false,
+            path: world_dir.clone(),
+            map_path: world_dir.join("map.bin"),
+        };
+
+        let compat_audit = CompatAuditV1::reject(
+            server::CompatEntryKindV1::LoadLegacy,
+            server::CompatFailureKindV1::PolicyDenied,
+            CompatFailureSubjectV1::None,
+            CompatFailureDetailV1::default(),
+        );
+        world.sync_runtime_failure_source_contract(Some(compat_audit));
+
+        assert_eq!(world.compat_audit, Some(compat_audit));
+        assert!(matches!(
+            world.world_source,
+            SingleplayerWorldSource::LegacyMigrated
+        ));
+        assert_eq!(world.source_ref, None);
+        assert_eq!(world.legacy_origin, Some(legacy_origin));
+        assert!(world.is_generated);
+
+        let _ = fs::remove_dir_all(world_dir);
+    }
+
+    #[test]
+    fn runtime_loaded_existing_sync_preserves_legacy_unknown_provenance() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        fs::create_dir_all(&world_dir).unwrap();
+        fs::write(world_dir.join("map.bin"), b"map").unwrap();
+
+        let manifest = RecipeManifestV1::record_only(DEFAULT_WORLD_SEED, &GenOpts::default(), true);
+        let mut world = legacy_unknown_runtime_world(&world_dir);
+
+        world.sync_runtime_source_contract(
+            CompatAuditV1::loaded_existing(server::CompatEntryKindV1::LoadLegacy),
+            &manifest,
+            false,
+        );
+
+        assert!(matches!(
+            world.world_source,
+            SingleplayerWorldSource::LegacyUnknown
+        ));
+        assert_eq!(world.source_ref, None);
+        assert_eq!(world.legacy_origin, None);
+        assert_eq!(
+            world.compat_audit,
+            Some(CompatAuditV1::loaded_existing(
+                server::CompatEntryKindV1::LoadLegacy
+            ))
+        );
+        assert_eq!(world.world_recipe_hash, None);
+        assert_eq!(world.topology_id, None);
+        assert!(world.is_generated);
+
+        let _ = fs::remove_dir_all(world_dir);
+    }
+
+    #[test]
+    fn runtime_sync_persists_sidecarless_managed_residual_truth() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        fs::create_dir_all(&world_dir).unwrap();
+        fs::write(world_dir.join("map.bin"), b"map").unwrap();
+
+        let manifest = RecipeManifestV1::record_only(DEFAULT_WORLD_SEED, &GenOpts::default(), true);
+        let mut world = SingleplayerWorld {
+            world_id: Uuid::new_v4(),
+            realm_id: Uuid::new_v4(),
+            name: "Managed Residual".to_string(),
+            gen_opts: None,
+            day_length: DAY_LENGTH_DEFAULT,
+            seed: DEFAULT_WORLD_SEED,
+            world_source: SingleplayerWorldSource::LegacyMigrated,
+            source_ref: None,
+            legacy_origin: Some(SingleplayerLegacyOrigin::LoadOrGenerate {
+                name: "managed-sidecarless".to_owned(),
+                overwrite: false,
+            }),
+            compat_audit: None,
+            managed_recipe_sidecar_missing: false,
+            world_recipe_hash: None,
+            topology_id: None,
+            is_generated: true,
+            path: world_dir.clone(),
+            map_path: world_dir.join("map.bin"),
+        };
+
+        world.sync_runtime_source_contract(
+            CompatAuditV1::loaded_existing(server::CompatEntryKindV1::LoadLegacy),
+            &manifest,
+            true,
+        );
+        write_world_meta(&world);
+
+        let persisted = load_map(&world_dir).expect("persisted world should reload");
+        assert!(persisted.managed_recipe_sidecar_missing);
+        assert_eq!(
+            persisted.legacy_origin,
+            Some(SingleplayerLegacyOrigin::LoadOrGenerate {
+                name: "managed-sidecarless".to_owned(),
+                overwrite: false,
+            })
+        );
+
+        let _ = fs::remove_dir_all(world_dir);
+    }
+
+    #[test]
+    fn runtime_failure_sync_keeps_legacy_unknown_provenance() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        fs::create_dir_all(&world_dir).unwrap();
+        fs::write(world_dir.join("map.bin"), b"map").unwrap();
+
+        let mut world = legacy_unknown_runtime_world(&world_dir);
+        let compat_audit = CompatAuditV1::reject(
+            server::CompatEntryKindV1::LoadLegacy,
+            server::CompatFailureKindV1::PolicyDenied,
+            CompatFailureSubjectV1::Options,
+            CompatFailureDetailV1::default(),
+        );
+
+        world.sync_runtime_failure_source_contract(Some(compat_audit));
+
+        assert!(matches!(
+            world.world_source,
+            SingleplayerWorldSource::LegacyUnknown
+        ));
+        assert_eq!(world.source_ref, None);
+        assert_eq!(world.legacy_origin, None);
+        assert_eq!(world.compat_audit, Some(compat_audit));
         assert_eq!(world.world_recipe_hash, None);
         assert_eq!(world.topology_id, None);
         assert!(world.is_generated);
@@ -1134,9 +1862,16 @@ mod tests {
             seed: DEFAULT_WORLD_SEED,
             world_source: SingleplayerWorldSource::Generated,
             source_ref: None,
+            legacy_origin: Some(SingleplayerLegacyOrigin::LoadPath(
+                world_dir
+                    .join("stale-world.bin")
+                    .to_string_lossy()
+                    .into_owned(),
+            )),
             compat_audit: Some(CompatAuditV1::loaded_existing(
                 server::CompatEntryKindV1::Load,
             )),
+            managed_recipe_sidecar_missing: false,
             world_recipe_hash: Some(manifest.world_recipe_hash.clone()),
             topology_id: Some(manifest.world_recipe.topology_id.as_str().to_owned()),
             is_generated: false,
@@ -1177,9 +1912,11 @@ mod tests {
             seed: DEFAULT_WORLD_SEED,
             world_source: SingleplayerWorldSource::Generated,
             source_ref: None,
+            legacy_origin: None,
             compat_audit: Some(CompatAuditV1::loaded_existing(
                 server::CompatEntryKindV1::Load,
             )),
+            managed_recipe_sidecar_missing: false,
             world_recipe_hash: None,
             topology_id: None,
             is_generated: false,
@@ -1190,7 +1927,198 @@ mod tests {
         world.refresh_pending_source_contract();
 
         assert_eq!(world.compat_audit, None);
+        assert_eq!(world.legacy_origin, None);
 
         let _ = fs::remove_dir_all(world_dir);
+    }
+
+    #[test]
+    fn deleting_map_then_saving_world_meta_persists_pending_contract_immediately() {
+        let root =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        let world_dir = root.join("singleplayer");
+        fs::create_dir_all(&world_dir).unwrap();
+
+        let gen_opts = GenOpts {
+            x_lg: 8,
+            y_lg: 9,
+            scale: 3.25,
+            ..GenOpts::default()
+        };
+        let recipe_manifest = RecipeManifestV1::record_only(DEFAULT_WORLD_SEED, &gen_opts, true);
+        let world_recipe_hash = recipe_manifest.world_recipe_hash.clone();
+        let topology_id = recipe_manifest.world_recipe.topology_id.as_str().to_owned();
+        let map_path = world_dir.join("map.bin");
+        fs::write(&map_path, b"generated-world-map").unwrap();
+
+        let world = SingleplayerWorld {
+            world_id: Uuid::new_v4(),
+            realm_id: Uuid::new_v4(),
+            name: "Generated World".to_string(),
+            gen_opts: Some(gen_opts),
+            day_length: DAY_LENGTH_DEFAULT,
+            seed: DEFAULT_WORLD_SEED,
+            world_source: SingleplayerWorldSource::Generated,
+            source_ref: None,
+            legacy_origin: None,
+            compat_audit: Some(CompatAuditV1::loaded_existing(
+                server::CompatEntryKindV1::Load,
+            )),
+            managed_recipe_sidecar_missing: false,
+            world_recipe_hash: Some(world_recipe_hash),
+            topology_id: Some(topology_id),
+            is_generated: true,
+            path: world_dir.clone(),
+            map_path: map_path.clone(),
+        };
+        write_world_meta(&world);
+
+        let mut worlds = SingleplayerWorlds {
+            worlds: vec![world],
+            current: None,
+            worlds_folder: root.clone(),
+        };
+
+        worlds.delete_map_file(0);
+        worlds.save_world_meta(0);
+
+        let persisted = load_map(&world_dir).expect("pending world should reload");
+        assert!(!map_path.exists());
+        assert!(!persisted.is_generated);
+        assert!(matches!(
+            persisted.world_source,
+            SingleplayerWorldSource::Generated
+        ));
+        assert_eq!(persisted.compat_audit, None);
+        assert_eq!(persisted.source_ref, None);
+        assert_eq!(persisted.legacy_origin, None);
+        let persisted_gen_opts = persisted
+            .gen_opts
+            .clone()
+            .expect("pending generated world should retain gen opts");
+        assert_eq!(
+            persisted.world_recipe_hash,
+            Some(
+                RecipeManifestV1::record_only(DEFAULT_WORLD_SEED, &persisted_gen_opts, true)
+                    .world_recipe_hash
+            )
+        );
+        assert_eq!(
+            persisted.topology_id,
+            Some(TopologyId::BoundedPlaneV1.as_str().to_owned())
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_file_opts_uses_load_asset_for_default_asset_worlds() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        let world = SingleplayerWorld {
+            world_id: Uuid::new_v4(),
+            realm_id: Uuid::new_v4(),
+            name: "Default Asset".to_string(),
+            gen_opts: None,
+            day_length: DAY_LENGTH_DEFAULT,
+            seed: DEFAULT_WORLD_SEED,
+            world_source: SingleplayerWorldSource::DefaultAsset,
+            source_ref: Some(DEFAULT_WORLD_MAP.to_string()),
+            legacy_origin: None,
+            compat_audit: None,
+            managed_recipe_sidecar_missing: false,
+            world_recipe_hash: None,
+            topology_id: Some(TopologyId::BoundedPlaneV1.as_str().to_owned()),
+            is_generated: false,
+            path: world_dir.clone(),
+            map_path: world_dir.join("map.bin"),
+        };
+
+        match world.runtime_file_opts() {
+            FileOpts::LoadAsset(asset) => assert_eq!(asset, DEFAULT_WORLD_MAP),
+            other => panic!("default asset world should use LoadAsset(..), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn runtime_file_opts_uses_load_legacy_for_materialized_legacy_worlds() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        let map_path = world_dir.join("map.bin");
+
+        for world_source in [
+            SingleplayerWorldSource::LegacyUnknown,
+            SingleplayerWorldSource::LegacyMigrated,
+        ] {
+            let world = SingleplayerWorld {
+                world_id: Uuid::new_v4(),
+                realm_id: Uuid::new_v4(),
+                name: "Legacy".to_string(),
+                gen_opts: None,
+                day_length: DAY_LENGTH_DEFAULT,
+                seed: DEFAULT_WORLD_SEED,
+                world_source,
+                source_ref: None,
+                legacy_origin: None,
+                compat_audit: None,
+                managed_recipe_sidecar_missing: false,
+                world_recipe_hash: None,
+                topology_id: None,
+                is_generated: true,
+                path: world_dir.clone(),
+                map_path: map_path.clone(),
+            };
+
+            match world.runtime_file_opts() {
+                FileOpts::LoadLegacy(path) => assert_eq!(path, map_path),
+                other => panic!("legacy world should use LoadLegacy(..), got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn runtime_file_opts_keeps_generated_worlds_on_managed_contracts() {
+        let world_dir =
+            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
+        let map_path = world_dir.join("map.bin");
+        let gen_opts = GenOpts::default();
+        let pending_world = SingleplayerWorld {
+            world_id: Uuid::new_v4(),
+            realm_id: Uuid::new_v4(),
+            name: "Pending Generated".to_string(),
+            gen_opts: Some(gen_opts.clone()),
+            day_length: DAY_LENGTH_DEFAULT,
+            seed: DEFAULT_WORLD_SEED,
+            world_source: SingleplayerWorldSource::Generated,
+            source_ref: None,
+            legacy_origin: None,
+            compat_audit: None,
+            managed_recipe_sidecar_missing: false,
+            world_recipe_hash: None,
+            topology_id: None,
+            is_generated: false,
+            path: world_dir.clone(),
+            map_path: map_path.clone(),
+        };
+
+        match pending_world.runtime_file_opts() {
+            FileOpts::Save(path, opts) => {
+                assert_eq!(path, map_path);
+                assert_eq!(opts.x_lg, gen_opts.x_lg);
+                assert_eq!(opts.y_lg, gen_opts.y_lg);
+                assert_eq!(opts.scale, gen_opts.scale);
+            },
+            other => panic!("pending generated world should use Save(..), got {other:?}"),
+        }
+
+        let materialized_world = SingleplayerWorld {
+            is_generated: true,
+            ..pending_world
+        };
+
+        match materialized_world.runtime_file_opts() {
+            FileOpts::Load(path) => assert_eq!(path, map_path),
+            other => panic!("materialized generated world should use Load(..), got {other:?}"),
+        }
     }
 }

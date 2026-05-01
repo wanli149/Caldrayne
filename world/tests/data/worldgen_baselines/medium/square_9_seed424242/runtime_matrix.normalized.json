@@ -9,27 +9,1060 @@
   },
   "recipe": {
     "world_recipe_hash": "fecd1a8f622568622e72eb61456850a2fd3e04f60413ef03c2943fa2da5567fd",
-    "chunk_recipe_hash": "8940414ba9eb70d2abd06ac5b9dec8b54784ece2cac0ad1478526b883a2b2a45",
+    "chunk_recipe_hash": "4de8eb01d0acdf60fc68884745844352a940d68bbcaa1b5d904cc3fe9dcf4a3e",
     "topology_id": "bounded_plane_v1",
     "preset_id": "custom_gen_opts_v1",
     "world_alg_version": "world-sim-v1-record-only",
+    "config_hash": "f6eab7a2620dbc1c6b444f38d88c2a00acc30a3c572df318244e0f11d5316fa9",
+    "asset_hash": "139767e1b9722892d03330eff1f4b86c749d04a49a1cdf9cf39a2ee5fe6e16e5",
     "chunk_pass_version": "chunk-static-v1-record-only",
+    "static_feature_profile": "static_feature_profile_v1(caverns=0,caves=1,rocks=1,shrubs=1,trees=1,scatter=1,paths=1,spots=1,peak_naming=1,biome_naming=1,train_tracks=0)",
     "seed_elements": false
   },
   "sample_chunks": 9,
-  "runtime_audit_mode": "sampled_runtime_overlay_matrix_v2",
+  "runtime_audit_mode": "sampled_runtime_overlay_matrix_v3",
   "strict_determinism": true,
   "runtime_chunk_contract": {
     "base_chunk_entry": "world.generate_chunk(rtsim_resource_fractions=None,time=None)",
+    "fixed_context_entry": "world.generate_chunk(rtsim_resource_fractions=None,time=baseline_night|halloween_night)",
+    "rtsim_full_density_entry": "world.generate_chunk(rtsim_resource_fractions=fixed_full_density,time=baseline_night)",
+    "rtsim_fixed_fixture_entry": "world.generate_chunk(rtsim_resource_fractions=fixed_fixture,time=baseline_night)",
     "includes_world_runtime_finalize": true,
-    "includes_time_context": false,
-    "includes_rtsim_resource_thinning": false
+    "includes_time_context": true,
+    "includes_rtsim_resource_thinning": true
+  },
+  "contexts": {
+    "baseline_night": {
+      "variant_mode": "baseline_night",
+      "time_of_day_seconds": 79200.0,
+      "day_period": "Night",
+      "calendar_events": []
+    },
+    "halloween_night": {
+      "variant_mode": "halloween_night",
+      "time_of_day_seconds": 79200.0,
+      "day_period": "Night",
+      "calendar_events": [
+        "Halloween"
+      ]
+    }
   },
   "fixed_overlay_fixture": {
     "fixture_id": "fixed_overlay_fixture_v1",
     "contract_path": "server/tests/data/terrain_overlay/fixed_overlay_fixture_v1.ron",
     "operation_count": 3
   },
+  "rtsim_resource_sampling_contract": {
+    "sampler_id": "center_spiral_nonempty_rtsim_resource_chunks_v1",
+    "edge_margin_chunks": 16,
+    "max_probes": 576,
+    "distinct_chunks": true,
+    "best_effort": true,
+    "context_variant": "baseline_night",
+    "selection_contract": "deterministic best-effort top interior chunks ranked by full-density baseline-night rtsim_max_resources upper bound, then resource-kind count, then chunk_pos"
+  },
+  "rtsim_resource_fixture": {
+    "fixture_id": "rtsim_resource_thinning_fixture_v1",
+    "contract_path": "world/tests/data/worldgen_runtime/rtsim_resource_thinning_fixture_v1.ron",
+    "context_variant": "baseline_night",
+    "fractions": {
+      "Flower": 0.5,
+      "Fruit": 1.0,
+      "Gem": 1.0,
+      "Grass": 0.5,
+      "Loot": 1.0,
+      "Mushroom": 0.5,
+      "Ore": 0.5,
+      "Plant": 0.5,
+      "Stone": 0.5,
+      "Vegetable": 0.5,
+      "Wood": 0.5
+    }
+  },
+  "rtsim_resource_samples": [
+    {
+      "chunk_pos": [
+        249,
+        266
+      ],
+      "selection_score": 150,
+      "resource_kind_count": 2,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 220,
+        "max_z": 300,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 26891,
+        "sprite_total": 55029,
+        "block_kind_counts": {
+          "Air": 55029,
+          "Earth": 4455,
+          "Grass": 1107,
+          "Leaves": 3336,
+          "Rock": 16654,
+          "Wood": 1339
+        },
+        "sprite_kind_counts": {
+          "Empty": 54879,
+          "MediumGrass": 43,
+          "ShortGrass": 106,
+          "WhiteFlower": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Flower": 1,
+          "Grass": 149
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Flower": 1,
+        "Grass": 149
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 220,
+        "max_z": 300,
+        "sub_chunks": 5,
+        "block_total": 81920,
+        "non_air_blocks": 26891,
+        "sprite_total": 55029,
+        "block_kind_counts": {
+          "Air": 55029,
+          "Earth": 4455,
+          "Grass": 1107,
+          "Leaves": 3336,
+          "Rock": 16654,
+          "Wood": 1339
+        },
+        "sprite_kind_counts": {
+          "Empty": 54950,
+          "MediumGrass": 25,
+          "ShortGrass": 53,
+          "WhiteFlower": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Flower": 1,
+          "Grass": 149
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Flower": 1,
+        "Grass": 78
+      }
+    },
+    {
+      "chunk_pos": [
+        250,
+        265
+      ],
+      "selection_score": 142,
+      "resource_kind_count": 4,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -101,
+        "max_z": 315,
+        "sub_chunks": 26,
+        "block_total": 425984,
+        "non_air_blocks": 355481,
+        "sprite_total": 70503,
+        "block_kind_counts": {
+          "Air": 70503,
+          "Earth": 4357,
+          "Grass": 1089,
+          "Leaves": 5897,
+          "Rock": 341200,
+          "Sand": 1176,
+          "WeakRock": 37,
+          "Wood": 1725
+        },
+        "sprite_kind_counts": {
+          "DeadPlant": 1,
+          "DungeonChest0": 1,
+          "Empty": 70350,
+          "MediumGrass": 49,
+          "PurpleFlower": 13,
+          "Root": 10,
+          "ShortGrass": 78,
+          "Stones": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Flower": 13,
+          "Grass": 127,
+          "Loot": 1,
+          "Stone": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Flower": 13,
+        "Grass": 127,
+        "Loot": 1,
+        "Stone": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -101,
+        "max_z": 315,
+        "sub_chunks": 26,
+        "block_total": 425984,
+        "non_air_blocks": 355481,
+        "sprite_total": 70503,
+        "block_kind_counts": {
+          "Air": 70503,
+          "Earth": 4357,
+          "Grass": 1089,
+          "Leaves": 5897,
+          "Rock": 341200,
+          "Sand": 1176,
+          "WeakRock": 37,
+          "Wood": 1725
+        },
+        "sprite_kind_counts": {
+          "DeadPlant": 1,
+          "DungeonChest0": 1,
+          "Empty": 70423,
+          "MediumGrass": 26,
+          "PurpleFlower": 5,
+          "Root": 10,
+          "ShortGrass": 36,
+          "Stones": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Flower": 13,
+          "Grass": 127,
+          "Loot": 1,
+          "Stone": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Flower": 5,
+        "Grass": 62,
+        "Loot": 1,
+        "Stone": 1
+      }
+    },
+    {
+      "chunk_pos": [
+        253,
+        267
+      ],
+      "selection_score": 141,
+      "resource_kind_count": 4,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -12,
+        "max_z": 292,
+        "sub_chunks": 19,
+        "block_total": 311296,
+        "non_air_blocks": 255030,
+        "sprite_total": 56266,
+        "block_kind_counts": {
+          "Air": 56266,
+          "ArtLeaves": 498,
+          "Earth": 4221,
+          "Grass": 2302,
+          "Leaves": 8026,
+          "Misc": 22,
+          "Rock": 233211,
+          "Sand": 2375,
+          "Wood": 4375
+        },
+        "sprite_kind_counts": {
+          "BlueFlower": 15,
+          "Bones": 2,
+          "CeilingLanternPlant": 1,
+          "DeadBush": 1,
+          "DungeonChest0": 2,
+          "Empty": 56119,
+          "EnsnaringWeb": 2,
+          "MediumGrass": 34,
+          "ShortGrass": 87,
+          "Stones": 3
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Flower": 15,
+          "Grass": 121,
+          "Loot": 2,
+          "Stone": 3
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Flower": 15,
+        "Grass": 121,
+        "Loot": 2,
+        "Stone": 3
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -12,
+        "max_z": 292,
+        "sub_chunks": 19,
+        "block_total": 311296,
+        "non_air_blocks": 255030,
+        "sprite_total": 56266,
+        "block_kind_counts": {
+          "Air": 56266,
+          "ArtLeaves": 498,
+          "Earth": 4221,
+          "Grass": 2302,
+          "Leaves": 8026,
+          "Misc": 22,
+          "Rock": 233211,
+          "Sand": 2375,
+          "Wood": 4375
+        },
+        "sprite_kind_counts": {
+          "BlueFlower": 7,
+          "Bones": 2,
+          "CeilingLanternPlant": 1,
+          "DeadBush": 1,
+          "DungeonChest0": 2,
+          "Empty": 56190,
+          "EnsnaringWeb": 2,
+          "MediumGrass": 16,
+          "ShortGrass": 43,
+          "Stones": 2
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Flower": 15,
+          "Grass": 121,
+          "Loot": 2,
+          "Stone": 3
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Flower": 7,
+        "Grass": 59,
+        "Loot": 2,
+        "Stone": 2
+      }
+    },
+    {
+      "chunk_pos": [
+        258,
+        264
+      ],
+      "selection_score": 122,
+      "resource_kind_count": 4,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -50,
+        "max_z": 318,
+        "sub_chunks": 23,
+        "block_total": 376832,
+        "non_air_blocks": 318960,
+        "sprite_total": 57872,
+        "block_kind_counts": {
+          "Air": 57872,
+          "ArtLeaves": 1450,
+          "Earth": 4506,
+          "GlowingWeakRock": 17,
+          "Grass": 2796,
+          "Leaves": 90,
+          "Rock": 309835,
+          "Wood": 266
+        },
+        "sprite_kind_counts": {
+          "Bones": 1,
+          "CeilingJungleLeafyPlant": 3,
+          "CeilingLanternPlant": 3,
+          "Copper": 1,
+          "Empty": 57713,
+          "EnsnaringVines": 1,
+          "Fern": 1,
+          "GlowMushroom": 1,
+          "GrassBlueLong": 8,
+          "GrassBlueMedium": 2,
+          "JungleFern": 3,
+          "JungleRedGrass": 3,
+          "LeafyPlant": 3,
+          "LongGrass": 5,
+          "LushFlower": 1,
+          "LushMushroom": 2,
+          "MediumGrass": 66,
+          "Mold": 1,
+          "Mushroom": 1,
+          "MycelBlue": 3,
+          "Root": 1,
+          "ShortGrass": 40,
+          "SporeReed": 7,
+          "Stones": 2
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 115,
+          "Mushroom": 4,
+          "Ore": 1,
+          "Stone": 2
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 115,
+        "Mushroom": 4,
+        "Ore": 1,
+        "Stone": 2
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -50,
+        "max_z": 318,
+        "sub_chunks": 23,
+        "block_total": 376832,
+        "non_air_blocks": 318960,
+        "sprite_total": 57872,
+        "block_kind_counts": {
+          "Air": 57872,
+          "ArtLeaves": 1450,
+          "Earth": 4506,
+          "GlowingWeakRock": 17,
+          "Grass": 2796,
+          "Leaves": 90,
+          "Rock": 309835,
+          "Wood": 266
+        },
+        "sprite_kind_counts": {
+          "Bones": 1,
+          "CeilingJungleLeafyPlant": 3,
+          "CeilingLanternPlant": 3,
+          "Empty": 57769,
+          "EnsnaringVines": 1,
+          "Fern": 1,
+          "GrassBlueLong": 8,
+          "GrassBlueMedium": 2,
+          "JungleFern": 3,
+          "JungleRedGrass": 1,
+          "LeafyPlant": 3,
+          "LongGrass": 2,
+          "LushFlower": 1,
+          "LushMushroom": 1,
+          "MediumGrass": 38,
+          "Mold": 1,
+          "MycelBlue": 3,
+          "Root": 1,
+          "ShortGrass": 22,
+          "SporeReed": 7,
+          "Stones": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 115,
+          "Mushroom": 4,
+          "Ore": 1,
+          "Stone": 2
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 64,
+        "Mushroom": 1,
+        "Stone": 1
+      }
+    },
+    {
+      "chunk_pos": [
+        255,
+        263
+      ],
+      "selection_score": 119,
+      "resource_kind_count": 3,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 221,
+        "max_z": 317,
+        "sub_chunks": 6,
+        "block_total": 98304,
+        "non_air_blocks": 40058,
+        "sprite_total": 58246,
+        "block_kind_counts": {
+          "Air": 58246,
+          "Earth": 4502,
+          "Grass": 1145,
+          "Leaves": 873,
+          "Rock": 31969,
+          "Sand": 1558,
+          "WeakRock": 10,
+          "Wood": 1
+        },
+        "sprite_kind_counts": {
+          "Copper": 1,
+          "DeadPlant": 1,
+          "Empty": 58115,
+          "MediumGrass": 40,
+          "Root": 11,
+          "ShortGrass": 77,
+          "Twigs": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 117,
+          "Ore": 1,
+          "Wood": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 117,
+        "Ore": 1,
+        "Wood": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 221,
+        "max_z": 317,
+        "sub_chunks": 6,
+        "block_total": 98304,
+        "non_air_blocks": 40058,
+        "sprite_total": 58246,
+        "block_kind_counts": {
+          "Air": 58246,
+          "Earth": 4502,
+          "Grass": 1145,
+          "Leaves": 873,
+          "Rock": 31969,
+          "Sand": 1558,
+          "WeakRock": 10,
+          "Wood": 1
+        },
+        "sprite_kind_counts": {
+          "DeadPlant": 1,
+          "Empty": 58173,
+          "MediumGrass": 23,
+          "Root": 11,
+          "ShortGrass": 37,
+          "Twigs": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 117,
+          "Ore": 1,
+          "Wood": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 60,
+        "Wood": 1
+      }
+    },
+    {
+      "chunk_pos": [
+        256,
+        265
+      ],
+      "selection_score": 117,
+      "resource_kind_count": 2,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 2,
+        "max_z": 322,
+        "sub_chunks": 20,
+        "block_total": 327680,
+        "non_air_blocks": 254847,
+        "sprite_total": 72833,
+        "block_kind_counts": {
+          "Air": 72833,
+          "ArtLeaves": 2549,
+          "Earth": 4290,
+          "Grass": 2183,
+          "Leaves": 8091,
+          "Misc": 43,
+          "Rock": 233546,
+          "Sand": 174,
+          "WeakRock": 8,
+          "Wood": 3963
+        },
+        "sprite_kind_counts": {
+          "CeilingJungleLeafyPlant": 3,
+          "CeilingLanternFlower": 2,
+          "CeilingLanternPlant": 1,
+          "Empty": 72706,
+          "Fern": 1,
+          "LeafyPlant": 1,
+          "Liana": 2,
+          "LongGrass": 2,
+          "LushFlower": 1,
+          "MediumGrass": 26,
+          "ShortGrass": 87,
+          "Stones": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 116,
+          "Stone": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 116,
+        "Stone": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 2,
+        "max_z": 322,
+        "sub_chunks": 20,
+        "block_total": 327680,
+        "non_air_blocks": 254847,
+        "sprite_total": 72833,
+        "block_kind_counts": {
+          "Air": 72833,
+          "ArtLeaves": 2549,
+          "Earth": 4290,
+          "Grass": 2183,
+          "Leaves": 8091,
+          "Misc": 43,
+          "Rock": 233546,
+          "Sand": 174,
+          "WeakRock": 8,
+          "Wood": 3963
+        },
+        "sprite_kind_counts": {
+          "CeilingJungleLeafyPlant": 3,
+          "CeilingLanternFlower": 2,
+          "CeilingLanternPlant": 1,
+          "Empty": 72763,
+          "Fern": 1,
+          "LeafyPlant": 1,
+          "Liana": 2,
+          "LongGrass": 2,
+          "LushFlower": 1,
+          "MediumGrass": 11,
+          "ShortGrass": 45,
+          "Stones": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 116,
+          "Stone": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 59,
+        "Stone": 1
+      }
+    },
+    {
+      "chunk_pos": [
+        257,
+        267
+      ],
+      "selection_score": 116,
+      "resource_kind_count": 6,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -108,
+        "max_z": 292,
+        "sub_chunks": 25,
+        "block_total": 409600,
+        "non_air_blocks": 345339,
+        "sprite_total": 64261,
+        "block_kind_counts": {
+          "Air": 64261,
+          "ArtLeaves": 1981,
+          "Earth": 4408,
+          "GlowingWeakRock": 1,
+          "Grass": 3248,
+          "Leaves": 2430,
+          "Misc": 58,
+          "Rock": 332929,
+          "Wood": 284
+        },
+        "sprite_kind_counts": {
+          "CeilingJungleLeafyPlant": 1,
+          "CeilingLanternPlant": 1,
+          "Coal": 1,
+          "Cotton": 7,
+          "Empty": 64134,
+          "Fern": 4,
+          "JungleLeafyPlant": 1,
+          "LeafyPlant": 2,
+          "Liana": 4,
+          "LongGrass": 5,
+          "LushFlower": 2,
+          "MediumGrass": 48,
+          "PinkFlower": 3,
+          "ShortGrass": 46,
+          "Stones": 1,
+          "Topaz": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Flower": 3,
+          "Gem": 1,
+          "Grass": 103,
+          "Ore": 1,
+          "Plant": 7,
+          "Stone": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Flower": 3,
+        "Gem": 1,
+        "Grass": 103,
+        "Ore": 1,
+        "Plant": 7,
+        "Stone": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -108,
+        "max_z": 292,
+        "sub_chunks": 25,
+        "block_total": 409600,
+        "non_air_blocks": 345339,
+        "sprite_total": 64261,
+        "block_kind_counts": {
+          "Air": 64261,
+          "ArtLeaves": 1981,
+          "Earth": 4408,
+          "GlowingWeakRock": 1,
+          "Grass": 3248,
+          "Leaves": 2430,
+          "Misc": 58,
+          "Rock": 332929,
+          "Wood": 284
+        },
+        "sprite_kind_counts": {
+          "CeilingJungleLeafyPlant": 1,
+          "CeilingLanternPlant": 1,
+          "Cotton": 3,
+          "Empty": 64198,
+          "Fern": 1,
+          "JungleLeafyPlant": 1,
+          "LeafyPlant": 2,
+          "Liana": 4,
+          "LongGrass": 3,
+          "LushFlower": 2,
+          "MediumGrass": 16,
+          "PinkFlower": 2,
+          "ShortGrass": 26,
+          "Topaz": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Flower": 3,
+          "Gem": 1,
+          "Grass": 103,
+          "Ore": 1,
+          "Plant": 7,
+          "Stone": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Flower": 2,
+        "Gem": 1,
+        "Grass": 46,
+        "Plant": 3
+      }
+    },
+    {
+      "chunk_pos": [
+        258,
+        267
+      ],
+      "selection_score": 114,
+      "resource_kind_count": 4,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -107,
+        "max_z": 277,
+        "sub_chunks": 24,
+        "block_total": 393216,
+        "non_air_blocks": 355435,
+        "sprite_total": 37781,
+        "block_kind_counts": {
+          "Air": 37781,
+          "ArtLeaves": 1724,
+          "Earth": 4467,
+          "GlowingWeakRock": 9,
+          "Grass": 1921,
+          "Leaves": 58,
+          "Misc": 4,
+          "Rock": 346970,
+          "Wood": 282
+        },
+        "sprite_kind_counts": {
+          "CeilingJungleLeafyPlant": 3,
+          "CeilingLanternPlant": 2,
+          "Cotton": 6,
+          "Empty": 37655,
+          "Fern": 1,
+          "JungleFern": 1,
+          "JungleLeafyPlant": 1,
+          "LeafyPlant": 2,
+          "Liana": 2,
+          "LongGrass": 1,
+          "MediumGrass": 57,
+          "MycelBlue": 1,
+          "ShortGrass": 47,
+          "Stones": 1,
+          "VeloriteFrag": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 1,
+        "entity_signatures": [
+          "pos_bits=1174470656,1174766592,3265003520;body=QuadrupedSmall(Body { species: Batfox, body_type: Female });alignment=Enemy;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false"
+        ],
+        "rtsim_max_resources": {
+          "Grass": 106,
+          "Loot": 1,
+          "Plant": 6,
+          "Stone": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 106,
+        "Loot": 1,
+        "Plant": 6,
+        "Stone": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -107,
+        "max_z": 277,
+        "sub_chunks": 24,
+        "block_total": 393216,
+        "non_air_blocks": 355435,
+        "sprite_total": 37781,
+        "block_kind_counts": {
+          "Air": 37781,
+          "ArtLeaves": 1724,
+          "Earth": 4467,
+          "GlowingWeakRock": 9,
+          "Grass": 1921,
+          "Leaves": 58,
+          "Misc": 4,
+          "Rock": 346970,
+          "Wood": 282
+        },
+        "sprite_kind_counts": {
+          "CeilingJungleLeafyPlant": 3,
+          "CeilingLanternPlant": 2,
+          "Cotton": 3,
+          "Empty": 37716,
+          "Fern": 1,
+          "JungleFern": 1,
+          "JungleLeafyPlant": 1,
+          "LeafyPlant": 2,
+          "Liana": 2,
+          "MediumGrass": 33,
+          "MycelBlue": 1,
+          "ShortGrass": 14,
+          "Stones": 1,
+          "VeloriteFrag": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 1,
+        "entity_signatures": [
+          "pos_bits=1174470656,1174766592,3265003520;body=QuadrupedSmall(Body { species: Batfox, body_type: Female });alignment=Enemy;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false"
+        ],
+        "rtsim_max_resources": {
+          "Grass": 106,
+          "Loot": 1,
+          "Plant": 6,
+          "Stone": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 48,
+        "Loot": 1,
+        "Plant": 3,
+        "Stone": 1
+      }
+    },
+    {
+      "chunk_pos": [
+        257,
+        265
+      ],
+      "selection_score": 112,
+      "resource_kind_count": 3,
+      "baseline_night_full_density_runtime_chunk": {
+        "variant_mode": "baseline_night_full_density_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -77,
+        "max_z": 307,
+        "sub_chunks": 24,
+        "block_total": 393216,
+        "non_air_blocks": 325491,
+        "sprite_total": 67725,
+        "block_kind_counts": {
+          "Air": 67725,
+          "ArtLeaves": 5132,
+          "Earth": 4424,
+          "GlowingWeakRock": 10,
+          "Grass": 3544,
+          "Leaves": 4244,
+          "Rock": 306767,
+          "Sand": 5,
+          "Wood": 1365
+        },
+        "sprite_kind_counts": {
+          "CeilingJungleLeafyPlant": 2,
+          "CeilingLanternFlower": 1,
+          "CeilingLanternPlant": 2,
+          "Empty": 67593,
+          "Fern": 6,
+          "JungleFern": 5,
+          "JungleLeafyPlant": 2,
+          "JungleRedGrass": 1,
+          "LanternPlant": 2,
+          "LeafyPlant": 4,
+          "Liana": 2,
+          "LongGrass": 3,
+          "MediumGrass": 52,
+          "Mushroom": 1,
+          "ShortGrass": 48,
+          "Silver": 1
+        }
+      },
+      "baseline_night_full_density_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 110,
+          "Mushroom": 1,
+          "Ore": 1
+        }
+      },
+      "baseline_night_full_density_rtsim_resource_block_counts": {
+        "Grass": 110,
+        "Mushroom": 1,
+        "Ore": 1
+      },
+      "baseline_night_thinned_runtime_chunk": {
+        "variant_mode": "baseline_night_thinned_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": -77,
+        "max_z": 307,
+        "sub_chunks": 24,
+        "block_total": 393216,
+        "non_air_blocks": 325491,
+        "sprite_total": 67725,
+        "block_kind_counts": {
+          "Air": 67725,
+          "ArtLeaves": 5132,
+          "Earth": 4424,
+          "GlowingWeakRock": 10,
+          "Grass": 3544,
+          "Leaves": 4244,
+          "Rock": 306767,
+          "Sand": 5,
+          "Wood": 1365
+        },
+        "sprite_kind_counts": {
+          "CeilingJungleLeafyPlant": 2,
+          "CeilingLanternFlower": 1,
+          "CeilingLanternPlant": 2,
+          "Empty": 67642,
+          "Fern": 2,
+          "JungleFern": 5,
+          "JungleLeafyPlant": 2,
+          "LanternPlant": 2,
+          "LeafyPlant": 4,
+          "Liana": 2,
+          "LongGrass": 1,
+          "MediumGrass": 27,
+          "Mushroom": 1,
+          "ShortGrass": 31,
+          "Silver": 1
+        }
+      },
+      "baseline_night_thinned_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": [],
+        "rtsim_max_resources": {
+          "Grass": 110,
+          "Mushroom": 1,
+          "Ore": 1
+        }
+      },
+      "baseline_night_thinned_rtsim_resource_block_counts": {
+        "Grass": 61,
+        "Mushroom": 1,
+        "Ore": 1
+      }
+    }
+  ],
   "sampled_chunks": [
     {
       "chunk_pos": [
@@ -56,7 +1089,9 @@
         "sprite_kind_counts": {
           "Empty": 23077,
           "SeaweedTropical": 7
-        },
+        }
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -80,9 +1115,7 @@
         "sprite_kind_counts": {
           "Empty": 23077,
           "SeaweedTropical": 7
-        },
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        }
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -107,7 +1140,61 @@
         "sprite_kind_counts": {
           "Empty": 23074,
           "SeaweedTropical": 7
+        }
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 79,
+        "max_z": 143,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 62464,
+        "sprite_total": 23084,
+        "block_kind_counts": {
+          "Air": 3072,
+          "Earth": 3425,
+          "Rock": 35280,
+          "Sand": 3747,
+          "Water": 20012
         },
+        "sprite_kind_counts": {
+          "Empty": 23077,
+          "SeaweedTropical": 7
+        }
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 3,
+        "entity_signatures": [
+          "pos_bits=1113718784,1108475904,1123201569;body=FishMedium(Body { species: Marlin, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1115029504,1111359488,1124096272;body=FishMedium(Body { species: Marlin, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1115553792,1108213760,1123201569;body=FishMedium(Body { species: Marlin, body_type: Male });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false"
+        ]
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 79,
+        "max_z": 143,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 62464,
+        "sprite_total": 23084,
+        "block_kind_counts": {
+          "Air": 3072,
+          "Earth": 3425,
+          "Rock": 35280,
+          "Sand": 3747,
+          "Water": 20012
+        },
+        "sprite_kind_counts": {
+          "Empty": 23077,
+          "SeaweedTropical": 7
+        }
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -139,7 +1226,9 @@
           "Empty": 43199,
           "SeaweedTemperate": 2,
           "SoftCoral": 4
-        },
+        }
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -165,9 +1254,7 @@
           "Empty": 43199,
           "SeaweedTemperate": 2,
           "SoftCoral": 4
-        },
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        }
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -194,7 +1281,61 @@
           "Empty": 43196,
           "SeaweedTemperate": 2,
           "SoftCoral": 4
+        }
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 88,
+        "max_z": 152,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 53248,
+        "sprite_total": 43214,
+        "block_kind_counts": {
+          "Air": 12288,
+          "Earth": 3429,
+          "Rock": 16822,
+          "Sand": 2071,
+          "Water": 30926
         },
+        "sprite_kind_counts": {
+          "BullKelp": 9,
+          "Empty": 43199,
+          "SeaweedTemperate": 2,
+          "SoftCoral": 4
+        }
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 88,
+        "max_z": 152,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 53248,
+        "sprite_total": 43214,
+        "block_kind_counts": {
+          "Air": 12288,
+          "Earth": 3429,
+          "Rock": 16822,
+          "Sand": 2071,
+          "Water": 30926
+        },
+        "sprite_kind_counts": {
+          "BullKelp": 9,
+          "Empty": 43199,
+          "SeaweedTemperate": 2,
+          "SoftCoral": 4
+        }
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -215,7 +1356,9 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -230,9 +1373,7 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {}
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -245,7 +1386,39 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -277,7 +1450,9 @@
           "Seagrass": 9,
           "SeaweedTemperate": 4,
           "SeaweedTropical": 5
-        },
+        }
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -303,9 +1478,7 @@
           "Seagrass": 9,
           "SeaweedTemperate": 4,
           "SeaweedTropical": 5
-        },
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        }
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -332,9 +1505,71 @@
           "Seagrass": 9,
           "SeaweedTemperate": 4,
           "SeaweedTropical": 5
+        }
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 76,
+        "max_z": 140,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 65536,
+        "sprite_total": 38653,
+        "block_kind_counts": {
+          "Earth": 3417,
+          "Rock": 21496,
+          "Sand": 1970,
+          "Water": 38653
         },
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {
+          "Empty": 38610,
+          "GiantKelp": 25,
+          "Seagrass": 9,
+          "SeaweedTemperate": 4,
+          "SeaweedTropical": 5
+        }
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 3,
+        "entity_signatures": [
+          "pos_bits=1174375424,1107427328,1122118324;body=FishMedium(Body { species: Marlin, body_type: Female });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1174391808,1110573056,1122118324;body=FishMedium(Body { species: Marlin, body_type: Female });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1174404096,1107689472,1122118324;body=FishMedium(Body { species: Marlin, body_type: Female });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false"
+        ]
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 76,
+        "max_z": 140,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 65536,
+        "sprite_total": 38653,
+        "block_kind_counts": {
+          "Earth": 3417,
+          "Rock": 21496,
+          "Sand": 1970,
+          "Water": 38653
+        },
+        "sprite_kind_counts": {
+          "Empty": 38610,
+          "GiantKelp": 25,
+          "Seagrass": 9,
+          "SeaweedTemperate": 4,
+          "SeaweedTropical": 5
+        }
+      },
+      "halloween_night_runtime_supplement": {
+        "entity_signature_count": 3,
+        "entity_signatures": [
+          "pos_bits=1174383616,1109262336,1121086661;body=FishMedium(Body { species: Marlin, body_type: Female });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1174397952,1112145920,1121086661;body=FishMedium(Body { species: Marlin, body_type: Female });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false",
+          "pos_bits=1174404096,1109524480,1121086661;body=FishMedium(Body { species: Marlin, body_type: Female });alignment=Wild;scale_bits=1065353216;inventory=0;pets=0;rider=false;special=false;agency=true;no_flee=false"
+        ]
       }
     },
     {
@@ -363,7 +1598,9 @@
         "sprite_kind_counts": {
           "Empty": 46002,
           "ShortGrass": 2
-        },
+        }
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -388,9 +1625,7 @@
         "sprite_kind_counts": {
           "Empty": 46002,
           "ShortGrass": 2
-        },
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        }
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -416,7 +1651,59 @@
         "sprite_kind_counts": {
           "Empty": 46002,
           "ShortGrass": 2
+        }
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 423,
+        "max_z": 487,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 19532,
+        "sprite_total": 46004,
+        "block_kind_counts": {
+          "Air": 46004,
+          "Earth": 4590,
+          "Leaves": 174,
+          "Rock": 13397,
+          "Snow": 1336,
+          "Wood": 35
         },
+        "sprite_kind_counts": {
+          "Empty": 46002,
+          "ShortGrass": 2
+        }
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 423,
+        "max_z": 487,
+        "sub_chunks": 4,
+        "block_total": 65536,
+        "non_air_blocks": 19532,
+        "sprite_total": 46004,
+        "block_kind_counts": {
+          "Air": 46004,
+          "Earth": 4590,
+          "Leaves": 174,
+          "Rock": 13397,
+          "Snow": 1336,
+          "Wood": 35
+        },
+        "sprite_kind_counts": {
+          "Empty": 46002,
+          "ShortGrass": 2
+        }
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -437,7 +1724,9 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -452,9 +1741,7 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {}
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -467,7 +1754,39 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -488,7 +1807,9 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -503,9 +1824,7 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {}
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -518,7 +1837,39 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -539,7 +1890,9 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -554,9 +1907,7 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {}
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -569,7 +1920,39 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }
@@ -590,7 +1973,9 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "base_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       },
@@ -605,9 +1990,7 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
-        "entity_signature_count": 0,
-        "entity_signatures": []
+        "sprite_kind_counts": {}
       },
       "fixed_overlay_runtime_chunk": {
         "variant_mode": "fixed_overlay_runtime_chunk",
@@ -620,7 +2003,39 @@
         "non_air_blocks": 0,
         "sprite_total": 0,
         "block_kind_counts": {},
-        "sprite_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_chunk": {
+        "variant_mode": "baseline_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "baseline_night_runtime_supplement": {
+        "entity_signature_count": 0,
+        "entity_signatures": []
+      },
+      "halloween_night_runtime_chunk": {
+        "variant_mode": "halloween_night_runtime_chunk",
+        "overlay_blocks_applied": 0,
+        "overlay_operations_skipped": 0,
+        "min_z": 140,
+        "max_z": 140,
+        "sub_chunks": 0,
+        "block_total": 0,
+        "non_air_blocks": 0,
+        "sprite_total": 0,
+        "block_kind_counts": {},
+        "sprite_kind_counts": {}
+      },
+      "halloween_night_runtime_supplement": {
         "entity_signature_count": 0,
         "entity_signatures": []
       }

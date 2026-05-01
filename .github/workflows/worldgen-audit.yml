@@ -69,10 +69,14 @@ jobs:
             $tier = 'smoke'
           }
 
+          $heavyWorldBlockStatistics = $false
+          $heavyWorldBlockStatisticsChunkBudget = 0
           switch ($tier) {
             'all' {
               $corpusRoot = 'world/tests/data/worldgen_corpus'
               $baselineRoot = 'world/tests/data/worldgen_baselines'
+              $heavyWorldBlockStatistics = $true
+              $heavyWorldBlockStatisticsChunkBudget = 9
             }
             'smoke' {
               $corpusRoot = "world/tests/data/worldgen_corpus/$tier"
@@ -81,10 +85,14 @@ jobs:
             'medium' {
               $corpusRoot = "world/tests/data/worldgen_corpus/$tier"
               $baselineRoot = "world/tests/data/worldgen_baselines/$tier"
+              $heavyWorldBlockStatistics = $true
+              $heavyWorldBlockStatisticsChunkBudget = 9
             }
             'nightly' {
               $corpusRoot = "world/tests/data/worldgen_corpus/$tier"
               $baselineRoot = "world/tests/data/worldgen_baselines/$tier"
+              $heavyWorldBlockStatistics = $true
+              $heavyWorldBlockStatisticsChunkBudget = 9
             }
             default {
               throw "Unsupported audit tier '$tier'."
@@ -96,14 +104,28 @@ jobs:
           "baseline_root=$baselineRoot" >> $env:GITHUB_OUTPUT
           "artifact_name=worldgen-audit-$tier" >> $env:GITHUB_OUTPUT
           "output_root=target/worldgen-audit-ci-$tier" >> $env:GITHUB_OUTPUT
+          "heavy_world_block_statistics=$($heavyWorldBlockStatistics.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "heavy_world_block_statistics_chunk_budget=$heavyWorldBlockStatisticsChunkBudget" >> $env:GITHUB_OUTPUT
 
       - name: Verify worldgen audit baseline
         shell: pwsh
-        run: >
-          ./tools/worldgen-audit-verify.ps1
-          -CorpusRoot ${{ steps.audit.outputs.corpus_root }}
-          -BaselineRoot ${{ steps.audit.outputs.baseline_root }}
-          -OutputRoot ${{ steps.audit.outputs.output_root }}
+        run: |
+          $heavyEnabled = '${{ steps.audit.outputs.heavy_world_block_statistics }}' -eq 'true'
+          $heavyChunkBudget = [int]'${{ steps.audit.outputs.heavy_world_block_statistics_chunk_budget }}'
+
+          $verifyArgs = @(
+            '-CorpusRoot', '${{ steps.audit.outputs.corpus_root }}',
+            '-BaselineRoot', '${{ steps.audit.outputs.baseline_root }}',
+            '-OutputRoot', '${{ steps.audit.outputs.output_root }}'
+          )
+          if ($heavyEnabled) {
+            $verifyArgs += @(
+              '-HeavyWorldBlockStatistics', 'true',
+              '-HeavyWorldBlockStatisticsChunkBudget', $heavyChunkBudget
+            )
+          }
+
+          ./tools/worldgen-audit-verify.ps1 @verifyArgs
 
       - name: Publish tier policy summary
         if: always()
@@ -116,6 +138,9 @@ jobs:
           - default repo gate on `push` / `pull_request`: `smoke`
           - extended manual verification tiers: `medium`, `nightly`, `all`
           - current workflow contract: automatic events always resolve to `smoke`; extended tiers stay on `workflow_dispatch`
+          - heavy `world_block_statistics` lane enabled for this run: `${{ steps.audit.outputs.heavy_world_block_statistics }}`
+          - heavy lane chunk budget for this run: `${{ steps.audit.outputs.heavy_world_block_statistics_chunk_budget }}`
+          - heavy lane remains opt-in and non-gating even when enabled for extended tiers
           "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       - name: Upload audit artifacts
