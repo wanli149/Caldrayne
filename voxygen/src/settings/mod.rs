@@ -61,13 +61,13 @@ impl Default for Settings {
         let user_dirs = UserDirs::new().expect("System's $HOME directory path not found!");
 
         // Chooses a path to store the screenshots by the following order:
-        //  - The VOXYGEN_SCREENSHOT environment variable
+        //  - The CALDRAYNE_SCREENSHOT environment variable
         //  - The user's picture directory
         //  - The executable's directory
         // This only selects if there isn't already an entry in the settings file
-        let screenshots_path = std::env::var_os("VOXYGEN_SCREENSHOT")
+        let screenshots_path = std::env::var_os("CALDRAYNE_SCREENSHOT")
             .map(PathBuf::from)
-            .or_else(|| user_dirs.picture_dir().map(|dir| dir.join("veloren")))
+            .or_else(|| user_dirs.picture_dir().map(|dir| dir.join("Caldrayne")))
             .or_else(|| {
                 std::env::current_exe()
                     .ok()

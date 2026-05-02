@@ -14,7 +14,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
-use veloren_query_server::server::Metrics as RawQueryServerMetrics;
+use veldr_query_server::server::Metrics as RawQueryServerMetrics;
 
 /// This system exports metrics
 #[derive(Default)]

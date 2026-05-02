@@ -54,13 +54,13 @@ mod embedded {
     embed_migrations!("./src/migrations");
 }
 
-/// A database connection blessed by Veloren.
-pub(crate) struct VelorenConnection {
+/// A database connection blessed by the project runtime.
+pub(crate) struct VeldrConnection {
     connection: Connection,
     sql_log_mode: SqlLogMode,
 }
 
-impl VelorenConnection {
+impl VeldrConnection {
     fn new(connection: Connection) -> Self {
         Self {
             connection,
@@ -87,7 +87,7 @@ impl VelorenConnection {
     }
 }
 
-impl Deref for VelorenConnection {
+impl Deref for VeldrConnection {
     type Target = Connection;
 
     fn deref(&self) -> &Connection { &self.connection }
@@ -315,7 +315,7 @@ fn rusqlite_trace_callback(event: TraceEvent<'_>) {
 pub(crate) fn establish_connection(
     settings: &DatabaseSettings,
     connection_mode: ConnectionMode,
-) -> VelorenConnection {
+) -> VeldrConnection {
     fs::create_dir_all(&settings.db_dir)
         .unwrap_or_else(|_| panic!("Failed to create saves directory: {:?}", &settings.db_dir));
 
@@ -337,12 +337,12 @@ pub(crate) fn establish_connection(
             )
         });
 
-    let mut veloren_connection = VelorenConnection::new(connection);
+    let mut veldr_connection = VeldrConnection::new(connection);
 
-    let connection = &mut veloren_connection.connection;
+    let connection = &mut veldr_connection.connection;
 
     set_log_mode(connection, settings.sql_log_mode);
-    veloren_connection.sql_log_mode = settings.sql_log_mode;
+    veldr_connection.sql_log_mode = settings.sql_log_mode;
 
     rusqlite::vtab::array::load_module(connection).expect("Failed to load sqlite array module");
 
@@ -360,7 +360,7 @@ pub(crate) fn establish_connection(
         .pragma_update(None, "busy_timeout", "250")
         .expect("Failed to set busy_timeout PRAGMA");
 
-    veloren_connection
+    veldr_connection
 }
 
 #[cfg(test)]

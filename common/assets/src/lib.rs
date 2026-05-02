@@ -49,7 +49,7 @@ pub trait AssetExt: Sized + Send + Sync + 'static {
     /// Function used to load assets from the filesystem or the cache.
     /// Example usage:
     /// ```no_run
-    /// use veloren_common_assets::{AssetExt, Image};
+    /// use veldr_common_assets::{AssetExt, Image};
     ///
     /// let my_image = Image::load("core.ui.backgrounds.city").unwrap();
     /// ```
@@ -74,7 +74,7 @@ pub trait AssetExt: Sized + Send + Sync + 'static {
     /// Function used to load essential assets from the filesystem or the cache.
     /// It will panic if the asset is not found. Example usage:
     /// ```no_run
-    /// use veloren_common_assets::{AssetExt, Image};
+    /// use veldr_common_assets::{AssetExt, Image};
     ///
     /// let my_image = Image::load_expect("core.ui.backgrounds.city");
     /// ```
@@ -328,11 +328,20 @@ pub fn find_root() -> Option<PathBuf> {
     })
 }
 
+fn first_assets_env() -> Option<PathBuf> {
+    std::env::var("CALDRAYNE_ASSETS").ok().map(Into::into)
+}
+
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
+fn push_system_asset_roots(paths: &mut Vec<PathBuf>, base: &str) {
+    paths.push(format!("{}/caldrayne/", base).into());
+}
+
 lazy_static! {
     /// Lazy static to find and cache where the asset directory is.
     /// Cases we need to account for:
     /// 1. Running through airshipper (`assets` next to binary)
-    /// 2. Install with package manager and run (assets probably in `/usr/share/veloren/assets` while binary in `/usr/bin/`)
+    /// 2. Install with package manager and run (assets probably in `/usr/share/caldrayne/assets` while binary in `/usr/bin/`)
     /// 3. Download & hopefully extract zip (`assets` next to binary)
     /// 4. Running through cargo (`assets` in workspace root but not always in cwd in case you `cd voxygen && cargo r`)
     /// 5. Running executable in the target dir (`assets` in workspace)
@@ -342,9 +351,9 @@ lazy_static! {
 
         // Note: Ordering matters here!
 
-        // 1. VELOREN_ASSETS environment variable
-        if let Ok(var) = std::env::var("VELOREN_ASSETS") {
-            paths.push(var.into());
+        // 1. Asset environment variable
+        if let Some(path) = first_assets_env() {
+            paths.push(path);
         }
 
         // 2. Executable path
@@ -362,18 +371,20 @@ lazy_static! {
         #[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
         {
             if let Ok(result) = std::env::var("XDG_DATA_HOME") {
-                paths.push(format!("{}/veloren/", result).into());
+                push_system_asset_roots(&mut paths, &result);
             } else if let Ok(result) = std::env::var("HOME") {
-                paths.push(format!("{}/.local/share/veloren/", result).into());
+                push_system_asset_roots(&mut paths, &format!("{}/.local/share", result));
             }
 
             if let Ok(result) = std::env::var("XDG_DATA_DIRS") {
-                result.split(':').for_each(|x| paths.push(format!("{}/veloren/", x).into()));
+                result
+                    .split(':')
+                    .for_each(|x| push_system_asset_roots(&mut paths, x));
             } else {
                 // Fallback
                 let fallback_paths = vec!["/usr/local/share", "/usr/share"];
                 for fallback_path in fallback_paths {
-                    paths.push(format!("{}/veloren/", fallback_path).into());
+                    push_system_asset_roots(&mut paths, fallback_path);
                 }
             }
         }
@@ -476,7 +487,7 @@ pub mod asset_tweak {
     /// # Examples:
     /// How not to use.
     /// ```should_panic
-    /// use veloren_common_assets::asset_tweak::{Specifier, tweak_expect};
+    /// use veldr_common_assets::asset_tweak::{Specifier, tweak_expect};
     ///
     /// // will panic if you don't have a file
     /// let specifier = Specifier::Asset(&["no_way_we_have_this_directory", "x"]);
@@ -486,7 +497,7 @@ pub mod asset_tweak {
     /// How to use.
     /// ```
     /// use std::fs;
-    /// use veloren_common_assets::{
+    /// use veldr_common_assets::{
     ///     ASSETS_PATH,
     ///     asset_tweak::{Specifier, tweak_expect},
     /// };
@@ -565,7 +576,7 @@ pub mod asset_tweak {
     /// # Example:
     /// Tweaking integer value
     /// ```
-    /// use veloren_common_assets::{
+    /// use veldr_common_assets::{
     ///     ASSETS_PATH,
     ///     asset_tweak::{Specifier, tweak_expect_or_create},
     /// };
@@ -613,7 +624,7 @@ pub mod asset_tweak {
     /// ```
     /// // note that you need to export it from `assets` crate,
     /// // not from `assets::asset_tweak`
-    /// use veloren_common_assets::{ASSETS_PATH, tweak};
+    /// use veldr_common_assets::{ASSETS_PATH, tweak};
     ///
     /// // you need to create file first
     /// let own_path = ASSETS_PATH.join("tweak/grizelda.ron");
@@ -671,7 +682,7 @@ pub mod asset_tweak {
     /// // note that you need to export it from `assets` crate,
     /// // not from `assets::asset_tweak`
     /// use serde::{Deserialize, Serialize};
-    /// use veloren_common_assets::{ASSETS_PATH, tweak_from};
+    /// use veldr_common_assets::{ASSETS_PATH, tweak_from};
     ///
     /// #[derive(Clone, PartialEq, Deserialize, Serialize)]
     /// struct Data {

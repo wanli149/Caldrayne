@@ -16,7 +16,7 @@ use std::{borrow::Cow, collections::HashMap};
 use vek::*;
 
 lazy_static::lazy_static! {
-    pub static ref TOOL_TRAIL_MANIFEST: ToolTrailManifest = ToolTrailManifest::load_expect_cloned("voxygen.voxel.tool_trail_manifest");
+    pub static ref TOOL_TRAIL_MANIFEST: ToolTrailManifest = ToolTrailManifest::load_expect_cloned("veldr.voxel.tool_trail_manifest");
 }
 
 #[derive(Clone, Debug, Deserialize)]

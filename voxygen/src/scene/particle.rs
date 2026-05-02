@@ -4119,7 +4119,7 @@ fn default_instances(renderer: &mut Renderer) -> Instances<ParticleInstance> {
     renderer.create_instances(&empty_vec)
 }
 
-const DEFAULT_MODEL_KEY: &str = "voxygen.voxel.particle";
+const DEFAULT_MODEL_KEY: &str = "veldr.voxel.particle";
 
 fn default_cache(renderer: &mut Renderer) -> HashMap<&'static str, Model<ParticleVertex>> {
     let mut model_cache = HashMap::new();

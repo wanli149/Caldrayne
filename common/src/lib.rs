@@ -40,7 +40,7 @@ pub mod lottery;
 pub mod map;
 pub mod mounting;
 pub mod npc;
-pub mod official_entry;
+pub mod public_realm;
 pub mod outcome;
 pub mod path;
 pub mod ray;

@@ -1,5 +1,5 @@
 # Project-specific
-## Veloren
+## Project legacy
 *.log
 *.rar
 assets/tweak/
@@ -16,7 +16,7 @@ todo.txt
 userdata
 
 ## Allow asset hud settings
-!assets/voxygen/i18n/*/hud/settings.ron
+!assets/veldr/i18n/*/hud/settings.ron
 
 ## Export data
 *.csv

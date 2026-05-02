@@ -754,7 +754,7 @@ pub struct NetworkingSettings {
     pub servers: Vec<String>,
     /// Last direct-connect target used for development workflows.
     ///
-    /// Public mode must ignore this as an official Realm selector.
+    /// Public mode must ignore this as a Caldrayne Realm selector.
     pub default_server: String,
     /// Stable reference to the last selected local dedicated instance.
     ///
@@ -767,23 +767,23 @@ pub struct NetworkingSettings {
     /// generic direct-connect address or as a configured local dedicated
     /// instance reference.
     pub default_multiplayer_target_kind: DevMultiplayerTargetKind,
-    /// Saved trust decisions for non-official authentication servers in
+    /// Saved trust decisions for non-public-realm authentication servers in
     /// development mode.
     ///
-    /// Public mode only trusts the bundled official auth server configuration.
+    /// Public mode only trusts the bundled Caldrayne Realm auth server configuration.
     pub trusted_auth_servers: HashSet<String>,
     /// Configured local dedicated instances available from development mode.
     ///
     /// These are UI/dev entry references only, not logical Realm identity.
     pub local_dedicated_servers: Vec<LocalDedicatedServer>,
     /// Dev direct-connect transport preference. Public mode uses the bundled
-    /// official entry.
+    /// Caldrayne Realm transport settings.
     pub use_srv: bool,
     /// Dev direct-connect transport preference. Public mode uses the bundled
-    /// official entry.
+    /// Caldrayne Realm transport settings.
     pub use_quic: bool,
     /// Dev direct-connect transport preference. Public mode uses the bundled
-    /// official entry.
+    /// Caldrayne Realm transport settings.
     pub validate_tls: bool,
     pub player_physics_behavior: bool,
     pub lossy_terrain_compression: bool,

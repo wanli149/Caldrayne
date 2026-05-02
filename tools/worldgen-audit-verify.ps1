@@ -1664,7 +1664,7 @@ function Invoke-AuditVerifyCase {
         $cargoArgs = @(
             "run",
             "-p",
-            "veloren-world",
+            "veldr-world",
             "--features",
             "cli",
             "--example",

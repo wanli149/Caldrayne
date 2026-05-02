@@ -11,13 +11,14 @@ edition = "2024"
 package = "component:anim"
 
 [package.metadata.component.target]
-path = "../../wit/veloren.wit"
+path = "../../wit/caldrayne.wit"
 world = "animation-plugin"
 
 [package.metadata.component.dependencies]
 
 [dependencies]
 vek = "0.17.0"
+wit-bindgen = { version = "0.51.0", features = ["macros"] }
 wit-bindgen-rt = "0.30.0"
 
 [lib]

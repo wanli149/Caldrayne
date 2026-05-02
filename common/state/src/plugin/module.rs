@@ -25,37 +25,37 @@ use wasmtime_wasi::{
 
 pub(crate) mod types_mod {
     wasmtime::component::bindgen!({
-        path: "../../plugin/wit/veloren.wit",
+        path: "../../plugin/wit/caldrayne.wit",
         world: "common-types",
     });
 }
 
 wasmtime::component::bindgen!({
-    path: "../../plugin/wit/veloren.wit",
+    path: "../../plugin/wit/caldrayne.wit",
     world: "plugin",
     with: {
-        "veloren:plugin/types@0.0.1": types_mod::veloren::plugin::types,
-        "veloren:plugin/information@0.0.1.entity": Entity,
+        "caldrayne:plugin/types@0.0.1": types_mod::caldrayne::plugin::types,
+        "caldrayne:plugin/information@0.0.1.entity": Entity,
     },
 });
 
 mod animation_plugin {
     wasmtime::component::bindgen!({
-        path: "../../plugin/wit/veloren.wit",
+        path: "../../plugin/wit/caldrayne.wit",
         world: "animation-plugin",
         with: {
-            "veloren:plugin/types@0.0.1": super::types_mod::veloren::plugin::types,
+            "caldrayne:plugin/types@0.0.1": super::types_mod::caldrayne::plugin::types,
         },
     });
 }
 
 mod server_plugin {
     wasmtime::component::bindgen!({
-        path: "../../plugin/wit/veloren.wit",
+        path: "../../plugin/wit/caldrayne.wit",
         world: "server-plugin",
         with: {
-            "veloren:plugin/types@0.0.1": super::types_mod::veloren::plugin::types,
-            "veloren:plugin/information@0.0.1.entity": super::Entity,
+            "caldrayne:plugin/types@0.0.1": super::types_mod::caldrayne::plugin::types,
+            "caldrayne:plugin/information@0.0.1.entity": super::Entity,
         },
     });
 }
@@ -65,11 +65,11 @@ pub struct Entity {
 }
 
 pub use animation::Body;
-use exports::veloren::plugin::animation;
-pub use types_mod::veloren::plugin::types::{
+use exports::caldrayne::plugin::animation;
+pub use types_mod::caldrayne::plugin::types::{
     self, CharacterState, Dependency, Skeleton, Transform,
 };
-use veloren::plugin::{actions, information};
+use caldrayne::plugin::{actions, information};
 
 type StoreType = wasmtime::Store<WasiHostCtx>;
 
@@ -95,9 +95,9 @@ impl PluginWrapper {
             common::resources::GameMode::Singleplayer => types::GameMode::SinglePlayer,
         };
         match self {
-            PluginWrapper::Full(pl) => pl.veloren_plugin_events().call_load(store, mode),
-            PluginWrapper::Animation(pl) => pl.veloren_plugin_events().call_load(store, mode),
-            PluginWrapper::Server(pl) => pl.veloren_plugin_events().call_load(store, mode),
+            PluginWrapper::Full(pl) => pl.caldrayne_plugin_events().call_load(store, mode),
+            PluginWrapper::Animation(pl) => pl.caldrayne_plugin_events().call_load(store, mode),
+            PluginWrapper::Server(pl) => pl.caldrayne_plugin_events().call_load(store, mode),
         }
     }
 
@@ -113,11 +113,11 @@ impl PluginWrapper {
     {
         match self {
             PluginWrapper::Full(pl) => pl
-                .veloren_plugin_server_events()
+                .caldrayne_plugin_server_events()
                 .call_command(store, name, args, player),
             PluginWrapper::Animation(_) => Ok(Err("not implemented".into())),
             PluginWrapper::Server(pl) => pl
-                .veloren_plugin_server_events()
+                .caldrayne_plugin_server_events()
                 .call_command(store, name, args, player),
         }
     }
@@ -130,11 +130,11 @@ impl PluginWrapper {
     ) -> wasmtime::Result<types::JoinResult> {
         match self {
             PluginWrapper::Full(pl) => pl
-                .veloren_plugin_server_events()
+                .caldrayne_plugin_server_events()
                 .call_join(store, name, uuid),
             PluginWrapper::Animation(_) => Ok(types::JoinResult::None),
             PluginWrapper::Server(pl) => pl
-                .veloren_plugin_server_events()
+                .caldrayne_plugin_server_events()
                 .call_join(store, name, uuid),
         }
     }
@@ -142,11 +142,11 @@ impl PluginWrapper {
     fn create_body(&self, store: &mut StoreType, bodytype: i32) -> Option<animation::Body> {
         match self {
             PluginWrapper::Full(pl) => {
-                let body_iface = pl.veloren_plugin_animation().body();
+                let body_iface = pl.caldrayne_plugin_animation().body();
                 body_iface.call_constructor(store, bodytype).ok()
             },
             PluginWrapper::Animation(pl) => {
-                let body_iface = pl.veloren_plugin_animation().body();
+                let body_iface = pl.caldrayne_plugin_animation().body();
                 body_iface.call_constructor(store, bodytype).ok()
             },
             PluginWrapper::Server(_) => None,
@@ -162,11 +162,11 @@ impl PluginWrapper {
     ) -> Option<types::Skeleton> {
         match self {
             PluginWrapper::Full(pl) => {
-                let body_iface = pl.veloren_plugin_animation().body();
+                let body_iface = pl.caldrayne_plugin_animation().body();
                 body_iface.call_update_skeleton(store, body, dep, time).ok()
             },
             PluginWrapper::Animation(pl) => {
-                let body_iface = pl.veloren_plugin_animation().body();
+                let body_iface = pl.caldrayne_plugin_animation().body();
                 body_iface.call_update_skeleton(store, body, dep, time).ok()
             },
             PluginWrapper::Server(_) => None,
@@ -389,7 +389,7 @@ impl PluginModule {
         let module =
             Component::from_binary(&engine, wasm_data).map_err(PluginModuleError::Wasmtime)?;
 
-        // register WASI and Veloren methods with the runtime
+        // register WASI and veldr methods with the runtime
         let mut linker = Linker::new(&engine);
         wasmtime_wasi::p2::add_to_linker_sync(&mut linker).map_err(PluginModuleError::Wasmtime)?;
         Plugin::add_to_linker::<_, HasSelf<_>>(&mut linker, |x| x)
@@ -418,7 +418,7 @@ impl PluginModule {
 
     pub fn name(&self) -> &str { &self.name }
 
-    // Implementation of the commands called from veloren and provided in plugins
+    // Implementation of the commands called from veldr and provided in plugins
     pub fn load_event(
         &mut self,
         ecs: &EcsWorld,

@@ -15,11 +15,11 @@ pub const PUBLISHED_SERVER_INFO_FIELDS: &[&str] = &[
     "player_cap",
     "battlemode",
 ];
-pub(crate) const VELOREN_HEADER: [u8; 7] = [b'v', b'e', b'l', b'o', b'r', b'e', b'n'];
+pub(crate) const CALDRAYNE_HEADER: [u8; 5] = [b'c', b'a', b'l', b'd', b'r'];
 pub(crate) const MAX_REQUEST_CONTENT_SIZE: usize = 300;
 // NOTE: The actual maximum size must never exceed 1200 or we risk getting near
 // MTU limits for some networks.
-pub(crate) const MAX_REQUEST_SIZE: usize = MAX_REQUEST_CONTENT_SIZE + VELOREN_HEADER.len() + 2;
+pub(crate) const MAX_REQUEST_SIZE: usize = MAX_REQUEST_CONTENT_SIZE + CALDRAYNE_HEADER.len() + 2;
 pub(crate) const MAX_RESPONSE_SIZE: usize = 256;
 
 #[derive(Protocol, Debug, Clone, Copy)]
@@ -156,9 +156,9 @@ impl RawQueryServerRequest {
             }
             request_data
         });
-        const _: () = assert!(MAX_RESPONSE_SIZE + VELOREN_HEADER.len() <= MAX_REQUEST_SIZE);
+        const _: () = assert!(MAX_RESPONSE_SIZE + CALDRAYNE_HEADER.len() <= MAX_REQUEST_SIZE);
         buf.resize(MAX_RESPONSE_SIZE.max(buf.len()), 0);
-        buf.extend(VELOREN_HEADER);
+        buf.extend(CALDRAYNE_HEADER);
         Ok(buf)
     }
 }

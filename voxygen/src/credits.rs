@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn all_sounds_asset_paths_exists() {
         let credits = Ron::<Credits>::load_expect_cloned("credits").into_inner();
-        let sfx_path = assets::ASSETS_PATH.join(PathBuf::from("voxygen/audio/sfx/"));
+        let sfx_path = assets::ASSETS_PATH.join(PathBuf::from("veldr/audio/sfx/"));
 
         credits.sounds.into_iter().for_each(|sounds| {
             sounds.files.iter().for_each(|path| {

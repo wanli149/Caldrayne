@@ -16,7 +16,7 @@ use crate::{
     proto::{
         CURRENT_PROTOCOL_VERSION, Init, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE, QueryServerRequest,
         QueryServerResponse, RawQueryServerRequest, RawQueryServerResponse, ServerInfo,
-        VELOREN_HEADER,
+        CALDRAYNE_HEADER,
     },
     ratelimit::{RateLimiter, ReducedIpAddr},
 };
@@ -63,7 +63,7 @@ impl QueryServer {
     /// level for this crate (when outside of debugging contexts).
     ///
     /// NOTE: TRACE and DEBUG levels are disabled by default for this crate when
-    /// using `veloren-common-frontend`.
+    /// using `veldr-common-frontend`.
     pub async fn run(&mut self, metrics: Arc<Mutex<Metrics>>) -> Result<(), tokio::io::Error> {
         let socket = self.bind_socket().await?;
         self.run_with_socket(socket, metrics).await
@@ -107,7 +107,7 @@ impl QueryServer {
             let raw_msg_buf = &buf[..len];
             let msg_buf = if Self::validate_datagram(raw_msg_buf) {
                 // Require 2 extra bytes for version (currently unused)
-                &raw_msg_buf[2..(raw_msg_buf.len() - VELOREN_HEADER.len())]
+                &raw_msg_buf[2..(raw_msg_buf.len() - CALDRAYNE_HEADER.len())]
             } else {
                 new_metrics.dropped_packets += 1;
                 continue;
@@ -138,13 +138,13 @@ impl QueryServer {
         let len = data.len();
         // Require 2 extra bytes for protocol version information. This is
         // currently used for exact-version gating, not negotiation.
-        if len < MAX_RESPONSE_SIZE.max(VELOREN_HEADER.len() + 2) {
+        if len < MAX_RESPONSE_SIZE.max(CALDRAYNE_HEADER.len() + 2) {
             trace!(?len, "Datagram too short");
             false
         } else if len > MAX_REQUEST_SIZE {
             trace!(?len, "Datagram too large");
             false
-        } else if data[(len - VELOREN_HEADER.len())..] != VELOREN_HEADER {
+        } else if data[(len - CALDRAYNE_HEADER.len())..] != CALDRAYNE_HEADER {
             trace!(?len, "Datagram header invalid");
             false
         // TODO: Allow lower versions once proper versioning is added.

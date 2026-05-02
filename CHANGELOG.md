@@ -863,7 +863,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chestnut and cedar tree varieties.
 - Shooting sprites, such as apples and hives, can knock them out of trees.
 - Sprite pickup animations.
-- Add VELOREN_ASSETS_OVERRIDE variable for specifying folder to partially override assets.
+- Add CALDRAYNE_ASSETS_OVERRIDE variable for specifying folder to partially override assets.
 - Cultist raiders.
 - Bloom Slider.
 
@@ -938,7 +938,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Villagers and guards now spawn with potions, and know how to use them.
 - Combat music in dungeons when within range of enemies.
 - New `/kit` command to place a set of items into your inventory.
-- Added `--sql-log-mode` profile/trace parameter to veloren-server-cli.
+- Added `--sql-log-mode` profile/trace parameter to veldr-server-cli.
 - Added `/disconnect_all_players` admin command.
 - Added `disconnectall` CLI command.
 - One handed weapons can now be used and found in the world.

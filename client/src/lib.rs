@@ -613,11 +613,28 @@ impl Client {
                     })
                     .build();
 
-                let quic_service_host = format!("_veloren._udp.{hostname}");
-                let quic_lookup_future = resolver.srv_lookup(quic_service_host);
-                let tcp_service_host = format!("_veloren._tcp.{hostname}");
-                let tcp_lookup_future = resolver.srv_lookup(tcp_service_host);
-                let (quic_rr, tcp_rr) = tokio::join!(quic_lookup_future, tcp_lookup_future);
+                let quic_service_hosts = [format!("_caldrayne._udp.{hostname}")];
+                let tcp_service_hosts = [format!("_caldrayne._tcp.{hostname}")];
+
+                async fn lookup_first_available(
+                    resolver: &Resolver<TokioConnectionProvider>,
+                    hosts: &[String],
+                ) -> Vec<hickory_resolver::proto::rr::rdata::SRV> {
+                    for host in hosts {
+                        match resolver.srv_lookup(host.clone()).await {
+                            Ok(srv_lookup) => return srv_lookup.iter().cloned().collect(),
+                            Err(error) => {
+                                warn!("SRV lookup failed for {host}: {error:?}");
+                            },
+                        }
+                    }
+                    Vec::new()
+                }
+
+                let (quic_rr, tcp_rr) = tokio::join!(
+                    lookup_first_available(&resolver, &quic_service_hosts),
+                    lookup_first_available(&resolver, &tcp_service_hosts)
+                );
 
                 #[derive(Eq, PartialEq)]
                 enum ConnMode {
@@ -628,22 +645,8 @@ impl Client {
                 // Push the results of both futures into `srv_rr`. This uses map_or_else purely
                 // for side effects.
                 let mut srv_rr = Vec::new();
-                let () = quic_rr.map_or_else(
-                    |error| {
-                        warn!("QUIC SRV lookup failed: {error:?}");
-                    },
-                    |srv_lookup| {
-                        srv_rr.extend(srv_lookup.iter().cloned().map(|srv| (ConnMode::Quic, srv)))
-                    },
-                );
-                let () = tcp_rr.map_or_else(
-                    |error| {
-                        warn!("TCP SRV lookup failed: {error:?}");
-                    },
-                    |srv_lookup| {
-                        srv_rr.extend(srv_lookup.iter().cloned().map(|srv| (ConnMode::Tcp, srv)))
-                    },
-                );
+                srv_rr.extend(quic_rr.into_iter().map(|srv| (ConnMode::Quic, srv)));
+                srv_rr.extend(tcp_rr.into_iter().map(|srv| (ConnMode::Tcp, srv)));
 
                 // SRV records have a priority; lowest priority hosts MUST be contacted first.
                 let srv_rr_slice = srv_rr.as_mut_slice();
@@ -4052,7 +4055,7 @@ mod tests {
         let username = "Foo";
         let password = "Bar";
         let auth_server = "auth.caldrayne.local";
-        let veloren_client: Result<Client, Error> = runtime.block_on(Client::new(
+        let veldr_client: Result<Client, Error> = runtime.block_on(Client::new(
             ConnectionArgs::Tcp {
                 hostname: "127.0.0.1:9000".to_owned(),
                 prefer_ipv6: false,
@@ -4070,7 +4073,7 @@ mod tests {
         ));
         let localisation = LocalizationHandle::load_expect("en");
 
-        let _ = veloren_client.map(|mut client| {
+        let _ = veldr_client.map(|mut client| {
             //clock
             let mut clock = Clock::new(Duration::from_secs_f64(SPT));
 

@@ -1804,11 +1804,6 @@ mod tests {
         assert!(world_compat_response.contains("\"status\":\"world-compat-clear\""));
         assert!(world_compat_response.contains("\"load_legacy_mode\":\"deny\""));
         assert!(world_compat_response.contains("\"load_or_generate_sidecarless_mode\":\"deny\""));
-        assert!(world_compat_response.contains("\"review_result_status_hint\":\"approved\""));
-        assert!(
-            world_compat_response
-                .contains("\"required_terminal_record_fields\":[\"rollback_reference\"]")
-        );
         assert!(
             preflight_response.contains(" 200 OK\r\n"),
             "preflight_response={preflight_response}"
@@ -1912,24 +1907,17 @@ mod tests {
 
         assert!(web_result.is_ok());
         assert!(world_compat_response.contains(" 200 OK\r\n"));
-        assert!(world_compat_response.contains("\"status\":\"world-compat-review-required\""));
-        assert!(world_compat_response.contains("\"transition_window_open\":true"));
-        assert!(
-            world_compat_response.contains("\"review_result_status_hint\":\"exception-accepted\"")
-        );
-        assert!(world_compat_response.contains(
-            "\"required_terminal_record_fields\":[\"exception_reason\",\"rollback_reference\"]"
-        ));
+        assert!(world_compat_response.contains("\"status\":\"world-compat-blocked\""));
         assert!(preflight_response.contains(" 200 OK\r\n"));
         let preflight_body = http_response_body(&preflight_response);
-        assert!(preflight_body.contains("\"status\":\"operator_review_required\""));
+        assert!(preflight_body.contains("\"status\":\"preflight_blocked\""));
         assert!(preflight_body.contains("\"signal\":\"world-compat\""));
         assert!(
-            preflight_body.contains("\"current_result_status_hint\":\"exception-accepted\""),
+            preflight_body.contains("\"status\":\"world-compat-blocked\""),
             "preflight_body={preflight_body}"
         );
         assert!(preflight_body.contains(
-            "\"current_terminal_record_fields\":[\"exception_reason\",\"rollback_reference\"]"
+            "strict modern world contracts do not permit transitional exception windows"
         ));
     }
 
@@ -2042,11 +2030,6 @@ mod tests {
         assert!(world_compat_response.contains("\"load_legacy_mode\":\"deny\""));
         assert!(world_compat_response.contains("\"load_or_generate_sidecarless_mode\":\"deny\""));
         assert!(world_compat_response.contains("\"compat_entry\":\"load_asset\""));
-        assert!(world_compat_response.contains("\"review_result_status_hint\":\"approved\""));
-        assert!(
-            world_compat_response
-                .contains("\"required_terminal_record_fields\":[\"rollback_reference\"]")
-        );
         assert!(
             preflight_response.contains(" 200 OK\r\n"),
             "preflight_response={preflight_response}"

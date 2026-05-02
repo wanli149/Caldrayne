@@ -11,8 +11,8 @@
 //! preserve stability for the rest.
 //!
 //! Note that `server` is now a development-oriented override. Public mode no
-//! longer treats it as an official entry selector, and official targeting must
-//! continue to flow through `official_entry -> EntryPolicy -> Public / Dev`.
+//! longer treats it as a Caldrayne Realm selector, and realm targeting must
+//! continue to flow through `public_realm -> EntryPolicy -> Public / Dev`.
 //!
 //! Likewise external launch tooling should only use the following subcommands:
 //! * `ListWgpuBackends`
@@ -26,25 +26,24 @@ pub struct Args {
     /// Development-only value to auto-fill into the server field.
     ///
     /// This preserves legacy compatibility with Airshipper or local tooling
-    /// while using developer mode. Public mode ignores this as an official
-    /// entry selector and continues to resolve the target through the current
-    /// official entry source.
+    /// while using developer mode. Public mode ignores this as a Caldrayne
+    /// Realm selector and continues to resolve the target through the current
+    /// bundled Caldrayne Realm source.
     #[clap(short, long)]
     pub server: Option<String>,
 
-    /// Controls whether the client runs in public-official mode or developer
-    /// mode.
+    /// Controls whether the client runs in public mode or developer mode.
     ///
     /// When omitted, debug builds default to `dev` and release builds default
     /// to `public`.
     #[clap(long, env = "CALDRAYNE_PRODUCT_MODE", value_enum)]
     pub product_mode: Option<ProductModeArg>,
 
-    /// The [`ClientType`] voxygen will use to initialize the client.
+    /// The [`ClientType`] the client will use to initialize the connection.
     ///
     /// The only supported values are currently `game` and `silent_spectator`,
     /// the latter one only being usable by moderators.
-    #[clap(short, long, env = "VELOREN_CLIENT_TYPE", default_value_t = VoxygenClientType(ClientType::Game))]
+    #[clap(short, long, env = "CALDRAYNE_CLIENT_TYPE", default_value_t = VoxygenClientType(ClientType::Game))]
     pub client_type: VoxygenClientType,
 
     #[clap(subcommand)]
@@ -77,7 +76,7 @@ impl FromStr for VoxygenClientType {
         Ok(Self(match s.to_lowercase().as_str() {
             "game" => ClientType::Game,
             "silent_spectator" => ClientType::SilentSpectator,
-            c_type => return Err(format!("Invalid client type for voxygen: {c_type}")),
+            c_type => return Err(format!("Invalid client type: {c_type}")),
         }))
     }
 }

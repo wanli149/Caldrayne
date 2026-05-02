@@ -1,11 +1,14 @@
 //! Handles music playback and transitions
 //!
 //! Game music is controlled though a configuration file found in the source at
-//! `/assets/voxygen/audio/soundtrack.ron`. Each track enabled in game has a
+//! `/assets/veldr/audio/soundtrack.ron`. Each track enabled in game has a
 //! configuration corresponding to the
 //! [`SoundtrackItem`](struct.SoundtrackItem.html) format, as well as the
-//! corresponding `.ogg` file in the `/assets/voxygen/audio/soundtrack/`
+//! corresponding `.ogg` file in the `/assets/veldr/audio/soundtrack/`
 //! directory.
+//!
+//! `veldr.audio.*` is the internal runtime asset namespace for audio content.
+//! Keep it stable unless the whole audio asset contract is migrated together.
 //!
 //! If there are errors while reading or deserialising the configuration file, a
 //! warning is logged and music will be disabled.
@@ -23,7 +26,7 @@
 //! ```text
 //! (
 //!     title: "Sleepy Song",
-//!     path: "voxygen.audio.soundtrack.sleepy",
+//!     path: "veldr.audio.soundtrack.sleepy",
 //!     length: 400.0,
 //!     timing: Some(Night),
 //!     biomes: [
@@ -717,7 +720,7 @@ impl MusicMgr {
         let mut soundtrack = SoundtrackCollection::default();
         // Loads default soundtrack if no events are active
         if calendar.events().len() == 0 {
-            for track in SoundtrackCollection::load_expect("voxygen.audio.soundtrack")
+            for track in SoundtrackCollection::load_expect("veldr.audio.soundtrack")
                 .read()
                 .tracks
                 .clone()
@@ -730,7 +733,7 @@ impl MusicMgr {
                 match event {
                     CalendarEvent::Halloween => {
                         for track in SoundtrackCollection::load_expect(
-                            "voxygen.audio.calendar.halloween.soundtrack",
+                            "veldr.audio.calendar.halloween.soundtrack",
                         )
                         .read()
                         .tracks
@@ -741,7 +744,7 @@ impl MusicMgr {
                     },
                     CalendarEvent::Christmas => {
                         for track in SoundtrackCollection::load_expect(
-                            "voxygen.audio.calendar.christmas.soundtrack",
+                            "veldr.audio.calendar.christmas.soundtrack",
                         )
                         .read()
                         .tracks
@@ -751,7 +754,7 @@ impl MusicMgr {
                         }
                     },
                     _ => {
-                        for track in SoundtrackCollection::load_expect("voxygen.audio.soundtrack")
+                        for track in SoundtrackCollection::load_expect("veldr.audio.soundtrack")
                             .read()
                             .tracks
                             .clone()
@@ -764,7 +767,7 @@ impl MusicMgr {
         }
         // Fallback if events are active but give an empty tracklist
         if soundtrack.tracks.is_empty() {
-            for track in SoundtrackCollection::load_expect("voxygen.audio.soundtrack")
+            for track in SoundtrackCollection::load_expect("veldr.audio.soundtrack")
                 .read()
                 .tracks
                 .clone()
@@ -825,19 +828,19 @@ mod tests {
     #[test]
     fn test_load_soundtracks() {
         let _: AssetHandle<SoundtrackCollection<SoundtrackItem>> =
-            AssetExt::load_expect("voxygen.audio.soundtrack");
+            AssetExt::load_expect("veldr.audio.soundtrack");
         for event in CalendarEvent::iter() {
             match event {
                 CalendarEvent::Halloween => {
                     let _: AssetHandle<SoundtrackCollection<SoundtrackItem>> =
                         SoundtrackCollection::load_expect(
-                            "voxygen.audio.calendar.halloween.soundtrack",
+                            "veldr.audio.calendar.halloween.soundtrack",
                         );
                 },
                 CalendarEvent::Christmas => {
                     let _: AssetHandle<SoundtrackCollection<SoundtrackItem>> =
                         SoundtrackCollection::load_expect(
-                            "voxygen.audio.calendar.christmas.soundtrack",
+                            "veldr.audio.calendar.christmas.soundtrack",
                         );
                 },
                 _ => {},

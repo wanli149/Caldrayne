@@ -11,7 +11,7 @@ SELECT	NULL,
         i.item_id,
         NULL
 FROM item i
-WHERE i.item_definition_id = 'veloren.core.pseudo_containers.character';
+WHERE i.item_definition_id = 'veldr.core.pseudo_containers.character';
 
 UPDATE _temp_character_overflow_items_pairings
 SET overflow_items_container_id = ((SELECT MAX(entity_id) FROM entity) + temp_overflow_items_container_id);
@@ -25,7 +25,7 @@ INSERT
 INTO item
 SELECT	t.overflow_items_container_id,
         t.character_id,
-        'veloren.core.pseudo_containers.overflow_items',
+        'veldr.core.pseudo_containers.overflow_items',
         1,
         'overflow_items',
         ''

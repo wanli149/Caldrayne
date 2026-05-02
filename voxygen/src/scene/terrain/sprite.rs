@@ -234,7 +234,7 @@ mod test {
 
     #[test]
     fn test_sprite_spec_valid() {
-        let spec = SpriteSpec::load_expect("voxygen.voxel.sprite_manifest").read();
+        let spec = SpriteSpec::load_expect("veldr.voxel.sprite_manifest").read();
 
         // Test that filters are relevant for the particular sprite kind.
         for (sprite, filter) in spec.0.iter().flat_map(|(&sprite, configs)| {

@@ -1,6 +1,10 @@
 (
     // See best attribution practices for creative commons licenses:
     // https://wiki.creativecommons.org/wiki/Best_practices_for_attribution
+    // NOTE: Some notes below intentionally preserve original Veloren-era
+    // attribution or license-exception wording from upstream asset records.
+    // Keep those passages semantically intact unless the underlying asset
+    // grant is re-reviewed.
 
     // TODO: consider splitting this into a file for each of common/voxygen/server assets (applications will
     // need to ensure to properly combine them)
@@ -37,7 +41,7 @@
         (
             name: "Life of a Background Mob",
             authors: ["GeekyGami"],
-            asset_path: "voxygen/audio/soundtrack/town/life_of_a_background_mob.ogg",
+            asset_path: "veldr/audio/soundtrack/town/life_of_a_background_mob.ogg",
             license: "CC-BY-NC-SA 4.0",
             license_link: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
             notes: 
@@ -53,7 +57,7 @@
         (
             name: "Moonlit Canopy",
             authors: ["GeekyGami"],
-            asset_path: "voxygen/audio/soundtrack/overworld/moonlit_canopy.ogg",
+            asset_path: "veldr/audio/soundtrack/overworld/moonlit_canopy.ogg",
             license: "CC-BY-NC-SA 4.0",
             license_link: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
             notes: 
@@ -69,7 +73,7 @@
         (
             name: "A Heart's IceCold Protection",
             authors: ["GeekyGami"],
-            asset_path: "voxygen/audio/soundtrack/dungeon/a_hearts_ice-cold_protection.ogg",
+            asset_path: "veldr/audio/soundtrack/dungeon/a_hearts_ice-cold_protection.ogg",
             license: "CC-BY-NC-SA 4.0",
             license_link: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
             notes: 
@@ -85,7 +89,7 @@
         (
             name: "Stargazing",
             authors: ["GeekyGami"],
-            asset_path: "voxygen/audio/soundtrack/overworld/stargazing.ogg",
+            asset_path: "veldr/audio/soundtrack/overworld/stargazing.ogg",
             license: "CC-BY-NC-SA 4.0",
             license_link: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
             notes: 
@@ -101,7 +105,7 @@
         (
             name: "Cavernous Hollow",
             authors: ["GeekyGami"],
-            asset_path: "voxygen/audio/soundtrack/cave/cavernous_hollow.ogg",
+            asset_path: "veldr/audio/soundtrack/cave/cavernous_hollow.ogg",
             license: "CC-BY-NC-SA 4.0",
             license_link: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
             notes: 
@@ -117,7 +121,7 @@
         (
             name: "Cavernous Hollow",
             authors: ["GeekyGami"],
-            asset_path: "voxygen/audio/soundtrack/cave/cavernous_hollow.ogg",
+            asset_path: "veldr/audio/soundtrack/cave/cavernous_hollow.ogg",
             license: "CC-BY-NC-SA 4.0",
             license_link: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
             notes: 
@@ -133,7 +137,7 @@
         (
             name: "Still Heart's Coffin",
             authors: ["GeekyGami"],
-            asset_path: "voxygen/audio/soundtrack/dungeon/still_hearts_coffin.ogg",
+            asset_path: "veldr/audio/soundtrack/dungeon/still_hearts_coffin.ogg",
             license: "CC-BY-NC-SA 4.0",
             license_link: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
             notes: 
@@ -149,7 +153,7 @@
         (
             name: "Ballerine Macabre",
             authors: ["GeekyGami"],
-            asset_path: "voxygen/audio/soundtrack/overworld/ballerine_macabre.ogg",
+            asset_path: "veldr/audio/soundtrack/overworld/ballerine_macabre.ogg",
             license: "CC-BY-NC-SA 4.0",
             license_link: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
             notes: 
@@ -182,7 +186,7 @@
         (
             authors: ["Ellinia"],
             files: [],
-            notes: "Will fill out later. They made the greatest portion of contribution to Veloren's sounds, though.",
+            notes: "Will fill out later. They made the greatest portion of the project's sound contributions during the Veloren era.",
         ),
         (
             authors: ["DaforLynx"],
@@ -494,20 +498,20 @@
             name: "Alkhemikal",
             source_link: "https://fontenddev.com/fonts/alkhemikal/",
             authors: ["jeti"],
-            asset_path: "voxygen/font/Alkhemikal.ttf",
+            asset_path: "veldr/font/Alkhemikal.ttf",
             license: "CC BY 4.0",
             license_link: "https://creativecommons.org/licenses/by/4.0/",
         ), (
             name: "bdfUMplus outline",
             authors: ["hikaen2"],
-            asset_path: "voxygen/font/bdfUMplus-outline.ttf",
+            asset_path: "veldr/font/bdfUMplus-outline.ttf",
             // License text file included alongside font which should satisfy the requirements.
             license: "MIT",
         ), (
             name: "HaxrCorp 4089 Cyrillic AltGr",
             source_link: "https://fontstruct.com/fontstructions/show/330387/haxrcorp_4089_cyrillic_altgr",
             authors: ["sahwar"],
-            asset_path: "voxygen/font/haxrcorp_4089_cyrillic_altgr.ttf",
+            asset_path: "veldr/font/haxrcorp_4089_cyrillic_altgr.ttf",
             license: "CC BY-SA 3.0",
             license_link: "https://creativecommons.org/licenses/by-sa/3.0/",
         ), (
@@ -515,7 +519,7 @@
             // original
             source_link: "https://fontstruct.com/fontstructions/show/330387/haxrcorp_4089_cyrillic_altgr",
             authors: ["sahwar (original)"],
-            asset_path: "voxygen/font/haxrcorp_4089_cyrillic_altgr_extended.ttf",
+            asset_path: "veldr/font/haxrcorp_4089_cyrillic_altgr_extended.ttf",
             license: "CC BY-SA 3.0",
             license_link: "https://creativecommons.org/licenses/by-sa/3.0/",
             modifications: "Added additional characters.",
@@ -523,14 +527,14 @@
         ), (
             name: "Metamorphous",
             authors: ["Sorkin Type Co"],
-            asset_path: "voxygen/font/Metamorphous-Regular.ttf",
+            asset_path: "veldr/font/Metamorphous-Regular.ttf",
             // License appears to be satisfied by inclusion of its text file.
             license: "OFL",
             license_link: "https://scripts.sil.org/OFL",
         ), (
             name: "Open Sans",
             authors: [""],
-            asset_path: "voxygen/font/OpenSans-Regular.ttf",
+            asset_path: "veldr/font/OpenSans-Regular.ttf",
             // License appears to be satisfied by inclusion of its text file.
             license: "Apache 2.0",
             license_link: "http://www.apache.org/licenses/LICENSE-2.0",
@@ -538,14 +542,14 @@
             name: "WenQuanYi Zen Hei",
             source_link: "http://wenq.org/wqy2/index.cgi?ZenHei%28en%29",
             authors: ["Qianqian Fang", "WenQuanYi project"],
-            asset_path: "voxygen/font/WenQuanYiZenHei.ttf",
+            asset_path: "veldr/font/WenQuanYiZenHei.ttf",
             license: "GPL2",
             license_link: "http://wenq.org/wqy2/index.cgi?GPL",
         ), (
             name: "Wizard",
             source_link: "https://fontstruct.com/fontstructions/show/1506403/wizard-5",
             authors: ["Omegaville"],
-            asset_path: "voxygen/font/wizard.ttf",
+            asset_path: "veldr/font/wizard.ttf",
             license: "CC BY-SA 3.0",
             license_link: "https://creativecommons.org/licenses/by-sa/3.0/",
         ), (
@@ -553,7 +557,7 @@
             // original
             source_link: "https://fontstruct.com/fontstructions/show/1506403/wizard-5",
             authors: ["Omegaville (original)"],
-            asset_path: "voxygen/font/wizard_extended.ttf",
+            asset_path: "veldr/font/wizard_extended.ttf",
             license: "CC BY-SA 3.0",
             license_link: "https://creativecommons.org/licenses/by-sa/3.0/",
             modifications: "Added additional characters.",
@@ -561,21 +565,21 @@
         ), (
             name: "Sarabun",
             authors: ["Suppakit Chalermlarp"],
-            asset_path: "voxygen/font/Sarabun-Regular.ttf",
+            asset_path: "veldr/font/Sarabun-Regular.ttf",
             // License appears to be satisfied by inclusion of its text file.
             license: "OFL",
             license_link: "https://scripts.sil.org/OFL",
         ), (
             name: "GoNotoCurrent",
             authors: ["The Noto Project Authors"],
-            asset_path: "voxygen/font/GoNotoCurrent.ttf",
+            asset_path: "veldr/font/GoNotoCurrent.ttf",
             // License appears to be satisfied by inclusion of its text file.
             license: "OFL",
             license_link: "https://scripts.sil.org/OFL",
         ), (
             name: "EnterCommand",
             authors: ["Font End Dev"],
-            asset_path: "voxygen/font/EnterCommand.ttf",
+            asset_path: "veldr/font/EnterCommand.ttf",
             license: "CC BY 4.0",
             license_link: "https://creativecommons.org/licenses/by/4.0/legalcode.txt",
         ),
@@ -594,7 +598,7 @@
         ),  (
             name: "mineral ingots",
             authors : ["Supa"],
-            asset_path: "assets/voxygen/voxel/sprite/mineral/ingot",
+            asset_path: "assets/veldr/voxel/sprite/mineral/ingot",
             license: "CC-BY-NC-SA 4.0",
             license_link: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
             notes: "A raplacement of a total of 10 ingot sprites by supa including:
@@ -602,7 +606,7 @@
         ),  (
             name: "wood log",
             authors : ["Supa"],
-            asset_path: "assets/voxygen/voxel/sprite/wood/log/wood.vox",
+            asset_path: "assets/veldr/voxel/sprite/wood/log/wood.vox",
             license: "CC-BY-NC-SA 4.0",
             license_link: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
             notes: "Wood log recolouring"

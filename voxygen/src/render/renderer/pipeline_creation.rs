@@ -185,7 +185,7 @@ impl ShaderModules {
             r#"
 {}
 
-#define VOXYGEN_COMPUTATION_PREFERENCE {}
+#define VELDR_COMPUTATION_PREFERENCE {}
 #define FLUID_MODE {}
 #define CLOUD_MODE {}
 #define REFLECTION_MODE {}
@@ -195,7 +195,7 @@ impl ShaderModules {
 "#,
             constants.0.as_str(),
             // TODO: Configurable vertex/fragment shader preference.
-            "VOXYGEN_COMPUTATION_PREFERENCE_FRAGMENT",
+            "VELDR_COMPUTATION_PREFERENCE_FRAGMENT",
             match pipeline_modes.fluid {
                 FluidMode::Low => "FLUID_MODE_LOW",
                 FluidMode::Medium => "FLUID_MODE_MEDIUM",

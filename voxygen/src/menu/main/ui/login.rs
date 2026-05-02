@@ -199,7 +199,7 @@ impl Screen {
             .width(Length::Units(230));
 
         let version_stage =
-            Text::new(common::util::VELOREN_VERSION_STAGE).size(fonts.cyri.scale(22));
+            Text::new(common::util::VELDR_VERSION_STAGE).size(fonts.cyri.scale(22));
 
         let right_column = Container::new(
             Column::with_children(vec![v_logo.into(), version_stage.into()])

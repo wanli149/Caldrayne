@@ -63,35 +63,40 @@ fn get_git_tag() -> Option<String> {
 }
 
 fn main() {
-    // If this env var exists, it'll be used instead
-    if option_env!("VELOREN_GIT_VERSION").is_none() {
-        let hash_timestamp = match get_git_hash_timestamp() {
-            Ok(hash_timestamp) => hash_timestamp,
-            Err(e) => {
-                println!("cargo::error={}", e);
-                println!(
-                    "cargo::error=It is highly recommended to build Caldrayne from a cloned git \
-                     repository with the git command available so the game can access proper \
-                     versioning information."
-                );
-                println!(
-                    "cargo::error=However, if you wish to proceed building Caldrayne anyway, you \
-                     can set the environment variable \"VELOREN_GIT_VERSION\" to \"/0/0\" before \
-                     re-running the given cargo command (the specific procedure for this will \
-                     depend on your shell). Note that this will compile the game with git commit \
-                     hash and commit timestamp set to 0, which will cause version mismatch \
-                     warnings where applicable, whether the version is actually mismatched or not."
-                );
-                return;
-            },
-        };
-
-        let tag = get_git_tag().unwrap_or("".to_string());
-
-        // Format: <git-tag?>/<git-hash>/<git-timestamp>
+    if let Some(version) = std::env::var_os("CALDRAYNE_GIT_VERSION") {
         println!(
-            "cargo::rustc-env=VELOREN_GIT_VERSION={}/{}",
-            &tag, &hash_timestamp
+            "cargo::rustc-env=CALDRAYNE_GIT_VERSION={}",
+            version.to_string_lossy()
         );
+        return;
     }
+
+    let hash_timestamp = match get_git_hash_timestamp() {
+        Ok(hash_timestamp) => hash_timestamp,
+        Err(e) => {
+            println!("cargo::error={}", e);
+            println!(
+                "cargo::error=It is highly recommended to build Caldrayne from a cloned git \
+                 repository with the git command available so the game can access proper \
+                 versioning information."
+            );
+            println!(
+                "cargo::error=However, if you wish to proceed building Caldrayne anyway, you \
+                 can set the environment variable \"CALDRAYNE_GIT_VERSION\" to \"/0/0\" before \
+                 re-running the given cargo command (the specific procedure for this will \
+                 depend on your shell). Note that this will compile the game with git commit \
+                 hash and commit timestamp set to 0, which will cause version mismatch \
+                 warnings where applicable, whether the version is actually mismatched or not."
+            );
+            return;
+        },
+    };
+
+    let tag = get_git_tag().unwrap_or("".to_string());
+
+    // Format: <git-tag?>/<git-hash>/<git-timestamp>
+    println!(
+        "cargo::rustc-env=CALDRAYNE_GIT_VERSION={}/{}",
+        &tag, &hash_timestamp
+    );
 }

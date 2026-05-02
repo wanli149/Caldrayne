@@ -130,7 +130,7 @@ use test_world::{IndexOwned, World};
 use tokio::runtime::Runtime;
 use tracing::{debug, error, info, trace, warn};
 use vek::*;
-use veloren_query_server::server::QueryServer;
+use veldr_query_server::server::QueryServer;
 pub use world::{WorldGenerateStage, civ::WorldCivStage, sim::WorldSimStage};
 
 use crate::{
@@ -337,8 +337,8 @@ pub fn build_query_server_info(
     settings: &Settings,
     identity: &ServerIdentity,
     players_count: u16,
-) -> veloren_query_server::proto::ServerInfo {
-    use veloren_query_server::proto::{ServerCompatibility, ServerInfo, ServerRealmId};
+) -> veldr_query_server::proto::ServerInfo {
+    use veldr_query_server::proto::{ServerCompatibility, ServerInfo, ServerRealmId};
     let server_auth_mode = settings.server_auth_mode();
 
     ServerInfo {
@@ -786,7 +786,7 @@ impl Server {
             let mut query_server =
                 QueryServer::new(addr, query_server_info_rx, QUERY_SERVER_RATELIMIT);
             let query_server_metrics =
-                Arc::new(Mutex::new(veloren_query_server::server::Metrics::default()));
+                Arc::new(Mutex::new(veldr_query_server::server::Metrics::default()));
             let query_server_metrics2 = Arc::clone(&query_server_metrics);
             let query_listener_inventory = Arc::clone(&runtime_listener_inventory);
             match runtime.block_on(query_server.bind_socket()) {

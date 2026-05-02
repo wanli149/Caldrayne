@@ -12,7 +12,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::Serialize;
 use vek::Vec2;
-use veloren_world::{
+use veldr_world::{
     IndexRef, World,
     layer::wildlife,
     sim::{AquaticFaunaSummary, AquaticSpawnPotential, SimChunk},

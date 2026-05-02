@@ -16,7 +16,7 @@ use std::{
 use tokio::runtime::Runtime;
 use tracing::*;
 use tracing_subscriber::EnvFilter;
-use veloren_network::{ConnectAddr, ListenAddr, Message, Network, Pid, Promises};
+use veldr_network::{ConnectAddr, ListenAddr, Message, Network, Pid, Promises};
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Msg {
@@ -31,7 +31,7 @@ fn main() {
     let matches = Command::new("Caldrayne Network Speed Test Utility")
         .version("0.1.0")
         .author("Marcel Märtens <marcel.cochem@googlemail.com>")
-        .about("Runs speed tests with different parameters to benchmark veloren-network")
+        .about("Runs speed tests with different parameters to benchmark veldr-network")
         .arg(
             Arg::new("mode")
                 .short('m')
@@ -80,12 +80,12 @@ fn main() {
     let filter = EnvFilter::from_default_env()
         .add_directive(trace.parse().unwrap())
         .add_directive("network_speed=debug".parse().unwrap())
-        .add_directive("veloren_network::participant=trace".parse().unwrap())
-        .add_directive("veloren_network::protocol=trace".parse().unwrap())
-        .add_directive("veloren_network::scheduler=trace".parse().unwrap())
-        .add_directive("veloren_network::api=trace".parse().unwrap())
+        .add_directive("veldr_network::participant=trace".parse().unwrap())
+        .add_directive("veldr_network::protocol=trace".parse().unwrap())
+        .add_directive("veldr_network::scheduler=trace".parse().unwrap())
+        .add_directive("veldr_network::api=trace".parse().unwrap())
         /*
-    .add_directive("veloren_network::participant=debug".parse().unwrap()).add_directive("veloren_network::api=debug".parse().unwrap())*/;
+    .add_directive("veldr_network::participant=debug".parse().unwrap()).add_directive("veldr_network::api=debug".parse().unwrap())*/;
     tracing_subscriber::FmtSubscriber::builder()
         .with_max_level(Level::ERROR)
         .with_env_filter(filter)

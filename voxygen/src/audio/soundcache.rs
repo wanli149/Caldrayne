@@ -152,7 +152,7 @@ impl FileAsset for StreamedOggSound {
 impl OggSound {
     pub fn empty() -> OggSound {
         OggSound::from_bytes(Cow::Borrowed(include_bytes!(
-            "../../../assets/voxygen/audio/null.ogg"
+            "../../../assets/veldr/audio/null.ogg"
         )))
         .unwrap()
     }

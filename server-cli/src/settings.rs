@@ -1374,8 +1374,8 @@ impl Settings {
     fn resolve_runtime_layout_for(&self, userdata_dir: &Path) -> RuntimeLayout {
         self.resolve_runtime_layout_for_overrides(
             userdata_dir,
-            std::env::var_os("VELOREN_RTSIM").map(PathBuf::from),
-            std::env::var_os("VELOREN_TERRAIN").map(PathBuf::from),
+            std::env::var_os("CALDRAYNE_RTSIM").map(PathBuf::from),
+            std::env::var_os("CALDRAYNE_TERRAIN").map(PathBuf::from),
         )
     }
 

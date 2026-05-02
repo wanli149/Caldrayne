@@ -1,5 +1,5 @@
 [package]
-name = "veloren-server-agent"
+name = "veldr-server-agent"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,11 +13,11 @@ use-dyn-lib = ["common-dynlib"]
 be-dyn-lib = []
 
 [dependencies]
-common = { package = "veloren-common", path = "../../common" }
-common-base = { package = "veloren-common-base", path = "../../common/base" }
-common-dynlib = { package = "veloren-common-dynlib", path = "../../common/dynlib", optional = true }
-world = { package = "veloren-world", path = "../../world" }
-rtsim = { package = "veloren-rtsim", path = "../../rtsim" }
+common = { package = "veldr-common", path = "../../common" }
+common-base = { package = "veldr-common-base", path = "../../common/base" }
+common-dynlib = { package = "veldr-common-dynlib", path = "../../common/dynlib", optional = true }
+world = { package = "veldr-world", path = "../../world" }
+rtsim = { package = "veldr-rtsim", path = "../../rtsim" }
 
 specs = { workspace = true, features = ["shred-derive"] }
 vek = { workspace = true }

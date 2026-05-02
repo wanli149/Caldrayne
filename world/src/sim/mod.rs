@@ -768,8 +768,8 @@ impl FileOpts {
     ) -> Result<FileLoadContent, compat::CompatResolveError> {
         self.load_content_with_policy_modes(
             compat_mode,
-            LoadLegacyMode::Allow,
-            LoadOrGenerateSidecarlessMode::Allow,
+            LoadLegacyMode::Deny,
+            LoadOrGenerateSidecarlessMode::Deny,
             world_seed,
             seed_elements,
         )
@@ -786,7 +786,7 @@ impl FileOpts {
         self.load_content_with_policy_modes(
             compat_mode,
             load_legacy_mode,
-            LoadOrGenerateSidecarlessMode::Allow,
+            LoadOrGenerateSidecarlessMode::Deny,
             world_seed,
             seed_elements,
         )
@@ -800,10 +800,10 @@ impl FileOpts {
         world_seed: u32,
         seed_elements: bool,
     ) -> Result<FileLoadContent, compat::CompatResolveError> {
-        if matches!(self, Self::LoadLegacy(_)) && matches!(load_legacy_mode, LoadLegacyMode::Deny) {
+        if matches!(self, Self::LoadLegacy(_)) {
             warn!(
                 load_legacy_mode = %load_legacy_mode.as_str(),
-                "LoadLegacy(path) is disabled by configured compat-import gate"
+                "LoadLegacy(path) is retired under cutover mode"
             );
             return Err(compat::CompatResolveError {
                 audit: CompatAuditV1::reject(
@@ -927,117 +927,15 @@ impl FileOpts {
     ) -> compat::RawLoadOutcome<LoadedMapContent> {
         let map = match self {
             Self::LoadLegacy(path) => {
-                let file = match File::open(path) {
-                    Ok(file) => file,
-                    Err(e) => {
-                        warn!(?e, ?path, "Couldn't read path for maps");
-                        return compat::RawLoadOutcome::Rejected(Self::structured_load_failure(
-                            CompatFailureKindV1::MissingInput,
-                            CompatFailureSubjectV1::World,
-                            CompatFailureDetailV1::default(),
-                        ));
-                    },
-                };
-
-                let mut modern_reader = BufReader::new(file);
-                match decode_from_std_read::<WorldFile, _, _>(&mut modern_reader, legacy()) {
-                    Ok(map) => match map {
-                        WorldFile::Veloren0_7_0(map) => {
-                            warn!(
-                                ?path,
-                                "LoadLegacy(path) imported modern world file through explicit \
-                                 compat import path"
-                            );
-                            Ok(LoadedMapContent {
-                                inferred_gen_opts: Some(Self::inferred_gen_opts_from_map(&map)),
-                                map,
-                                recipe_manifest: None,
-                            })
-                        },
-                        WorldFile::Veloren0_5_0(map) => match map.into_modern() {
-                            Ok(map) => Ok(LoadedMapContent {
-                                inferred_gen_opts: Some(Self::inferred_gen_opts_from_map(&map)),
-                                map,
-                                recipe_manifest: None,
-                            }),
-                            Err(e) => {
-                                warn!(
-                                    ?path,
-                                    ?e,
-                                    "LoadLegacy(path) parsed a legacy world file, but it failed \
-                                     explicit compat import validation"
-                                );
-                                return compat::RawLoadOutcome::Rejected(
-                                    Self::structured_load_failure(
-                                        CompatFailureKindV1::InvalidWorld,
-                                        CompatFailureSubjectV1::World,
-                                        CompatFailureDetailV1::default(),
-                                    ),
-                                );
-                            },
-                        },
-                    },
-                    Err(modern_err) => {
-                        let file = match File::open(path) {
-                            Ok(file) => file,
-                            Err(e) => {
-                                warn!(?e, ?path, "Couldn't reopen path for legacy compat import");
-                                return compat::RawLoadOutcome::Rejected(
-                                    Self::structured_load_failure(
-                                        CompatFailureKindV1::MissingInput,
-                                        CompatFailureSubjectV1::World,
-                                        CompatFailureDetailV1::default(),
-                                    ),
-                                );
-                            },
-                        };
-
-                        let mut legacy_reader = BufReader::new(file);
-                        let map: WorldFileLegacy =
-                            match decode_from_std_read(&mut legacy_reader, legacy()) {
-                                Ok(map) => map,
-                                Err(legacy_err) => {
-                                    warn!(
-                                        ?path,
-                                        ?modern_err,
-                                        ?legacy_err,
-                                        "LoadLegacy(path) could not parse modern or legacy world \
-                                         file"
-                                    );
-                                    return compat::RawLoadOutcome::Rejected(
-                                        Self::structured_load_failure(
-                                            CompatFailureKindV1::ParseError,
-                                            CompatFailureSubjectV1::World,
-                                            CompatFailureDetailV1::default(),
-                                        ),
-                                    );
-                                },
-                            };
-
-                        match map.into_modern() {
-                            Ok(map) => Ok(LoadedMapContent {
-                                inferred_gen_opts: Some(Self::inferred_gen_opts_from_map(&map)),
-                                map,
-                                recipe_manifest: None,
-                            }),
-                            Err(e) => {
-                                warn!(
-                                    ?path,
-                                    ?e,
-                                    "LoadLegacy(path) parsed a legacy world file, but it failed \
-                                     explicit compat import validation"
-                                );
-                                return compat::RawLoadOutcome::Rejected(
-                                    Self::structured_load_failure(
-                                        CompatFailureKindV1::InvalidWorld,
-                                        CompatFailureSubjectV1::World,
-                                        CompatFailureDetailV1::default(),
-                                    ),
-                                );
-                            },
-                        }
-                    },
-                }
+                warn!(
+                    ?path,
+                    "LoadLegacy(path) is no longer supported; migrate this world to a strict modern world file with an adjacent recipe sidecar"
+                );
+                return compat::RawLoadOutcome::Rejected(Self::structured_load_failure(
+                    CompatFailureKindV1::PolicyDenied,
+                    CompatFailureSubjectV1::Options,
+                    CompatFailureDetailV1::default(),
+                ));
             },
             Self::Load(path) => {
                 let file = match File::open(path) {
@@ -1065,8 +963,8 @@ impl FileOpts {
                 };
 
                 let map = match map {
-                    WorldFile::Veloren0_7_0(map) => map,
-                    WorldFile::Veloren0_5_0(_) => {
+                    WorldFile::FormatV0_7_0(map) => map,
+                    WorldFile::FormatV0_5_0(_) => {
                         let failure = Self::structured_load_failure(
                             CompatFailureKindV1::InvalidWorld,
                             CompatFailureSubjectV1::World,
@@ -1096,7 +994,7 @@ impl FileOpts {
                                 ?Self::recipe_sidecar_path_for_map_path(path.as_path()),
                             compat_failure = %CompatFailureKindV1::MissingInput.as_str(),
                             compat_subject = %CompatFailureSubjectV1::Recipe.as_str(),
-                            "Load(path) requires adjacent recipe sidecar; use LoadLegacy(path) for explicit compat import of sidecarless worlds"
+                            "Load(path) requires an adjacent recipe sidecar under the modern veldr world contract"
                         );
                         return compat::RawLoadOutcome::Rejected(failure);
                     },
@@ -1162,8 +1060,8 @@ impl FileOpts {
                 };
 
                 let map = match map {
-                    WorldFile::Veloren0_7_0(map) => map,
-                    WorldFile::Veloren0_5_0(_) => {
+                    WorldFile::FormatV0_7_0(map) => map,
+                    WorldFile::FormatV0_5_0(_) => {
                         let failure = Self::structured_load_failure(
                             CompatFailureKindV1::InvalidWorld,
                             CompatFailureSubjectV1::World,
@@ -1238,8 +1136,8 @@ impl FileOpts {
                     x_lg, y_lg, scale, ..
                 } = opts;
                 let map = match map {
-                    WorldFile::Veloren0_7_0(map) => map,
-                    WorldFile::Veloren0_5_0(_) => {
+                    WorldFile::FormatV0_7_0(map) => map,
+                    WorldFile::FormatV0_5_0(_) => {
                         let failure = Self::structured_load_failure(
                             CompatFailureKindV1::InvalidWorld,
                             CompatFailureSubjectV1::World,
@@ -1308,11 +1206,18 @@ impl FileOpts {
                             loaded_recipe_manifest = Some(stored_recipe_manifest);
                         },
                         Ok(None) => {
-                            debug!(
+                            let failure = Self::structured_load_failure(
+                                CompatFailureKindV1::MissingInput,
+                                CompatFailureSubjectV1::Recipe,
+                                CompatFailureDetailV1::default(),
+                            );
+                            warn!(
                                 ?path,
                                 recipe_sidecar_path = ?Self::recipe_sidecar_path_for_map_path(path.as_path()),
-                                "LoadOrGenerate map has no recipe sidecar; using legacy option compare"
+                                overwrite = *overwrite,
+                                "LoadOrGenerate found an existing world without adjacent recipe sidecar; sidecarless reuse is retired under the modern veldr world contract"
                             );
+                            return Self::load_or_generate_contract_outcome(*overwrite, failure);
                         },
                         Err(failure) => {
                             return Self::load_or_generate_contract_outcome(*overwrite, failure);
@@ -1453,11 +1358,10 @@ pub struct WorldOpts {
     pub world_file: FileOpts,
     pub calendar: Option<Calendar>,
     pub compat_mode: CompatMode,
-    /// Controls whether the transitional `LoadLegacy(path)` compat-import
-    /// entry remains admitted or is rejected before any file parsing.
+    /// `LoadLegacy(path)` is retired and remains denied under cutover mode.
     pub load_legacy_mode: LoadLegacyMode,
-    /// Controls whether managed `LoadOrGenerate` may still reuse an existing
-    /// world when the adjacent recipe sidecar is missing.
+    /// Managed `LoadOrGenerate` reuse without an adjacent recipe sidecar is
+    /// retired and remains denied under cutover mode.
     pub load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
 }
 
@@ -1468,8 +1372,8 @@ impl Default for WorldOpts {
             world_file: Default::default(),
             calendar: None,
             compat_mode: CompatMode::Record,
-            load_legacy_mode: LoadLegacyMode::Allow,
-            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+            load_legacy_mode: LoadLegacyMode::Deny,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
         }
     }
 }
@@ -1484,20 +1388,20 @@ pub struct WorldFileLegacy {
     pub basement: Box<[Alt]>,
 }
 
-/// Version of the world map intended for use in Veloren 0.5.0.
+/// Legacy world map format version 0.5.0.
 #[derive(Serialize, Deserialize)]
 #[repr(C)]
-pub struct WorldMap_0_5_0 {
+pub struct WorldMapV0_5_0 {
     /// Saved altitude height map.
     pub alt: Box<[Alt]>,
     /// Saved basement height map.
     pub basement: Box<[Alt]>,
 }
 
-/// Version of the world map intended for use in Veloren 0.7.0.
+/// Legacy world map format version 0.7.0.
 #[derive(Serialize, Deserialize)]
 #[repr(C)]
-pub struct WorldMap_0_7_0 {
+pub struct WorldMapV0_7_0 {
     /// Saved map size.
     pub map_size_lg: Vec2<u32>,
     /// Saved continent_scale hack, to try to better approximate the correct
@@ -1527,8 +1431,8 @@ pub enum WorldFileError {
 /// invalidation or make sure that the map is synchronized with updates to
 /// noise-rs, changes to other parameters, etc.
 ///
-/// The map is versioned to enable format detection between versions of Veloren,
-/// so that when we update the map format we don't break existing maps (or at
+/// The map is versioned to enable format detection between legacy world map
+/// revisions, so that when we update the map format we don't break existing maps (or at
 /// least, we will try hard not to break maps between versions; if we can't
 /// avoid it, we can at least give a reasonable error message).
 ///
@@ -1548,8 +1452,8 @@ pub enum WorldFileError {
 #[derive(Serialize, Deserialize)]
 #[repr(u32)]
 pub enum WorldFile {
-    Veloren0_5_0(WorldMap_0_5_0) = 0,
-    Veloren0_7_0(WorldMap_0_7_0) = 1,
+    FormatV0_5_0(WorldMapV0_5_0) = 0,
+    FormatV0_7_0(WorldMapV0_7_0) = 1,
 }
 
 impl FileAsset for WorldFile {
@@ -1560,7 +1464,7 @@ impl FileAsset for WorldFile {
 
 /// Data for the most recent map type.  Update this when you add a new map
 /// version.
-pub type ModernMap = WorldMap_0_7_0;
+pub type ModernMap = WorldMapV0_7_0;
 
 /// The default world map.
 ///
@@ -1579,7 +1483,7 @@ pub type ModernMap = WorldMap_0_7_0;
 // seed: 3582734543
 //
 // The biome seed can found below
-pub const DEFAULT_WORLD_MAP: &str = "world.map.veloren_0_18_0_0";
+pub const DEFAULT_WORLD_MAP: &str = "world.map.veldr_0_18_0_0";
 /// This is *not* the seed used to generate the default map, this seed was used
 /// to generate a better set of biomes on it as the original ones were
 /// unsuitable.
@@ -1614,7 +1518,7 @@ impl WorldFileLegacy {
             return Err(WorldFileError::WorldSizeInvalid);
         }
 
-        let map = WorldMap_0_5_0 {
+        let map = WorldMapV0_5_0 {
             alt: self.alt,
             basement: self.basement,
         };
@@ -1623,7 +1527,7 @@ impl WorldFileLegacy {
     }
 }
 
-impl WorldMap_0_5_0 {
+impl WorldMapV0_5_0 {
     #[inline]
     pub fn into_modern(self) -> Result<ModernMap, WorldFileError> {
         let pow_size = (self.alt.len().trailing_zeros()) / 2;
@@ -1636,7 +1540,7 @@ impl WorldMap_0_5_0 {
         // existing cases) just 1.0 << (f64::from(pow_size) - 10.0).
         let continent_scale_hack = (f64::from(pow_size) - 10.0).exp2();
 
-        let map = WorldMap_0_7_0 {
+        let map = WorldMapV0_7_0 {
             map_size_lg: Vec2::new(pow_size, pow_size),
             continent_scale_hack,
             alt: self.alt,
@@ -1647,7 +1551,7 @@ impl WorldMap_0_5_0 {
     }
 }
 
-impl WorldMap_0_7_0 {
+impl WorldMapV0_7_0 {
     #[inline]
     pub fn into_modern(self) -> Result<ModernMap, WorldFileError> {
         if self.alt.len() != self.basement.len()
@@ -1666,15 +1570,15 @@ impl WorldFile {
     /// for serialization. Whenever a new map is updated, just change the
     /// variant we construct here to make sure we're using the latest map
     /// version.
-    pub fn new(map: ModernMap) -> Self { WorldFile::Veloren0_7_0(map) }
+    pub fn new(map: ModernMap) -> Self { WorldFile::FormatV0_7_0(map) }
 
     #[inline]
     /// Turns a WorldFile into the latest version.  Whenever a new map version
     /// is added, just add it to this match statement.
     pub fn into_modern(self) -> Result<ModernMap, WorldFileError> {
         match self {
-            WorldFile::Veloren0_5_0(map) => map.into_modern(),
-            WorldFile::Veloren0_7_0(map) => map.into_modern(),
+            WorldFile::FormatV0_5_0(map) => map.into_modern(),
+            WorldFile::FormatV0_7_0(map) => map.into_modern(),
         }
     }
 }
@@ -1818,8 +1722,8 @@ impl WorldSim {
             rng: rand_chacha::ChaCha20Rng::from_seed([0; 32]),
             calendar: None,
             compat_mode: CompatMode::Record,
-            load_legacy_mode: LoadLegacyMode::Allow,
-            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+            load_legacy_mode: LoadLegacyMode::Deny,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
             compat_audit: CompatAuditV1::default(),
             managed_recipe_sidecar_missing: false,
             recipe_manifest: RecipeManifestV1::default(),
@@ -4484,7 +4388,7 @@ mod compat_tests {
         GeneratedWorldFinalizeInputs, GeneratedWorldFinalizePreparationRequest,
         GeneratedWorldPartsInputs, GenerationChunkInputsRequest, GenerationTunables,
         LoadLegacyMode, LoadOrGenerateSidecarlessMode, WorldFile, WorldLoadBootstrap,
-        WorldLoadBootstrapRequest, WorldMap_0_5_0, WorldMap_0_7_0, WorldSim,
+        WorldLoadBootstrapRequest, WorldMapV0_5_0, WorldMapV0_7_0, WorldSim,
         default_world_asset_gen_opts,
     };
     use crate::recipe::{
@@ -4571,21 +4475,21 @@ mod compat_tests {
     fn load_asset_opts(specifier: &str) -> FileOpts { FileOpts::LoadAsset(specifier.to_owned()) }
 
     fn legacy_world_file() -> WorldFile {
-        WorldFile::Veloren0_5_0(WorldMap_0_5_0 {
+        WorldFile::FormatV0_5_0(WorldMapV0_5_0 {
             alt: vec![0.0].into_boxed_slice(),
             basement: vec![0.0].into_boxed_slice(),
         })
     }
 
     fn invalid_legacy_world_file() -> WorldFile {
-        WorldFile::Veloren0_5_0(WorldMap_0_5_0 {
+        WorldFile::FormatV0_5_0(WorldMapV0_5_0 {
             alt: vec![0.0; 3].into_boxed_slice(),
             basement: vec![0.0; 3].into_boxed_slice(),
         })
     }
 
     fn mismatched_world_file() -> WorldFile {
-        WorldFile::Veloren0_7_0(WorldMap_0_7_0 {
+        WorldFile::FormatV0_7_0(WorldMapV0_7_0 {
             map_size_lg: Vec2::new(9, 9),
             continent_scale_hack: 3.0,
             alt: vec![0.0].into_boxed_slice(),
@@ -4596,7 +4500,7 @@ mod compat_tests {
     fn matching_world_file() -> WorldFile {
         let opts = GenOpts::default();
         let map_cell_count = 1usize << (opts.x_lg + opts.y_lg);
-        WorldFile::Veloren0_7_0(WorldMap_0_7_0 {
+        WorldFile::FormatV0_7_0(WorldMapV0_7_0 {
             map_size_lg: Vec2::new(opts.x_lg, opts.y_lg),
             continent_scale_hack: opts.scale,
             alt: vec![0.0; map_cell_count].into_boxed_slice(),
@@ -4781,23 +4685,22 @@ mod compat_tests {
     }
 
     #[test]
-    fn load_legacy_imports_sidecarless_modern_world_with_inferred_gen_opts() {
+    fn load_legacy_rejects_sidecarless_modern_world_under_cutover_mode() {
         let (_, temp_target) = TempLoadOrGenerateTarget::new("load-legacy-modern-import");
         temp_target.write_world_file(&mismatched_world_file());
 
-        let content = load_legacy_opts(temp_target.file_path.clone())
-            .load_content(CompatMode::Record, TEST_WORLD_SEED, TEST_SEED_ELEMENTS)
-            .expect("LoadLegacy(path) should import sidecarless modern worlds explicitly");
+        let err = match load_legacy_opts(temp_target.file_path.clone()).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("LoadLegacy(path) should reject under cutover mode"),
+            Err(err) => err,
+        };
 
-        assert!(content.parsed_world_file.is_some());
-        assert!(content.loaded_recipe_manifest.is_none());
-        assert_eq!(
-            content.compat_audit.decision,
-            CompatDecisionV1::LoadedExisting
-        );
-        assert_eq!(content.gen_opts.x_lg, 9);
-        assert_eq!(content.gen_opts.y_lg, 9);
-        assert_eq!(content.gen_opts.scale, 3.0);
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::PolicyDenied);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Options);
     }
 
     #[test]
@@ -4914,7 +4817,7 @@ mod compat_tests {
 
     #[test]
     fn load_asset_requires_fixed_recipe_manifest() {
-        let err = match load_asset_opts("world.map.veloren_0_16_0_0").load_content(
+        let err = match load_asset_opts("world.map.veldr_0_16_0_0").load_content(
             CompatMode::Record,
             TEST_WORLD_SEED,
             TEST_SEED_ELEMENTS,
@@ -5049,8 +4952,8 @@ mod compat_tests {
                 rng: start.rng,
                 calendar: None,
                 compat_mode: CompatMode::Record,
-                load_legacy_mode: LoadLegacyMode::Allow,
-                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+                load_legacy_mode: LoadLegacyMode::Deny,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
                 compat_audit: CompatAuditV1::default(),
                 managed_recipe_sidecar_missing: false,
                 recipe_manifest: recipe_manifest.clone(),
@@ -5114,8 +5017,8 @@ mod compat_tests {
                 rng: start.rng,
                 calendar: None,
                 compat_mode: CompatMode::Record,
-                load_legacy_mode: LoadLegacyMode::Allow,
-                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+                load_legacy_mode: LoadLegacyMode::Deny,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
                 compat_audit: CompatAuditV1::default(),
                 managed_recipe_sidecar_missing: false,
                 recipe_manifest: recipe_manifest.clone(),
@@ -5168,8 +5071,8 @@ mod compat_tests {
                 world_file: FileOpts::Generate(gen_opts),
                 calendar: None,
                 compat_mode: CompatMode::Record,
-                load_legacy_mode: LoadLegacyMode::Allow,
-                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+                load_legacy_mode: LoadLegacyMode::Deny,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
                 threadpool: &threadpool,
                 stage_report: &|_| {},
             },
@@ -5213,8 +5116,8 @@ mod compat_tests {
                 world_file: FileOpts::Generate(gen_opts),
                 calendar: None,
                 compat_mode: CompatMode::Record,
-                load_legacy_mode: LoadLegacyMode::Allow,
-                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+                load_legacy_mode: LoadLegacyMode::Deny,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
                 threadpool: &threadpool,
                 stage_report: &|_| {},
             },
@@ -5271,8 +5174,8 @@ mod compat_tests {
             rng: start.rng,
             calendar: None,
             compat_mode: CompatMode::Record,
-            load_legacy_mode: LoadLegacyMode::Allow,
-            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+            load_legacy_mode: LoadLegacyMode::Deny,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
             compat_audit: CompatAuditV1::default(),
             managed_recipe_sidecar_missing: false,
             recipe_manifest: recipe_manifest.clone(),
@@ -5319,8 +5222,8 @@ mod compat_tests {
                 world_file: FileOpts::Generate(gen_opts),
                 calendar: None,
                 compat_mode: CompatMode::Record,
-                load_legacy_mode: LoadLegacyMode::Allow,
-                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+                load_legacy_mode: LoadLegacyMode::Deny,
+                load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
                 threadpool: &threadpool,
                 stage_report: &|_| {},
             },
@@ -5331,10 +5234,10 @@ mod compat_tests {
             recipe_manifest.world_recipe_hash
         );
         assert_eq!(world.compat_mode(), CompatMode::Record);
-        assert_eq!(world.load_legacy_mode(), LoadLegacyMode::Allow);
+        assert_eq!(world.load_legacy_mode(), LoadLegacyMode::Deny);
         assert_eq!(
             world.load_or_generate_sidecarless_mode(),
-            LoadOrGenerateSidecarlessMode::Allow
+            LoadOrGenerateSidecarlessMode::Deny
         );
     }
 
@@ -5346,8 +5249,8 @@ mod compat_tests {
             seed_elements: true,
             world_file: FileOpts::Generate(gen_opts.clone()),
             compat_mode: CompatMode::Record,
-            load_legacy_mode: LoadLegacyMode::Allow,
-            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+            load_legacy_mode: LoadLegacyMode::Deny,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
         })
         .expect("generate contract should remain bootstrap-able");
 
@@ -5370,7 +5273,7 @@ mod compat_tests {
             seed_elements: TEST_SEED_ELEMENTS,
             world_file: load_or_generate_opts(name, false),
             compat_mode: CompatMode::Record,
-            load_legacy_mode: LoadLegacyMode::Allow,
+            load_legacy_mode: LoadLegacyMode::Deny,
             load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
         }) {
             Ok(_) => {
@@ -5485,24 +5388,22 @@ mod compat_tests {
     }
 
     #[test]
-    fn load_or_generate_missing_recipe_sidecar_falls_back_to_legacy_option_compare() {
+    fn load_or_generate_missing_recipe_sidecar_rejects_under_cutover_mode() {
         let (name, temp_target) = TempLoadOrGenerateTarget::new("recipe-sidecar-missing");
         temp_target.write_world_file(&matching_world_file());
 
-        let content = load_or_generate_opts(name, false)
-            .load_content(CompatMode::Record, TEST_WORLD_SEED, TEST_SEED_ELEMENTS)
-            .expect("missing recipe sidecar should still fall back to legacy option compare");
+        let err = match load_or_generate_opts(name, false).load_content(
+            CompatMode::Record,
+            TEST_WORLD_SEED,
+            TEST_SEED_ELEMENTS,
+        ) {
+            Ok(_) => panic!("missing recipe sidecar should reject under cutover mode"),
+            Err(err) => err,
+        };
 
-        assert!(content.parsed_world_file.is_some());
-        assert_eq!(
-            content.compat_audit.decision,
-            CompatDecisionV1::LoadedExisting
-        );
-        assert_eq!(
-            content.compat_audit.failure_subject,
-            CompatFailureSubjectV1::None
-        );
-        assert!(content.managed_recipe_sidecar_missing);
+        assert!(err.audit.is_rejected());
+        assert_eq!(err.audit.failure_kind, CompatFailureKindV1::MissingInput);
+        assert_eq!(err.audit.failure_subject, CompatFailureSubjectV1::Recipe);
     }
 
     #[test]
@@ -5512,7 +5413,7 @@ mod compat_tests {
 
         let err = match load_or_generate_opts(name, false).load_content_with_policy_modes(
             CompatMode::Record,
-            LoadLegacyMode::Allow,
+            LoadLegacyMode::Deny,
             LoadOrGenerateSidecarlessMode::Deny,
             TEST_WORLD_SEED,
             TEST_SEED_ELEMENTS,

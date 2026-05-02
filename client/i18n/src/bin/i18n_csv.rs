@@ -1,6 +1,6 @@
 use common_assets::find_root;
 use std::{fs, io::Write, path::Path};
-use veloren_client_i18n::{
+use veldr_client_i18n::{
     REFERENCE_LANG,
     analysis::{Language, ReferenceLanguage},
     list_localizations,
@@ -17,7 +17,7 @@ fn main() {
     )
     .unwrap();
 
-    let i18n_directory = root.join("assets/voxygen/i18n");
+    let i18n_directory = root.join("assets/veldr/i18n");
     let reference = ReferenceLanguage::at(&i18n_directory.join(REFERENCE_LANG));
 
     let list = list_localizations();

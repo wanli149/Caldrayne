@@ -783,8 +783,8 @@ impl ItemDefinitionId<'_> {
 pub struct ItemDef {
     #[serde(default)]
     /// The string that refers to the filepath to the asset, relative to the
-    /// assets folder, which the ItemDef is loaded from. The name space
-    /// prepended with `veloren.core` is reserved for veloren functions.
+    /// assets folder, which the ItemDef is loaded from. The `veldr.core`
+    /// namespace is reserved for engine-defined pseudo items and abilities.
     item_definition_id: String,
     #[deprecated = "since item i18n"]
     legacy_name: String,
@@ -941,9 +941,9 @@ impl PartialEq for Item {
 
 impl Asset for ItemDef {
     fn load(cache: &AssetCache, specifier: &SharedString) -> Result<Self, BoxedError> {
-        if specifier.starts_with("veloren.core.") {
+        if specifier.starts_with("veldr.core.") {
             return Err(format!(
-                "Attempted to load an asset from a specifier reserved for core veloren functions. \
+                "Attempted to load an asset from a specifier reserved for core veldr functions. \
                  Specifier: {}",
                 specifier
             )
@@ -2177,7 +2177,7 @@ mod tests {
     fn test_all_items() { let _ = all_items_expect(); }
 
     #[test]
-    // All items in Veloren should have localization.
+    // All items in the project should have localization.
     // If no, add some common dummy i18n id.
     fn ensure_item_localization() {
         let manifest = ItemI18n::new_expect();

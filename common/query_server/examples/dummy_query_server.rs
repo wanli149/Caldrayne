@@ -6,7 +6,7 @@ use std::{
 
 use tokio::sync::watch;
 use tracing::error;
-use veloren_query_server::{
+use veldr_query_server::{
     client::QueryClient,
     proto::{ServerBattleMode, ServerCompatibility, ServerEnvironment, ServerInfo, ServerRealmId},
     server::{Metrics, QueryServer},

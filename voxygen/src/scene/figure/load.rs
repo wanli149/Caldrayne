@@ -46,7 +46,7 @@ pub type BoneMeshes = (Segment, Vec3<f32>);
 const DEFAULT_INDEX: u32 = 0;
 
 fn load_segment(mesh_name: &str) -> Segment {
-    let full_specifier: String = ["voxygen.voxel.", mesh_name].concat();
+    let full_specifier: String = ["veldr.voxel.", mesh_name].concat();
     Segment::from_vox_model_index(
         &DotVox::load_expect(&full_specifier).read().0,
         DEFAULT_INDEX as usize,
@@ -54,7 +54,7 @@ fn load_segment(mesh_name: &str) -> Segment {
     )
 }
 fn graceful_load_vox(mesh_name: &str) -> AssetHandle<DotVox> {
-    let full_specifier: String = ["voxygen.voxel.", mesh_name].concat();
+    let full_specifier: String = ["veldr.voxel.", mesh_name].concat();
     graceful_load_vox_fullspec(&full_specifier)
 }
 fn graceful_load_vox_fullspec(full_specifier: &str) -> AssetHandle<DotVox> {
@@ -62,7 +62,7 @@ fn graceful_load_vox_fullspec(full_specifier: &str) -> AssetHandle<DotVox> {
         Ok(dot_vox) => dot_vox,
         Err(_) => {
             error!(?full_specifier, "Could not load vox file for figure");
-            DotVox::load_expect("voxygen.voxel.not_found")
+            DotVox::load_expect("veldr.voxel.not_found")
         },
     }
 }
@@ -481,21 +481,21 @@ impl_concatenate_for_wrapper!(HumArmorTabardSpec);
 make_vox_spec!(
     Body,
     struct HumSpec {
-        color: HumColorSpec = "voxygen.voxel.humanoid_color_manifest",
-        head: HumHeadSpec = "voxygen.voxel.humanoid_head_manifest",
-        armor_shoulder: HumArmorShoulderSpec = "voxygen.voxel.humanoid_armor_shoulder_manifest",
-        armor_chest: HumArmorChestSpec = "voxygen.voxel.humanoid_armor_chest_manifest",
-        armor_hand: HumArmorHandSpec = "voxygen.voxel.humanoid_armor_hand_manifest",
-        armor_belt: HumArmorBeltSpec = "voxygen.voxel.humanoid_armor_belt_manifest",
-        armor_back: HumArmorBackSpec = "voxygen.voxel.humanoid_armor_back_manifest",
-        armor_pants: HumArmorPantsSpec = "voxygen.voxel.humanoid_armor_pants_manifest",
-        armor_foot: HumArmorFootSpec = "voxygen.voxel.humanoid_armor_foot_manifest",
-        main_weapon: HumMainWeaponSpec = "voxygen.voxel.biped_weapon_manifest",
-        armor_lantern: HumArmorLanternSpec = "voxygen.voxel.humanoid_lantern_manifest",
-        armor_glider: HumArmorGliderSpec = "voxygen.voxel.humanoid_glider_manifest",
-        armor_head: HumArmorHeadSpec = "voxygen.voxel.humanoid_armor_head_manifest",
+        color: HumColorSpec = "veldr.voxel.humanoid_color_manifest",
+        head: HumHeadSpec = "veldr.voxel.humanoid_head_manifest",
+        armor_shoulder: HumArmorShoulderSpec = "veldr.voxel.humanoid_armor_shoulder_manifest",
+        armor_chest: HumArmorChestSpec = "veldr.voxel.humanoid_armor_chest_manifest",
+        armor_hand: HumArmorHandSpec = "veldr.voxel.humanoid_armor_hand_manifest",
+        armor_belt: HumArmorBeltSpec = "veldr.voxel.humanoid_armor_belt_manifest",
+        armor_back: HumArmorBackSpec = "veldr.voxel.humanoid_armor_back_manifest",
+        armor_pants: HumArmorPantsSpec = "veldr.voxel.humanoid_armor_pants_manifest",
+        armor_foot: HumArmorFootSpec = "veldr.voxel.humanoid_armor_foot_manifest",
+        main_weapon: HumMainWeaponSpec = "veldr.voxel.biped_weapon_manifest",
+        armor_lantern: HumArmorLanternSpec = "veldr.voxel.humanoid_lantern_manifest",
+        armor_glider: HumArmorGliderSpec = "veldr.voxel.humanoid_glider_manifest",
+        armor_head: HumArmorHeadSpec = "veldr.voxel.humanoid_armor_head_manifest",
         // TODO: Add these.
-        /* tabard: HumArmorTabardSpec = "voxygen.voxel.humanoid_armor_tabard_manifest", */
+        /* tabard: HumArmorTabardSpec = "veldr.voxel.humanoid_armor_tabard_manifest", */
     },
     |FigureKey {
          body,
@@ -1171,8 +1171,8 @@ struct QuadrupedSmallLateralSubSpec {
 make_vox_spec!(
     quadruped_small::Body,
     struct QuadrupedSmallSpec {
-        central: QuadrupedSmallCentralSpec = "voxygen.voxel.quadruped_small_central_manifest",
-        lateral: QuadrupedSmallLateralSpec = "voxygen.voxel.quadruped_small_lateral_manifest",
+        central: QuadrupedSmallCentralSpec = "veldr.voxel.quadruped_small_central_manifest",
+        lateral: QuadrupedSmallLateralSpec = "veldr.voxel.quadruped_small_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -1412,8 +1412,8 @@ struct QuadrupedMediumLateralSubSpec {
 make_vox_spec!(
     quadruped_medium::Body,
     struct QuadrupedMediumSpec {
-        central: QuadrupedMediumCentralSpec = "voxygen.voxel.quadruped_medium_central_manifest",
-        lateral: QuadrupedMediumLateralSpec = "voxygen.voxel.quadruped_medium_lateral_manifest",
+        central: QuadrupedMediumCentralSpec = "veldr.voxel.quadruped_medium_central_manifest",
+        lateral: QuadrupedMediumLateralSpec = "veldr.voxel.quadruped_medium_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -1806,8 +1806,8 @@ struct BirdMediumLateralSubSpec {
 make_vox_spec!(
     bird_medium::Body,
     struct BirdMediumSpec {
-        central: BirdMediumCentralSpec = "voxygen.voxel.bird_medium_central_manifest",
-        lateral: BirdMediumLateralSpec = "voxygen.voxel.bird_medium_lateral_manifest",
+        central: BirdMediumCentralSpec = "veldr.voxel.bird_medium_central_manifest",
+        lateral: BirdMediumLateralSpec = "veldr.voxel.bird_medium_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -2084,8 +2084,8 @@ struct TheropodLateralSubSpec {
 make_vox_spec!(
     theropod::Body,
     struct TheropodSpec {
-        central: TheropodCentralSpec = "voxygen.voxel.theropod_central_manifest",
-        lateral: TheropodLateralSpec = "voxygen.voxel.theropod_lateral_manifest",
+        central: TheropodCentralSpec = "veldr.voxel.theropod_central_manifest",
+        lateral: TheropodLateralSpec = "veldr.voxel.theropod_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -2440,8 +2440,8 @@ struct ArthropodLateralSubSpec {
 make_vox_spec!(
     arthropod::Body,
     struct ArthropodSpec {
-        central: ArthropodCentralSpec = "voxygen.voxel.arthropod_central_manifest",
-        lateral: ArthropodLateralSpec = "voxygen.voxel.arthropod_lateral_manifest",
+        central: ArthropodCentralSpec = "veldr.voxel.arthropod_central_manifest",
+        lateral: ArthropodLateralSpec = "veldr.voxel.arthropod_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -2872,8 +2872,8 @@ struct CrustaceanLateralSubSpec {
 make_vox_spec!(
     crustacean::Body,
     struct CrustaceanSpec {
-        central: CrustaceanCentralSpec = "voxygen.voxel.crustacean_central_manifest",
-        lateral: CrustaceanLateralSpec = "voxygen.voxel.crustacean_lateral_manifest",
+        central: CrustaceanCentralSpec = "veldr.voxel.crustacean_central_manifest",
+        lateral: CrustaceanLateralSpec = "veldr.voxel.crustacean_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -3314,8 +3314,8 @@ struct FishMediumLateralSubSpec {
 make_vox_spec!(
     fish_medium::Body,
     struct FishMediumSpec {
-        central: FishMediumCentralSpec = "voxygen.voxel.fish_medium_central_manifest",
-        lateral: FishMediumLateralSpec = "voxygen.voxel.fish_medium_lateral_manifest",
+        central: FishMediumCentralSpec = "veldr.voxel.fish_medium_central_manifest",
+        lateral: FishMediumLateralSpec = "veldr.voxel.fish_medium_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -3534,8 +3534,8 @@ struct FishSmallLateralSubSpec {
 make_vox_spec!(
     fish_small::Body,
     struct FishSmallSpec {
-        central: FishSmallCentralSpec = "voxygen.voxel.fish_small_central_manifest",
-        lateral: FishSmallLateralSpec = "voxygen.voxel.fish_small_lateral_manifest",
+        central: FishSmallCentralSpec = "veldr.voxel.fish_small_central_manifest",
+        lateral: FishSmallLateralSpec = "veldr.voxel.fish_small_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -3678,13 +3678,13 @@ impl_concatenate_for_wrapper!(BipedSmallArmorTailSpec);
 make_vox_spec!(
     biped_small::Body,
     struct BipedSmallSpec {
-        armor_foot: BipedSmallArmorFootSpec = "voxygen.voxel.biped_small_armor_foot_manifest",
-        weapon: BipedSmallWeaponSpec = "voxygen.voxel.biped_weapon_manifest",
-        armor_hand: BipedSmallArmorHandSpec = "voxygen.voxel.biped_small_armor_hand_manifest",
-        armor_chest: BipedSmallArmorChestSpec = "voxygen.voxel.biped_small_armor_chest_manifest",
-        armor_pants: BipedSmallArmorPantsSpec = "voxygen.voxel.biped_small_armor_pants_manifest",
-        armor_head: BipedSmallArmorHeadSpec = "voxygen.voxel.biped_small_armor_head_manifest",
-        armor_tail: BipedSmallArmorTailSpec = "voxygen.voxel.biped_small_armor_tail_manifest",
+        armor_foot: BipedSmallArmorFootSpec = "veldr.voxel.biped_small_armor_foot_manifest",
+        weapon: BipedSmallWeaponSpec = "veldr.voxel.biped_weapon_manifest",
+        armor_hand: BipedSmallArmorHandSpec = "veldr.voxel.biped_small_armor_hand_manifest",
+        armor_chest: BipedSmallArmorChestSpec = "veldr.voxel.biped_small_armor_chest_manifest",
+        armor_pants: BipedSmallArmorPantsSpec = "veldr.voxel.biped_small_armor_pants_manifest",
+        armor_head: BipedSmallArmorHeadSpec = "veldr.voxel.biped_small_armor_head_manifest",
+        armor_tail: BipedSmallArmorTailSpec = "veldr.voxel.biped_small_armor_tail_manifest",
 
     },
     |FigureKey {
@@ -3973,8 +3973,8 @@ struct DragonLateralSubSpec {
 make_vox_spec!(
     dragon::Body,
     struct DragonSpec {
-        central: DragonCentralSpec = "voxygen.voxel.dragon_central_manifest",
-        lateral: DragonLateralSpec = "voxygen.voxel.dragon_lateral_manifest",
+        central: DragonCentralSpec = "veldr.voxel.dragon_central_manifest",
+        lateral: DragonLateralSpec = "veldr.voxel.dragon_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -4374,8 +4374,8 @@ struct BirdLargeLateralSubSpec {
 make_vox_spec!(
     bird_large::Body,
     struct BirdLargeSpec {
-        central: BirdLargeCentralSpec = "voxygen.voxel.bird_large_central_manifest",
-        lateral: BirdLargeLateralSpec = "voxygen.voxel.bird_large_lateral_manifest",
+        central: BirdLargeCentralSpec = "veldr.voxel.bird_large_central_manifest",
+        lateral: BirdLargeLateralSpec = "veldr.voxel.bird_large_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -4817,10 +4817,10 @@ impl_concatenate_for_wrapper!(BipedLargeSecondSpec);
 make_vox_spec!(
     biped_large::Body,
     struct BipedLargeSpec {
-        central: BipedLargeCentralSpec = "voxygen.voxel.biped_large_central_manifest",
-        lateral: BipedLargeLateralSpec = "voxygen.voxel.biped_large_lateral_manifest",
-        main: BipedLargeMainSpec = "voxygen.voxel.biped_weapon_manifest",
-        second: BipedLargeSecondSpec = "voxygen.voxel.biped_weapon_manifest",
+        central: BipedLargeCentralSpec = "veldr.voxel.biped_large_central_manifest",
+        lateral: BipedLargeLateralSpec = "veldr.voxel.biped_large_lateral_manifest",
+        main: BipedLargeMainSpec = "veldr.voxel.biped_weapon_manifest",
+        second: BipedLargeSecondSpec = "veldr.voxel.biped_weapon_manifest",
     },
     |FigureKey {
          body,
@@ -5250,8 +5250,8 @@ struct GolemLateralSubSpec {
 make_vox_spec!(
     golem::Body,
     struct GolemSpec {
-        central: GolemCentralSpec = "voxygen.voxel.golem_central_manifest",
-        lateral: GolemLateralSpec = "voxygen.voxel.golem_lateral_manifest",
+        central: GolemCentralSpec = "veldr.voxel.golem_central_manifest",
+        lateral: GolemLateralSpec = "veldr.voxel.golem_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -5586,8 +5586,8 @@ struct QuadrupedLowLateralSubSpec {
 make_vox_spec!(
     quadruped_low::Body,
     struct QuadrupedLowSpec {
-        central: QuadrupedLowCentralSpec = "voxygen.voxel.quadruped_low_central_manifest",
-        lateral: QuadrupedLowLateralSpec = "voxygen.voxel.quadruped_low_lateral_manifest",
+        central: QuadrupedLowCentralSpec = "veldr.voxel.quadruped_low_central_manifest",
+        lateral: QuadrupedLowLateralSpec = "veldr.voxel.quadruped_low_lateral_manifest",
     },
     |FigureKey { body, extra, .. }, spec| {
         let third_person = extra
@@ -6001,7 +6001,7 @@ struct ObjectCentralSubSpec {
 make_vox_spec!(
     object::Body,
     struct ObjectSpec {
-        central: ObjectCentralSpec = "voxygen.voxel.object_manifest",
+        central: ObjectCentralSpec = "veldr.voxel.object_manifest",
     },
     |FigureKey { body, .. }, spec| {
         [
@@ -6103,7 +6103,7 @@ impl_concatenate_for_wrapper!(ItemCentralSpec);
 make_vox_spec!(
     body::item::Body,
     struct ItemSpec {
-        central: ItemCentralSpec = "voxygen.voxel.item_drop_manifest",
+        central: ItemCentralSpec = "veldr.voxel.item_drop_manifest",
     },
     |FigureKey { body, item_key, .. }, spec| {
         [
@@ -6143,7 +6143,7 @@ impl ItemCentralSpec {
             body::item::Body::CoinPouch => Some(&coin_pouch),
             _ => self.0.get(item_key),
         } {
-            let full_spec: String = ["voxygen.", spec.0.as_str()].concat();
+            let full_spec: String = ["veldr.", spec.0.as_str()].concat();
             let segment = match item {
                 body::item::Body::Armor(_) => MatSegment::from_vox_model_index(
                     &graceful_load_vox_fullspec(&full_spec).read().0,
@@ -6303,7 +6303,7 @@ mod plugin {
     impl assets::Asset for PluginBoneSpec {
         fn load(_cache: &AssetCache, _: &SharedString) -> Result<Self, BoxedError> {
             let data: AssetHandle<MultiRon<PluginBoneSpec>> =
-                AssetExt::load("voxygen.voxel.plugin_body_manifest")?;
+                AssetExt::load("veldr.voxel.plugin_body_manifest")?;
             Ok(data.read().0.clone())
         }
     }

@@ -248,7 +248,7 @@ fn get_target_volume(tag: AmbienceChannelTag, client: &Client, camera: &Camera) 
 }
 
 pub fn load_ambience_items() -> AssetHandle<Ron<AmbienceCollection>> {
-    Ron::load_or_insert_with("voxygen.audio.ambience", |error| {
+    Ron::load_or_insert_with("veldr.audio.ambience", |error| {
         warn!(
             "Error reading ambience config file, ambience will not be available: {:#?}",
             error

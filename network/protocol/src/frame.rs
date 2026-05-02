@@ -17,7 +17,7 @@ const FRAME_RAW: u8 = 8;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum InitFrame {
     Handshake {
-        magic_number: [u8; 7],
+        magic_number: [u8; 5],
         version: [u32; 3],
     },
     Init {
@@ -81,7 +81,7 @@ pub enum ITFrame {
 
 impl InitFrame {
     // Size WITHOUT the 1rst indicating byte
-    pub(crate) const HANDSHAKE_CNS: usize = 19;
+    pub(crate) const HANDSHAKE_CNS: usize = 17;
     pub(crate) const INIT_CNS: usize = 32;
     /// const part of the RAW frame, actual size is variable
     pub(crate) const RAW_CNS: usize = 2;
@@ -123,8 +123,8 @@ impl InitFrame {
                     return None;
                 }
                 bytes.advance(1);
-                let mut magic_number_bytes = bytes.copy_to_bytes(7);
-                let mut magic_number = [0u8; 7];
+                let mut magic_number_bytes = bytes.copy_to_bytes(5);
+                let mut magic_number = [0u8; 5];
                 magic_number_bytes.copy_to_slice(&mut magic_number);
                 InitFrame::Handshake {
                     magic_number,
@@ -304,13 +304,13 @@ impl PartialEq<ITFrame> for OTFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{VELOREN_MAGIC_NUMBER, VELOREN_NETWORK_VERSION};
+    use crate::types::{VELDR_MAGIC_NUMBER, VELDR_NETWORK_VERSION};
 
     fn get_initframes() -> Vec<InitFrame> {
         vec![
             InitFrame::Handshake {
-                magic_number: VELOREN_MAGIC_NUMBER,
-                version: VELOREN_NETWORK_VERSION,
+                magic_number: VELDR_MAGIC_NUMBER,
+                version: VELDR_NETWORK_VERSION,
             },
             InitFrame::Init {
                 pid: Pid::fake(0),
@@ -440,8 +440,8 @@ mod tests {
         let mut buffer = BytesMut::with_capacity(10);
 
         let frame1 = InitFrame::Handshake {
-            magic_number: VELOREN_MAGIC_NUMBER,
-            version: VELOREN_NETWORK_VERSION,
+            magic_number: VELDR_MAGIC_NUMBER,
+            version: VELDR_NETWORK_VERSION,
         };
         InitFrame::write_bytes(frame1, &mut buffer);
     }
@@ -451,8 +451,8 @@ mod tests {
         let mut buffer = BytesMut::with_capacity(20);
 
         let frame1 = InitFrame::Handshake {
-            magic_number: VELOREN_MAGIC_NUMBER,
-            version: VELOREN_NETWORK_VERSION,
+            magic_number: VELDR_MAGIC_NUMBER,
+            version: VELDR_NETWORK_VERSION,
         };
         InitFrame::write_bytes(frame1, &mut buffer);
         buffer.truncate(6); // simulate partial retrieve

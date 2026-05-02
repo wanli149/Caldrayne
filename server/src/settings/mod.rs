@@ -129,9 +129,9 @@ impl ServerBattleMode {
     }
 }
 
-impl From<ServerBattleMode> for veloren_query_server::proto::ServerBattleMode {
+impl From<ServerBattleMode> for veldr_query_server::proto::ServerBattleMode {
     fn from(value: ServerBattleMode) -> Self {
-        use veloren_query_server::proto::ServerBattleMode as QueryBattleMode;
+        use veldr_query_server::proto::ServerBattleMode as QueryBattleMode;
 
         match value {
             ServerBattleMode::Global(mode) => match mode {
@@ -151,9 +151,9 @@ pub enum RuntimeEnvironment {
     Production,
 }
 
-impl From<RuntimeEnvironment> for veloren_query_server::proto::ServerEnvironment {
+impl From<RuntimeEnvironment> for veldr_query_server::proto::ServerEnvironment {
     fn from(value: RuntimeEnvironment) -> Self {
-        use veloren_query_server::proto::ServerEnvironment;
+        use veldr_query_server::proto::ServerEnvironment;
 
         match value {
             RuntimeEnvironment::Local => ServerEnvironment::Local,
@@ -451,29 +451,19 @@ pub struct Settings {
     /// When set to None, loads the default built-in map asset. Otherwise uses
     /// the selected file options to decide how to proceed.
     ///
-    /// `LoadLegacy(path)` remains a transitional explicit compat-import path
-    /// for legacy or sidecarless external worlds; prefer strict `Load(path)`
-    /// with an adjacent `RecipeManifestV1` sidecar whenever possible.
+    /// Only strict modern world contracts are supported. External worlds must
+    /// load through `Load(path)` with an adjacent `RecipeManifestV1` sidecar.
     pub map_file: Option<FileOpts>,
     /// Controls whether strict modern world load fallback remains advisory
     /// (`record`) or becomes a fail-fast startup contract (`enforce`).
     ///
-    /// `LoadLegacy(path)` remains outside that strict fallback contract and
-    /// may still surface operator review in health during the deprecation
-    /// window.
+    /// Strict load fallback remains observable here until the remaining
+    /// compatibility review surfaces are removed.
     pub world_compat_mode: CompatMode,
-    /// Controls whether the transitional `LoadLegacy(path)` compat-import
-    /// entry is still admitted (`allow`) or rejected at startup (`deny`).
-    ///
-    /// Dedicated defaults now seed `deny`, while singleplayer preserves
-    /// `allow` when loading older settings files that omit the field.
+    /// `LoadLegacy(path)` is retired and remains denied.
     pub load_legacy_mode: LoadLegacyMode,
-    /// Controls whether managed `LoadOrGenerate` may still reuse an existing
-    /// world when its adjacent recipe sidecar is missing (`allow`) or must
-    /// reject startup instead (`deny`).
-    ///
-    /// Dedicated defaults now seed `deny`, while singleplayer preserves
-    /// `allow` when loading older settings files that omit the field.
+    /// Managed `LoadOrGenerate` without an adjacent recipe sidecar is retired
+    /// and remains denied.
     pub load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode,
     pub max_view_distance: Option<u32>,
     /// Maximum number of completed generated chunks that `terrain::Sys`
@@ -523,21 +513,6 @@ pub struct Settings {
 
     #[serde(default)]
     pub world: WorldSettings,
-}
-
-struct CompatGatePresence {
-    load_legacy_mode: bool,
-    load_or_generate_sidecarless_mode: bool,
-}
-
-impl CompatGatePresence {
-    fn from_settings_text(contents: &str) -> Self {
-        Self {
-            load_legacy_mode: contents.contains("load_legacy_mode:"),
-            load_or_generate_sidecarless_mode: contents
-                .contains("load_or_generate_sidecarless_mode:"),
-        }
-    }
 }
 
 impl Default for Settings {
@@ -680,7 +655,7 @@ mod tests {
     }
 
     #[test]
-    fn singleplayer_missing_settings_file_keeps_compat_gates_allow() {
+    fn singleplayer_missing_settings_file_persists_compat_gates_deny() {
         let root = unique_temp_dir("singleplayer-settings");
         let settings_path = settings_file_path(&root);
 
@@ -688,20 +663,20 @@ mod tests {
 
         let settings = Settings::singleplayer(&root);
 
-        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Allow);
+        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Deny);
         assert_eq!(
             settings.load_or_generate_sidecarless_mode,
-            LoadOrGenerateSidecarlessMode::Allow
+            LoadOrGenerateSidecarlessMode::Deny
         );
 
         let persisted: Settings = ron::de::from_reader(
             fs::File::open(&settings_path).expect("singleplayer settings file should be created"),
         )
         .expect("persisted singleplayer settings should deserialize");
-        assert_eq!(persisted.load_legacy_mode, LoadLegacyMode::Allow);
+        assert_eq!(persisted.load_legacy_mode, LoadLegacyMode::Deny);
         assert_eq!(
             persisted.load_or_generate_sidecarless_mode,
-            LoadOrGenerateSidecarlessMode::Allow
+            LoadOrGenerateSidecarlessMode::Deny
         );
 
         let _ = fs::remove_dir_all(&root);
@@ -735,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn singleplayer_legacy_settings_file_without_compat_fields_keeps_compat_gates_allow() {
+    fn singleplayer_legacy_settings_file_without_compat_fields_defaults_missing_fields_to_deny() {
         let root = unique_temp_dir("singleplayer-legacy-settings");
         let settings_path = settings_file_path(&root);
 
@@ -752,18 +727,18 @@ mod tests {
         let settings = Settings::singleplayer(&root);
 
         assert_eq!(settings.world_compat_mode, CompatMode::Record);
-        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Allow);
+        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Deny);
         assert_eq!(
             settings.load_or_generate_sidecarless_mode,
-            LoadOrGenerateSidecarlessMode::Allow
+            LoadOrGenerateSidecarlessMode::Deny
         );
 
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn dedicated_explicit_allow_compat_override_is_preserved() {
-        let root = unique_temp_dir("dedicated-explicit-allow");
+    fn dedicated_explicit_deny_compat_override_is_preserved() {
+        let root = unique_temp_dir("dedicated-explicit-deny");
         let settings_path = settings_file_path(&root);
 
         let _ = fs::remove_dir_all(&root);
@@ -775,8 +750,8 @@ mod tests {
         .expect("settings dir should be created");
         Settings {
             world_seed: 1337,
-            load_legacy_mode: LoadLegacyMode::Allow,
-            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
+            load_legacy_mode: LoadLegacyMode::Deny,
+            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
             ..Settings::default()
         }
         .save_to_file(&settings_path)
@@ -784,10 +759,10 @@ mod tests {
 
         let settings = Settings::load(&root);
 
-        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Allow);
+        assert_eq!(settings.load_legacy_mode, LoadLegacyMode::Deny);
         assert_eq!(
             settings.load_or_generate_sidecarless_mode,
-            LoadOrGenerateSidecarlessMode::Allow
+            LoadOrGenerateSidecarlessMode::Deny
         );
 
         let _ = fs::remove_dir_all(&root);
@@ -809,7 +784,7 @@ mod tests {
             world_seed: 1337,
             load_legacy_mode: LoadLegacyMode::Deny,
             load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Deny,
-            ..Settings::singleplayer_default_settings()
+            ..Settings::default()
         }
         .save_to_file(&settings_path)
         .expect("singleplayer settings override file should be written");
@@ -933,41 +908,12 @@ impl Settings {
         }
     }
 
-    fn singleplayer_default_settings() -> Self {
-        Self {
-            load_legacy_mode: LoadLegacyMode::Allow,
-            load_or_generate_sidecarless_mode: LoadOrGenerateSidecarlessMode::Allow,
-            ..Self::default()
-        }
-    }
-
-    fn merge_missing_compat_gate_defaults(
-        &mut self,
-        default_settings: &Self,
-        compat_gate_presence: CompatGatePresence,
-    ) {
-        if !compat_gate_presence.load_legacy_mode {
-            self.load_legacy_mode = default_settings.load_legacy_mode;
-        }
-        if !compat_gate_presence.load_or_generate_sidecarless_mode {
-            self.load_or_generate_sidecarless_mode =
-                default_settings.load_or_generate_sidecarless_mode;
-        }
-    }
-
     fn load_with_defaults(path: &Path, default_settings: Self) -> Self {
         let path = settings_file_path(path);
 
         let mut settings = if let Ok(contents) = fs::read_to_string(&path) {
             match ron::from_str::<Self>(&contents) {
-                Ok(mut settings) => {
-                    let compat_gate_presence = CompatGatePresence::from_settings_text(&contents);
-                    settings.merge_missing_compat_gate_defaults(
-                        &default_settings,
-                        compat_gate_presence,
-                    );
-                    settings
-                },
+                Ok(settings) => settings,
                 Err(e) => {
                     let template_path = path.with_extension("template.ron");
                     warn!(
@@ -1010,7 +956,7 @@ impl Settings {
 
     /// path: Directory that contains the server config directory
     pub fn singleplayer(path: &Path) -> Self {
-        let load = Self::load_with_defaults(path, Self::singleplayer_default_settings());
+        let load = Self::load_with_defaults(path, Self::default());
         Self {
             // BUG: theoretically another process can grab the port between here and server
             // creation, however the time window is quite small.

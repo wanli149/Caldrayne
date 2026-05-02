@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2019 Artem Polishchuk <ego.cordatus@gmail.com> -->
+<component type="desktop-application">
+  <id>io.github.wanli149.caldrayne</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <project_group>Caldrayne</project_group>
+  <developer id="io.github.wanli149">
+    <name>The Caldrayne Project</name>
+  </developer>
+
+  <name>Caldrayne Online</name>
+  <name xml:lang="zh-CN">卡德雷恩 Online</name>
+  <provides>
+    <binary>caldrayne</binary>
+  </provides>
+  <launchable type="desktop-id">io.github.wanli149.caldrayne.desktop</launchable>
+
+  <content_rating type="oars-1.0">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+    <content_attribute id="violence-cartoon">mild</content_attribute>
+    <content_attribute id="violence-fantasy">mild</content_attribute>
+  </content_rating>
+
+  <summary>Caldrayne Online is a voxel action RPG set in a vast fantasy world</summary>
+  <summary xml:lang="cs">Caldrayne Online je voxelové akční RPG zasazené do rozsáhlého fantasy světa</summary>
+  <summary xml:lang="de">Caldrayne Online ist ein voxelbasiertes Action-RPG in einer weitläufigen Fantasywelt</summary>
+  <summary xml:lang="pl">Caldrayne Online to voxelowa gra action RPG osadzona w rozległym świecie fantasy</summary>
+  <summary xml:lang="zh-CN">卡德雷恩 Online 是一款设定在广阔奇幻世界中的体素动作 RPG</summary>
+
+  <description>
+    <p>
+      Caldrayne Online is an action-adventure RPG game set in a vast fantasy world.
+      It continues to evolve under the Caldrayne brand.
+      It is derived from the Veloren open-source foundation while preserving required upstream credit and licensing,
+      and is inspired by games such as Cube World,
+      The Legend of Zelda: Breath of the Wild, Dwarf Fortress and Minecraft.
+    </p>
+    <p xml:lang="de">
+      Caldrayne Online ist ein Action-Adventure-Rollenspiel in einer riesigen Fantasiewelt.
+      Es wird unter der Marke Caldrayne weiterentwickelt.
+      Es ist ein von der Veloren-Open-Source-Grundlage abgeleitetes Projekt, das die erforderliche Namensnennung und Lizenzierung des Upstreams beibehält,
+      und ist von Spielen wie Cube World,
+      The Legend of Zelda: Breath of the Wild, Dwarf Fortress und Minecraft inspiriert.
+    </p>
+    <p xml:lang="zh-CN">
+      卡德雷恩 Online 是一款设定在广阔奇幻世界中的体素动作冒险 RPG。
+      项目正以 Caldrayne 品牌持续演进。
+      本项目源自开源 Veloren 基础，并保留必要的上游署名与许可证信息，同时逐步建立自己的品牌与内容方向。
+    </p>
+
+    <p>Development</p>
+    <p xml:lang="de">Entwicklung</p>
+    <p xml:lang="zh-CN">开发说明</p>
+
+    <p>
+      This repository tracks the Caldrayne-branded project while preserving required upstream Veloren credit and licensing.
+    </p>
+    <p xml:lang="de">
+      Dieses Repository verfolgt das gebrandete Caldrayne-Projekt und bewahrt dabei die notwendige Veloren-Namensnennung und Lizenzierung.
+    </p>
+    <p xml:lang="zh-CN">
+      当前仓库承载的是 Caldrayne 品牌化项目，同时保留必须的 Veloren 上游署名与许可证信息。
+    </p>
+  </description>
+
+  <releases>
+    <release date="@DATE@" version="@VERSION@"/>
+  </releases>
+
+  <recommends>
+    <internet>always</internet>
+    <memory>4096</memory>
+  </recommends>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>gamepad</control>
+    <internet>offline-only</internet>
+  </supports>
+
+  <categories>
+    <category>Game</category>
+  </categories>
+  <keywords>
+    <keyword>multiplayer</keyword>
+    <keyword>voxel</keyword>
+    <keyword>sandbox</keyword>
+    <keyword>role-playing game</keyword>
+    <keyword>RPG</keyword>
+  </keywords>
+
+  <url type="bugtracker">https://github.com/wanli149/Caldrayne/issues</url>
+  <url type="faq">https://github.com/wanli149/Caldrayne#readme</url>
+  <url type="help">https://github.com/wanli149/Caldrayne#readme</url>
+  <url type="homepage">https://github.com/wanli149/Caldrayne</url>
+  <url type="contact">https://github.com/wanli149/Caldrayne/issues</url>
+  <url type="vcs-browser">https://github.com/wanli149/Caldrayne</url>
+  <url type="contribute">https://github.com/wanli149/Caldrayne</url>
+</component>

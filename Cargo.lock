@@ -9102,7 +9102,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "veloren-client"
+name = "veldr-client"
 version = "0.18.0"
 dependencies = [
  "async-channel 2.5.0",
@@ -9123,20 +9123,20 @@ dependencies = [
  "tokio 1.48.0",
  "tracing",
  "vek 0.17.2",
- "veloren-client-i18n",
- "veloren-common",
- "veloren-common-base",
- "veloren-common-frontend",
- "veloren-common-i18n",
- "veloren-common-net",
- "veloren-common-state",
- "veloren-common-systems",
- "veloren-network",
- "veloren-voxygen-i18n-helpers",
+ "veldr-client-i18n",
+ "veldr-common",
+ "veldr-common-base",
+ "veldr-common-frontend",
+ "veldr-common-i18n",
+ "veldr-common-net",
+ "veldr-common-state",
+ "veldr-common-systems",
+ "veldr-network",
+ "veldr-voxygen-i18n-helpers",
 ]
 
 [[package]]
-name = "veloren-client-i18n"
+name = "veldr-client-i18n"
 version = "0.18.0"
 dependencies = [
  "clap",
@@ -9148,12 +9148,12 @@ dependencies = [
  "serde",
  "tracing",
  "unic-langid",
- "veloren-common-assets",
- "veloren-common-i18n",
+ "veldr-common-assets",
+ "veldr-common-i18n",
 ]
 
 [[package]]
-name = "veloren-common"
+name = "veldr-common"
 version = "0.18.0"
 dependencies = [
  "ahash 0.8.12",
@@ -9197,13 +9197,13 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "vek 0.17.2",
- "veloren-common-assets",
- "veloren-common-base",
- "veloren-common-i18n",
+ "veldr-common-assets",
+ "veldr-common-base",
+ "veldr-common-i18n",
 ]
 
 [[package]]
-name = "veloren-common-assets"
+name = "veldr-common-assets"
 version = "0.18.0"
 dependencies = [
  "assets_manager",
@@ -9219,7 +9219,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "veloren-common-base"
+name = "veldr-common-base"
 version = "0.18.0"
 dependencies = [
  "directories-next",
@@ -9228,7 +9228,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "veloren-common-dynlib"
+name = "veldr-common-dynlib"
 version = "0.18.0"
 dependencies = [
  "find_folder",
@@ -9238,17 +9238,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "veloren-common-ecs"
+name = "veldr-common-ecs"
 version = "0.18.0"
 dependencies = [
  "float-cmp",
  "specs",
  "tracing",
- "veloren-common-base",
+ "veldr-common-base",
 ]
 
 [[package]]
-name = "veloren-common-frontend"
+name = "veldr-common-frontend"
 version = "0.18.0"
 dependencies = [
  "termcolor",
@@ -9256,11 +9256,11 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "tracing-tracy",
- "veloren-common-base",
+ "veldr-common-base",
 ]
 
 [[package]]
-name = "veloren-common-i18n"
+name = "veldr-common-i18n"
 version = "0.18.0"
 dependencies = [
  "hashbrown 0.16.0",
@@ -9269,7 +9269,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "veloren-common-net"
+name = "veldr-common-net"
 version = "0.18.0"
 dependencies = [
  "bincode",
@@ -9282,11 +9282,11 @@ dependencies = [
  "sum_type",
  "tracing",
  "vek 0.17.2",
- "veloren-common",
+ "veldr-common",
 ]
 
 [[package]]
-name = "veloren-common-state"
+name = "veldr-common-state"
 version = "0.18.0"
 dependencies = [
  "async-trait",
@@ -9307,17 +9307,17 @@ dependencies = [
  "toml 1.0.3+spec-1.1.0",
  "tracing",
  "vek 0.17.2",
- "veloren-common",
- "veloren-common-assets",
- "veloren-common-base",
- "veloren-common-ecs",
- "veloren-common-net",
+ "veldr-common",
+ "veldr-common-assets",
+ "veldr-common-base",
+ "veldr-common-ecs",
+ "veldr-common-net",
  "wasmtime",
  "wasmtime-wasi",
 ]
 
 [[package]]
-name = "veloren-common-systems"
+name = "veldr-common-systems"
 version = "0.18.0"
 dependencies = [
  "itertools 0.14.0",
@@ -9327,15 +9327,15 @@ dependencies = [
  "specs",
  "tracing",
  "vek 0.17.2",
- "veloren-common",
- "veloren-common-base",
- "veloren-common-ecs",
- "veloren-common-net",
- "veloren-common-state",
+ "veldr-common",
+ "veldr-common-base",
+ "veldr-common-ecs",
+ "veldr-common-net",
+ "veldr-common-state",
 ]
 
 [[package]]
-name = "veloren-network"
+name = "veldr-network"
 version = "0.3.0"
 dependencies = [
  "async-channel 2.5.0",
@@ -9362,11 +9362,11 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-subscriber",
- "veloren-network-protocol",
+ "veldr-network-protocol",
 ]
 
 [[package]]
-name = "veloren-network-protocol"
+name = "veldr-network-protocol"
 version = "0.6.1"
 dependencies = [
  "async-channel 2.5.0",
@@ -9382,7 +9382,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "veloren-query-server"
+name = "veldr-query-server"
 version = "0.1.2"
 dependencies = [
  "clap",
@@ -9394,7 +9394,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "veloren-rtsim"
+name = "veldr-rtsim"
 version = "0.18.0"
 dependencies = [
  "anymap2",
@@ -9415,12 +9415,12 @@ dependencies = [
  "take-once",
  "tracing",
  "vek 0.17.2",
- "veloren-common",
- "veloren-world",
+ "veldr-common",
+ "veldr-world",
 ]
 
 [[package]]
-name = "veloren-server"
+name = "veldr-server"
 version = "0.18.0"
 dependencies = [
  "atomicwrites",
@@ -9458,21 +9458,21 @@ dependencies = [
  "tokio 1.48.0",
  "tracing",
  "vek 0.17.2",
- "veloren-common",
- "veloren-common-base",
- "veloren-common-ecs",
- "veloren-common-net",
- "veloren-common-state",
- "veloren-common-systems",
- "veloren-network",
- "veloren-query-server",
- "veloren-rtsim",
- "veloren-server-agent",
- "veloren-world",
+ "veldr-common",
+ "veldr-common-base",
+ "veldr-common-ecs",
+ "veldr-common-net",
+ "veldr-common-state",
+ "veldr-common-systems",
+ "veldr-network",
+ "veldr-query-server",
+ "veldr-rtsim",
+ "veldr-server-agent",
+ "veldr-world",
 ]
 
 [[package]]
-name = "veloren-server-agent"
+name = "veldr-server-agent"
 version = "0.18.0"
 dependencies = [
  "itertools 0.14.0",
@@ -9481,15 +9481,15 @@ dependencies = [
  "specs",
  "tracing",
  "vek 0.17.2",
- "veloren-common",
- "veloren-common-base",
- "veloren-common-dynlib",
- "veloren-rtsim",
- "veloren-world",
+ "veldr-common",
+ "veldr-common-base",
+ "veldr-common-dynlib",
+ "veldr-rtsim",
+ "veldr-world",
 ]
 
 [[package]]
-name = "veloren-server-cli"
+name = "veldr-server-cli"
 version = "0.18.0"
 dependencies = [
  "axum",
@@ -9512,18 +9512,18 @@ dependencies = [
  "specs",
  "tokio 1.48.0",
  "tracing",
- "veloren-common",
- "veloren-common-base",
- "veloren-common-frontend",
- "veloren-common-net",
- "veloren-query-server",
- "veloren-server",
- "veloren-server-agent",
- "veloren-world",
+ "veldr-common",
+ "veldr-common-base",
+ "veldr-common-frontend",
+ "veldr-common-net",
+ "veldr-query-server",
+ "veldr-server",
+ "veldr-server-agent",
+ "veldr-world",
 ]
 
 [[package]]
-name = "veloren-voxygen"
+name = "veldr-voxygen"
 version = "0.18.0"
 dependencies = [
  "backtrace",
@@ -9580,21 +9580,21 @@ dependencies = [
  "tracing",
  "treeculler",
  "vek 0.17.2",
- "veloren-client",
- "veloren-client-i18n",
- "veloren-common",
- "veloren-common-base",
- "veloren-common-ecs",
- "veloren-common-frontend",
- "veloren-common-i18n",
- "veloren-common-net",
- "veloren-common-state",
- "veloren-common-systems",
- "veloren-server",
- "veloren-voxygen-anim",
- "veloren-voxygen-egui",
- "veloren-voxygen-i18n-helpers",
- "veloren-world",
+ "veldr-client",
+ "veldr-client-i18n",
+ "veldr-common",
+ "veldr-common-base",
+ "veldr-common-ecs",
+ "veldr-common-frontend",
+ "veldr-common-i18n",
+ "veldr-common-net",
+ "veldr-common-state",
+ "veldr-common-systems",
+ "veldr-server",
+ "veldr-voxygen-anim",
+ "veldr-voxygen-egui",
+ "veldr-voxygen-i18n-helpers",
+ "veldr-world",
  "wgpu",
  "wgpu-profiler",
  "window_clipboard",
@@ -9603,46 +9603,46 @@ dependencies = [
 ]
 
 [[package]]
-name = "veloren-voxygen-anim"
+name = "veldr-voxygen-anim"
 version = "0.18.0"
 dependencies = [
  "bytemuck",
  "inline_tweak",
  "lazy_static",
  "vek 0.17.2",
- "veloren-common",
- "veloren-common-dynlib",
- "veloren-common-state",
+ "veldr-common",
+ "veldr-common-dynlib",
+ "veldr-common-state",
 ]
 
 [[package]]
-name = "veloren-voxygen-egui"
+name = "veldr-voxygen-egui"
 version = "0.18.0"
 dependencies = [
  "egui",
  "egui-winit",
  "egui_plot",
  "lazy_static",
- "veloren-client",
- "veloren-common",
- "veloren-common-dynlib",
+ "veldr-client",
+ "veldr-common",
+ "veldr-common-dynlib",
  "winit",
 ]
 
 [[package]]
-name = "veloren-voxygen-i18n-helpers"
+name = "veldr-voxygen-i18n-helpers"
 version = "0.18.0"
 dependencies = [
  "rand 0.10.0",
  "tracing",
  "vek 0.17.2",
- "veloren-client-i18n",
- "veloren-common",
- "veloren-common-net",
+ "veldr-client-i18n",
+ "veldr-common",
+ "veldr-common-net",
 ]
 
 [[package]]
-name = "veloren-world"
+name = "veldr-world"
 version = "0.18.0"
 dependencies = [
  "arr_macro",
@@ -9687,11 +9687,11 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vek 0.17.2",
- "veloren-common",
- "veloren-common-base",
- "veloren-common-dynlib",
- "veloren-common-frontend",
- "veloren-common-net",
+ "veldr-common",
+ "veldr-common-base",
+ "veldr-common-dynlib",
+ "veldr-common-frontend",
+ "veldr-common-net",
 ]
 
 [[package]]

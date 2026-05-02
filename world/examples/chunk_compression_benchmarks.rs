@@ -30,7 +30,7 @@ use std::{
 };
 use tracing::{debug, trace};
 use vek::*;
-use veloren_world::{
+use veldr_world::{
     World,
     sim::{DEFAULT_WORLD_MAP, DEFAULT_WORLD_SEED, FileOpts, WorldOpts},
     site::SiteKind,

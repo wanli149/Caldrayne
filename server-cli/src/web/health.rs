@@ -1,4 +1,4 @@
-use common::official_entry::OfficialEntry;
+use common::public_realm::PublicRealm;
 use hyper::StatusCode;
 use prometheus::Registry;
 use std::path::Path;
@@ -37,15 +37,15 @@ pub use observability::{
     RuntimeObservabilityInventory, RuntimeObservabilityState, RuntimeObservabilityStatus,
     default_runtime_observability_inventory, snapshot_runtime_observability_inventory,
 };
-fn repo_bundled_official_entry_snapshot_review_items(
-    snapshot: &RepoBundledOfficialEntrySnapshotReport,
+fn repo_bundled_public_realm_snapshot_review_items(
+    snapshot: &RepoBundledPublicRealmSnapshotReport,
 ) -> Vec<PreflightReviewItem> {
     match &snapshot.baseline {
         Some(baseline) if !baseline.non_local_cutover_ready => vec![PreflightReviewItem {
             kind: "repo-bundled-entry-transitional-baseline",
             blocking: false,
             detail: format!(
-                "repo/local bundled official_entry baseline remains transitional (target_kind={}, \
+                "repo/local bundled public realm baseline remains transitional (target_kind={}, \
                  gap_reasons=[{}]); use /health/compatibility only as a local comparison baseline \
                  and require the external release review to prove the shipped Public client \
                  artifact carries the intended non-local bundle instead of this repo snapshot",
@@ -62,7 +62,7 @@ fn repo_bundled_official_entry_snapshot_review_items(
             kind: "repo-bundled-entry-snapshot-unavailable",
             blocking: false,
             detail: format!(
-                "repo/local bundled official_entry baseline could not be loaded in-process ({}); \
+                "repo/local bundled public realm baseline could not be loaded in-process ({}); \
                  external release review must carry the full shipped Public client artifact \
                  comparison because no local bundled baseline snapshot is available here",
                 snapshot
@@ -102,8 +102,8 @@ impl HealthState {
             .account_auth_governance_report()
     }
 
-    fn repo_bundled_official_entry_snapshot(&self) -> RepoBundledOfficialEntrySnapshotReport {
-        match OfficialEntry::try_load() {
+    fn repo_bundled_public_realm_snapshot(&self) -> RepoBundledPublicRealmSnapshotReport {
+        match PublicRealm::try_load() {
             Ok(entry) => {
                 let baseline = entry.posture();
                 let status = if baseline.non_local_cutover_ready {
@@ -112,56 +112,56 @@ impl HealthState {
                     "repo-bundled-entry-transitional"
                 };
 
-                RepoBundledOfficialEntrySnapshotReport {
+                RepoBundledPublicRealmSnapshotReport {
                     status,
-                    evidence_scope: "repo/local bundled official_entry baseline only",
-                    load_source: "voxygen.official_entry asset via common asset loader",
+                    evidence_scope: "repo/local bundled public realm baseline only",
+                    load_source: "bundled public realm asset via common asset loader",
                     authoritative_for_release_cutover: false,
                     required_external_match_fields: vec![
-                        "bundled_official_entry_artifact_identity",
-                        "bundled_official_entry_server_address",
-                        "bundled_official_entry_auth_server",
-                        "bundled_official_entry_use_srv",
-                        "bundled_official_entry_use_quic",
-                        "bundled_official_entry_validate_tls",
+                        "bundled_public_realm_artifact_identity",
+                        "bundled_public_realm_server_address",
+                        "bundled_public_realm_auth_server",
+                        "bundled_public_realm_use_srv",
+                        "bundled_public_realm_use_quic",
+                        "bundled_public_realm_validate_tls",
                         "bundled_target_kind",
                         "bundled_target_is_non_local_candidate",
                         "non_local_cutover_gap_reasons",
                     ],
                     baseline: Some(baseline),
                     load_error: None,
-                    semantics: "publishes the repo/local bundled official_entry posture that this \
+                    semantics: "publishes the repo/local bundled public realm posture that this \
                                 workspace currently resolves so operators can compare it against \
                                 the shipped Public client artifact review record without creating \
                                 a second release authority source",
                 }
             },
-            Err(error) => RepoBundledOfficialEntrySnapshotReport {
+            Err(error) => RepoBundledPublicRealmSnapshotReport {
                 status: "repo-bundled-entry-unavailable",
-                evidence_scope: "repo/local bundled official_entry baseline only",
-                load_source: "voxygen.official_entry asset via common asset loader",
+                evidence_scope: "repo/local bundled public realm baseline only",
+                load_source: "bundled public realm asset via common asset loader",
                 authoritative_for_release_cutover: false,
                 required_external_match_fields: vec![
-                    "bundled_official_entry_artifact_identity",
-                    "bundled_official_entry_server_address",
-                    "bundled_official_entry_auth_server",
-                    "bundled_official_entry_use_srv",
-                    "bundled_official_entry_use_quic",
-                    "bundled_official_entry_validate_tls",
+                    "bundled_public_realm_artifact_identity",
+                    "bundled_public_realm_server_address",
+                    "bundled_public_realm_auth_server",
+                    "bundled_public_realm_use_srv",
+                    "bundled_public_realm_use_quic",
+                    "bundled_public_realm_validate_tls",
                     "bundled_target_kind",
                     "bundled_target_is_non_local_candidate",
                     "non_local_cutover_gap_reasons",
                 ],
                 baseline: None,
                 load_error: Some(error.to_string()),
-                semantics: "this process could not load the repo/local bundled official_entry \
+                semantics: "this process could not load the repo/local bundled public realm \
                             asset, so machine verification is unavailable here and external \
                             shipped-client review remains the only source for cutover evidence",
             },
         }
     }
 
-    fn build_query_contract_hint(&self) -> veloren_query_server::proto::ServerInfo {
+    fn build_query_contract_hint(&self) -> veldr_query_server::proto::ServerInfo {
         let settings = self.build_authoritative_runtime_settings();
         server::build_query_server_info(&settings, &server::ServerIdentity::default(), 0)
     }
@@ -172,13 +172,13 @@ impl HealthState {
 
     fn compatibility_contract_report_with_query_hint(
         &self,
-        query_hint: veloren_query_server::proto::ServerInfo,
+        query_hint: veldr_query_server::proto::ServerInfo,
     ) -> CompatibilityContractReport {
         let authoritative_compatibility = common_net::msg::ServerCompatibility::current();
         let world_compat = self.world_compat_report();
         let authoritative_auth_provider = self.authoritative_auth_provider.clone();
         let authoritative_auth_mode = runtime_auth_mode(authoritative_auth_provider.as_deref());
-        let public_entry_handoff = self.public_entry_handoff_report(
+        let public_realm_handoff = self.public_realm_handoff_report(
             authoritative_auth_mode,
             authoritative_auth_provider.clone(),
             query_hint.auth_required,
@@ -222,25 +222,25 @@ impl HealthState {
                 minimum_supported_generation: query_hint.compatibility.minimum_supported_generation,
                 auth_required: query_hint.auth_required,
                 auth_hint_scope: "auth-requirement-only-hint",
-                protocol_version: veloren_query_server::proto::CURRENT_PROTOCOL_VERSION,
-                version_selection_policy: veloren_query_server::proto::VERSION_SELECTION_POLICY,
+                protocol_version: veldr_query_server::proto::CURRENT_PROTOCOL_VERSION,
+                version_selection_policy: veldr_query_server::proto::VERSION_SELECTION_POLICY,
                 supports_multi_version_negotiation:
-                    veloren_query_server::proto::SUPPORTS_MULTI_VERSION_NEGOTIATION,
+                    veldr_query_server::proto::SUPPORTS_MULTI_VERSION_NEGOTIATION,
                 published_protocol_fields:
-                    veloren_query_server::proto::PUBLISHED_SERVER_INFO_FIELDS.to_vec(),
+                    veldr_query_server::proto::PUBLISHED_SERVER_INFO_FIELDS.to_vec(),
             },
             query_protocol_rollout: QueryProtocolRolloutContract {
-                protocol_version: veloren_query_server::proto::CURRENT_PROTOCOL_VERSION,
-                version_selection_policy: veloren_query_server::proto::VERSION_SELECTION_POLICY,
+                protocol_version: veldr_query_server::proto::CURRENT_PROTOCOL_VERSION,
+                version_selection_policy: veldr_query_server::proto::VERSION_SELECTION_POLICY,
                 supports_multi_version_negotiation:
-                    veloren_query_server::proto::SUPPORTS_MULTI_VERSION_NEGOTIATION,
+                    veldr_query_server::proto::SUPPORTS_MULTI_VERSION_NEGOTIATION,
                 requires_lockstep_rollout: true,
                 current_stage_policy: "phase-3 formal policy is exact-match query protocol \
                                        rollout with lockstep upgrade and rollback",
                 policy_change_requirement: "do not permit mixed-version query rollout until \
                                             explicit multi-version negotiation and a replacement \
                                             operator-facing contract land together",
-                authoritative_client_path: "official_entry -> EntryPolicy -> realm handshake",
+                authoritative_client_path: "public_realm -> EntryPolicy -> realm handshake",
                 known_in_repo_consumers: vec![
                     "common/query_server examples",
                     "no shipping client path in this repo consumes query as an authoritative \
@@ -275,7 +275,7 @@ impl HealthState {
                 ],
             },
             world_compat,
-            public_entry_handoff,
+            public_realm_handoff,
             environment_matches,
             compatibility_matches,
             auth_requirement_matches_runtime_config,
@@ -293,22 +293,22 @@ impl HealthState {
         }
     }
 
-    fn public_entry_handoff_report(
+    fn public_realm_handoff_report(
         &self,
         authoritative_auth_mode: common_net::msg::ServerAuthMode,
         authoritative_auth_provider: Option<String>,
         query_auth_requirement_hint: bool,
-    ) -> PublicEntryHandoffReport {
-        let repo_bundled_official_entry_snapshot = self.repo_bundled_official_entry_snapshot();
+    ) -> PublicRealmHandoffReport {
+        let repo_bundled_public_realm_snapshot = self.repo_bundled_public_realm_snapshot();
         let applies_to_non_local_public_rollout = self.environment != "local";
         let authoritative_auth_provider_ref = authoritative_auth_provider.as_deref();
         let required_external_review_field_contracts = if applies_to_non_local_public_rollout {
-            public_entry_handoff_required_review_field_contracts()
+            public_realm_handoff_required_review_field_contracts()
         } else {
             Vec::new()
         };
         let required_authority_pairing_checks = if applies_to_non_local_public_rollout {
-            public_entry_authority_pairing_checks()
+            public_realm_authority_pairing_checks()
         } else {
             Vec::new()
         };
@@ -319,27 +319,27 @@ impl HealthState {
             );
         let requires_operator_review = applies_to_non_local_public_rollout && !release_blocked;
         let required_cutover_material_checklist = if applies_to_non_local_public_rollout {
-            public_entry_cutover_material_checklist(
+            public_realm_cutover_material_checklist(
                 self.environment,
                 authoritative_auth_mode,
                 authoritative_auth_provider_ref,
-                &repo_bundled_official_entry_snapshot,
+                &repo_bundled_public_realm_snapshot,
             )
         } else {
             Vec::new()
         };
-        let public_entry_transition_contract = if applies_to_non_local_public_rollout {
-            Some(public_entry_transition_contract())
+        let public_realm_transition_contract = if applies_to_non_local_public_rollout {
+            Some(public_realm_transition_contract())
         } else {
             None
         };
-        let public_entry_lifecycle_transition_contract = if applies_to_non_local_public_rollout {
-            Some(public_entry_lifecycle_transition_contract())
+        let public_realm_lifecycle_transition_contract = if applies_to_non_local_public_rollout {
+            Some(public_realm_lifecycle_transition_contract())
         } else {
             None
         };
         let section_instance_validation_contract = if applies_to_non_local_public_rollout {
-            Some(public_entry_section_instance_validation_contract(
+            Some(public_realm_section_instance_validation_contract(
                 &required_external_review_field_contracts,
             ))
         } else {
@@ -358,15 +358,15 @@ impl HealthState {
             "awaiting-external-materials-and-execution"
         };
         let remaining_external_execution_dependencies =
-            public_entry_external_execution_dependencies(
+            public_realm_external_execution_dependencies(
                 applies_to_non_local_public_rollout,
                 release_blocked,
                 authoritative_auth_mode,
                 authoritative_auth_provider_ref,
             );
 
-        PublicEntryHandoffReport {
-            signal: "public-entry-handoff",
+        PublicRealmHandoffReport {
+            signal: "public-realm-handoff",
             status: if !applies_to_non_local_public_rollout {
                 "not-applicable-local"
             } else if release_blocked {
@@ -392,7 +392,7 @@ impl HealthState {
             } else if release_blocked {
                 "first real non-local Public cutover still requires a supported external-auth \
                  handshake posture plus external shipped/rollback client artifacts, bundled \
-                 official_entry material, rollback path, and external release review/archive \
+                 public realm material, rollback path, and external release review/archive \
                  execution"
             } else {
                 "first real non-local Public cutover still requires external shipped/rollback \
@@ -401,23 +401,23 @@ impl HealthState {
             },
             remaining_external_execution_dependencies,
             authority_scope: "external-release-review-required",
-            authoritative_public_target_path: "bundled official_entry.server_address -> \
+            authoritative_public_target_path: "bundled public realm server address -> \
                                                EntryPolicy -> realm handshake",
-            authoritative_public_auth_path: "bundled official_entry.auth_server exact-match pin \
+            authoritative_public_auth_path: "bundled public realm auth pin exact-match \
                                              -> EntryPolicy auth trust -> realm handshake \
                                              auth_provider -> ServerAuth",
             expected_handshake_auth_mode: authoritative_auth_mode.as_str(),
             authoritative_handshake_auth_provider: authoritative_auth_provider,
             query_auth_requirement_hint,
-            machine_verification_available_in_this_process: repo_bundled_official_entry_snapshot
+            machine_verification_available_in_this_process: repo_bundled_public_realm_snapshot
                 .baseline
                 .is_some(),
-            machine_verification_scope: "repo/local bundled official_entry baseline only",
+            machine_verification_scope: "repo/local bundled public realm baseline only",
             machine_verification_limitations: "cannot prove that the shipped Public client \
                                                artifact matches this repo/local baseline; \
                                                external release review remains authoritative for \
                                                cutover approval",
-            repo_bundled_official_entry_snapshot,
+            repo_bundled_public_realm_snapshot,
             required_external_review_fields: external_record_field_names(
                 &required_external_review_field_contracts,
             ),
@@ -425,7 +425,7 @@ impl HealthState {
             required_cutover_preconditions: if applies_to_non_local_public_rollout {
                 vec![
                     "record the shipped Public client artifact reference plus the bundled \
-                     official_entry artifact identity, server address, auth pin, transport flags, \
+                     public_realm artifact identity, server address, auth pin, transport flags, \
                      and client-exported target posture/gap reasons for the bundle that will be \
                      reopened to Public traffic",
                     "record the target runtime environment, authoritative compatibility \
@@ -436,7 +436,7 @@ impl HealthState {
                     "link current backup evidence and a recovery drill reference that reached \
                      ready-validated before approving non-local Public cutover",
                     "record rollback_reference, rollback_public_client_artifact_reference, plus \
-                     rollback_bundled_official_entry_artifact_identity before reopening Public \
+                     rollback_bundled_public_realm_artifact_identity before reopening Public \
                      traffic so the same release review record points to both the rollback path \
                      and the Public client artifact plus entry material that will be restored if \
                      cutover is reverted",
@@ -445,8 +445,8 @@ impl HealthState {
                 Vec::new()
             },
             required_cutover_material_checklist,
-            public_entry_transition_contract,
-            public_entry_lifecycle_transition_contract,
+            public_realm_transition_contract,
+            public_realm_lifecycle_transition_contract,
             section_instance_validation_contract,
             required_authority_pairing_checks,
             supporting_health_endpoints: if applies_to_non_local_public_rollout {
@@ -460,17 +460,17 @@ impl HealthState {
                 Vec::new()
             },
             semantics: "this process can publish the expected non-local Public rollout contract, \
-                        and it can expose the repo/local bundled official_entry baseline for \
+                        and it can expose the repo/local bundled public realm baseline for \
                         comparison, but it still cannot prove bundled client assets were the ones \
                         shipped; external release review must compare the shipped Public client \
-                        artifact reference plus official_entry.server_address/auth_server/use_srv \
-                        /use_quic/validate_tls against the intended Public target, record the \
-                        shipped bundled official_entry artifact identity plus the client-exported \
+                        artifact reference plus the bundled public realm server address, auth \
+                        pin, and transport flags against the intended Public target, record the \
+                        shipped bundled public realm artifact identity plus the client-exported \
                         bundled target posture/gap reasons, target runtime environment, \
                         authoritative compatibility generation, authoritative handshake auth \
                         provider, ready report status, backup/recovery evidence references, \
                         rollback reference, rollback Public client artifact reference, and \
-                        rollback bundled official_entry artifact identity, and confirm the \
+                        rollback bundled public realm artifact identity, and confirm the \
                         authoritative handshake auth posture plus exact-match auth pin and \
                         bundle/runtime pairing checks before Public traffic is opened",
         }
@@ -565,8 +565,8 @@ impl HealthState {
                     signal: "world-compat",
                     endpoint: "/health/world-compat",
                     status: report.status,
-                    blocking: false,
-                    requires_operator_review: true,
+                    blocking: true,
+                    requires_operator_review: false,
                 },
                 Some(report.detail),
             ),
@@ -574,82 +574,11 @@ impl HealthState {
     }
 
     fn format_world_compat_preflight_review_detail(report: &WorldCompatReport) -> String {
-        fn join_fields(fields: &[&'static str]) -> String {
-            if fields.is_empty() {
-                "none".to_owned()
-            } else {
-                fields.join(", ")
-            }
-        }
-
-        fn follow_up_hint(report: &WorldCompatReport) -> &'static str {
-            match report.review_result_status_hint {
-                Some("exception-accepted") if report.transition_window_open == Some(true) => {
-                    "if this accepted transition window later closes under load_legacy_mode = deny \
-                     and load_or_generate_sidecarless_mode = deny, append an explicit approved \
-                     follow-up on the same release-review-record instead of silently rewriting the \
-                     archived exception section; do not treat that posture change as \
-                     correction-only metadata clarification, and preserve or directly reference \
-                     archive_reference/source_record_state/post_archive_verification_reference in \
-                     that follow-up history; source_record_state must stay aligned with the \
-                     current approved terminal result_status recorded for that follow-up, while \
-                     prior_result_statuses remains the same-section history proof that the \
-                     superseded terminal state was exception-accepted"
-                },
-                Some("approved") => {
-                    "if this approved deny-rehearsal later rolls back or reopens the compat \
-                     window, append an explicit rolled-back follow-up on the same \
-                     release-review-record instead of silently rewriting the archived approved \
-                     section; do not treat that posture change as correction-only metadata \
-                     clarification, and preserve or directly reference \
-                     archive_reference/source_record_state/post_archive_verification_reference in \
-                     that follow-up history; source_record_state must stay aligned with the \
-                     current rolled-back terminal result_status recorded for that follow-up, while \
-                     prior_result_statuses remains the same-section history proof that the \
-                     superseded terminal state was approved"
-                },
-                _ => {
-                    "preserve any later world-compat decision changes as append-only follow-up \
-                     history on the same release-review-record instead of rewriting archived \
-                     terminal sections; archived follow-up history must preserve or directly \
-                     reference archive_reference/source_record_state/\
-                     post_archive_verification_reference; source_record_state stays aligned with \
-                     the current follow-up terminal result_status, while same-section \
-                     prior_result_statuses provides the history proof for any superseded terminal \
-                     state"
-                },
-            }
-        }
-
-        let result_status_hint = report
-            .review_result_status_hint
-            .unwrap_or("hint-unavailable");
-        let same_section_archive_receipt_required = report
-            .same_section_archive_receipt_required
-            .map(|required| required.to_string())
-            .unwrap_or_else(|| "unknown".to_owned());
-        let same_section_post_archive_verification_required = report
-            .same_section_post_archive_verification_required
-            .map(|required| required.to_string())
-            .unwrap_or_else(|| "unknown".to_owned());
-
         format!(
-            "review dedicated world compatibility status in /health/world-compat before rollout: \
-             {}; result_status_hint={}; terminal_record_fields=[{}]; \
-             archive_receipt_fields_when_terminal=[{}]; \
-             post_archive_writeback_fields_after_archive=[{}]; \
-             archive_correlation_dimensions_when_terminal=[{}]; \
-             same_section_archive_receipt_required={}; \
-             same_section_post_archive_verification_required={}; follow_up_action={}",
+            "clear dedicated world compatibility failure in /health/world-compat before rollout: \
+             {}; strict modern world contracts do not permit transitional exception windows or \
+             follow-up approval paths during preflight",
             report.detail,
-            result_status_hint,
-            join_fields(&report.required_terminal_record_fields),
-            join_fields(&report.required_archive_receipt_fields_when_terminal),
-            join_fields(&report.required_post_archive_writeback_fields_after_archive),
-            join_fields(&report.required_archive_correlation_dimensions_when_terminal),
-            same_section_archive_receipt_required,
-            same_section_post_archive_verification_required,
-            follow_up_hint(report),
         )
     }
 
@@ -821,9 +750,8 @@ impl HealthState {
                     signal: "world-compat",
                     success_status: StatusCode::OK.as_u16(),
                     failure_status: None,
-                    semantics: "machine-readable runtime world compatibility posture and \
-                                effective recipe fingerprint surface, including strict load \
-                                fallback and transitional review signals for dedicated startup",
+                    semantics: "machine-readable strict modern world contract status and \
+                                effective recipe fingerprint surface for dedicated startup",
                 },
                 HealthEndpointContract {
                     path: "/health/preflight",
@@ -895,7 +823,7 @@ impl HealthState {
                         consumption: entry.consumption.as_str(),
                         authority_scope: query_surface_active.then_some("discovery-hint-only"),
                         published_protocol_fields: if query_surface_active {
-                            veloren_query_server::proto::PUBLISHED_SERVER_INFO_FIELDS.to_vec()
+                            veldr_query_server::proto::PUBLISHED_SERVER_INFO_FIELDS.to_vec()
                         } else {
                             Vec::new()
                         },
@@ -1112,54 +1040,6 @@ impl HealthState {
         }
     }
 
-    #[cfg(feature = "worldgen")]
-    fn world_compat_transition_window_open(
-        load_legacy_mode: &str,
-        load_or_generate_sidecarless_mode: &str,
-    ) -> bool {
-        load_legacy_mode == "allow" || load_or_generate_sidecarless_mode == "allow"
-    }
-
-    #[cfg(feature = "worldgen")]
-    fn world_compat_review_result_status_hint(
-        transition_window_open: bool,
-        requires_operator_review: bool,
-    ) -> Option<&'static str> {
-        if transition_window_open {
-            Some("exception-accepted")
-        } else if requires_operator_review {
-            None
-        } else {
-            Some("approved")
-        }
-    }
-
-    #[cfg(feature = "worldgen")]
-    fn world_compat_required_terminal_record_fields(
-        review_result_status_hint: Option<&'static str>,
-    ) -> Vec<&'static str> {
-        match review_result_status_hint {
-            Some("approved") => vec!["rollback_reference"],
-            Some("exception-accepted") => vec!["exception_reason", "rollback_reference"],
-            _ => Vec::new(),
-        }
-    }
-
-    #[cfg(feature = "worldgen")]
-    fn world_compat_required_archive_receipt_fields_when_terminal() -> Vec<&'static str> {
-        release_review_archive_receipt_field_names()
-    }
-
-    #[cfg(feature = "worldgen")]
-    fn world_compat_required_post_archive_writeback_fields_after_archive() -> Vec<&'static str> {
-        release_review_post_archive_writeback_field_names()
-    }
-
-    #[cfg(feature = "worldgen")]
-    fn world_compat_required_archive_correlation_dimensions_when_terminal() -> Vec<&'static str> {
-        release_review_archive_correlation_dimensions("world-compat")
-    }
-
     pub(super) fn world_compat_report(&self) -> WorldCompatReport {
         #[cfg(not(feature = "worldgen"))]
         {
@@ -1170,14 +1050,6 @@ impl HealthState {
                 detail: "world generation is disabled for this build, so no world file \
                          compatibility contract applies"
                     .to_owned(),
-                transition_window_open: None,
-                review_result_status_hint: None,
-                required_terminal_record_fields: Vec::new(),
-                required_archive_receipt_fields_when_terminal: Vec::new(),
-                required_post_archive_writeback_fields_after_archive: Vec::new(),
-                required_archive_correlation_dimensions_when_terminal: Vec::new(),
-                same_section_archive_receipt_required: None,
-                same_section_post_archive_verification_required: None,
                 configured_mode: None,
                 load_legacy_mode: None,
                 load_or_generate_sidecarless_mode: None,
@@ -1207,38 +1079,16 @@ impl HealthState {
                     RuntimeObservabilityContext::WorldCompat(context) => {
                         let requires_operator_review =
                             entry.state != RuntimeObservabilityState::Healthy;
-                        let transition_window_open = Self::world_compat_transition_window_open(
-                            &context.load_legacy_mode,
-                            &context.load_or_generate_sidecarless_mode,
-                        );
-                        let review_result_status_hint =
-                            Self::world_compat_review_result_status_hint(
-                                transition_window_open,
-                                requires_operator_review,
-                            );
 
                         WorldCompatReport {
                             status: if requires_operator_review {
-                                "world-compat-review-required"
+                                "world-compat-blocked"
                             } else {
                                 "world-compat-clear"
                             },
                             environment: self.environment,
                             requires_operator_review,
                             detail: entry.detail,
-                            transition_window_open: Some(transition_window_open),
-                            review_result_status_hint,
-                            required_terminal_record_fields:
-                                Self::world_compat_required_terminal_record_fields(
-                                    review_result_status_hint,
-                                ),
-                            required_archive_receipt_fields_when_terminal:
-                                Self::world_compat_required_archive_receipt_fields_when_terminal(),
-                            required_post_archive_writeback_fields_after_archive: Self::world_compat_required_post_archive_writeback_fields_after_archive(),
-                            required_archive_correlation_dimensions_when_terminal:
-                                Self::world_compat_required_archive_correlation_dimensions_when_terminal(),
-                            same_section_archive_receipt_required: Some(true),
-                            same_section_post_archive_verification_required: Some(true),
                             configured_mode: Some(context.configured_mode),
                             load_legacy_mode: Some(context.load_legacy_mode),
                             load_or_generate_sidecarless_mode: Some(
@@ -1266,14 +1116,6 @@ impl HealthState {
                         detail: "world compatibility runtime surface is present but did not \
                                  publish structured compatibility context"
                             .to_owned(),
-                        transition_window_open: None,
-                        review_result_status_hint: None,
-                        required_terminal_record_fields: Vec::new(),
-                        required_archive_receipt_fields_when_terminal: Vec::new(),
-                        required_post_archive_writeback_fields_after_archive: Vec::new(),
-                        required_archive_correlation_dimensions_when_terminal: Vec::new(),
-                        same_section_archive_receipt_required: None,
-                        same_section_post_archive_verification_required: None,
                         configured_mode: None,
                         load_legacy_mode: None,
                         load_or_generate_sidecarless_mode: None,
@@ -1296,14 +1138,6 @@ impl HealthState {
                     detail: "dedicated startup did not publish a world compatibility status \
                              surface"
                         .to_owned(),
-                    transition_window_open: None,
-                    review_result_status_hint: None,
-                    required_terminal_record_fields: Vec::new(),
-                    required_archive_receipt_fields_when_terminal: Vec::new(),
-                    required_post_archive_writeback_fields_after_archive: Vec::new(),
-                    required_archive_correlation_dimensions_when_terminal: Vec::new(),
-                    same_section_archive_receipt_required: None,
-                    same_section_post_archive_verification_required: None,
                     configured_mode: None,
                     load_legacy_mode: None,
                     load_or_generate_sidecarless_mode: None,
@@ -1333,7 +1167,7 @@ impl HealthState {
         let ready = self.readiness_report();
         let backup = self.backup_report();
         let recovery_drill = self.recovery_drill_report();
-        let public_entry_handoff = compatibility_contract.public_entry_handoff.clone();
+        let public_realm_handoff = compatibility_contract.public_realm_handoff.clone();
         let world_compat_report = compatibility_contract.world_compat.clone();
         let (world_compat, world_compat_review_detail) =
             Self::world_compat_preflight_component_from_report(world_compat_report.clone());
@@ -1373,11 +1207,11 @@ impl HealthState {
                 requires_operator_review: false,
             },
             PreflightComponentReport {
-                signal: public_entry_handoff.signal,
+                signal: public_realm_handoff.signal,
                 endpoint: "/health/compatibility",
-                status: public_entry_handoff.status,
-                blocking: public_entry_handoff.release_blocked,
-                requires_operator_review: public_entry_handoff.requires_operator_review,
+                status: public_realm_handoff.status,
+                blocking: public_realm_handoff.release_blocked,
+                requires_operator_review: public_realm_handoff.requires_operator_review,
             },
             world_compat,
             chunk_lifecycle,
@@ -1425,7 +1259,7 @@ impl HealthState {
                     })
                 } else if component.requires_operator_review {
                     let reason = match component.signal {
-                        "public-entry-handoff" => {
+                        "public-realm-handoff" => {
                             "inspect the Public entry handoff contract and record cutover / \
                              rollback review fields before rollout"
                         },
@@ -1493,39 +1327,36 @@ impl HealthState {
             });
         }
 
-        if public_entry_handoff.release_blocked {
+        if public_realm_handoff.release_blocked {
             operator_review_items.push(PreflightReviewItem {
-                kind: "public-entry-handoff-blocked",
+                kind: "public-realm-handoff-blocked",
                 blocking: true,
                 detail: format!(
                     "non-local Public rollout requires external auth authority, but the \
                      authoritative handshake auth mode is {}. Inspect /health/compatibility \
                      before rollout",
-                    public_entry_handoff.expected_handshake_auth_mode
+                    public_realm_handoff.expected_handshake_auth_mode
                 ),
             });
-        } else if public_entry_handoff.requires_operator_review {
-            operator_review_items.extend(repo_bundled_official_entry_snapshot_review_items(
-                &public_entry_handoff.repo_bundled_official_entry_snapshot,
+        } else if public_realm_handoff.requires_operator_review {
+            operator_review_items.extend(repo_bundled_public_realm_snapshot_review_items(
+                &public_realm_handoff.repo_bundled_public_realm_snapshot,
             ));
-            operator_review_items.push(public_entry_handoff_review_item());
+            operator_review_items.push(public_realm_handoff_review_item());
             review_decision_contracts.push(
-                public_entry_handoff_preflight_review_decision_contract(&public_entry_handoff),
+                public_realm_handoff_preflight_review_decision_contract(&public_realm_handoff),
             );
         }
 
         if let Some(detail) = world_compat_review_detail {
             operator_review_items.push(PreflightReviewItem {
-                kind: "world-compat-review",
-                blocking: false,
+                kind: "world-compat-blocked",
+                blocking: true,
                 detail: Self::format_world_compat_preflight_review_detail(&WorldCompatReport {
                     detail,
                     ..world_compat_report.clone()
                 }),
             });
-            review_decision_contracts.push(world_compat_preflight_review_decision_contract(
-                &world_compat_report,
-            ));
         }
 
         if let Some(detail) = chunk_lifecycle_review_detail {
@@ -1603,18 +1434,18 @@ impl HealthState {
             release_blocked,
             requires_operator_review,
             development_stage_closure_status: compatibility_contract
-                .public_entry_handoff
+                .public_realm_handoff
                 .development_stage_closure_status,
             real_cutover_execution_status: compatibility_contract
-                .public_entry_handoff
+                .public_realm_handoff
                 .real_cutover_execution_status,
             remaining_external_execution_dependencies: compatibility_contract
-                .public_entry_handoff
+                .public_realm_handoff
                 .remaining_external_execution_dependencies
                 .clone(),
-            repo_bundled_official_entry_snapshot: compatibility_contract
-                .public_entry_handoff
-                .repo_bundled_official_entry_snapshot
+            repo_bundled_public_realm_snapshot: compatibility_contract
+                .public_realm_handoff
+                .repo_bundled_public_realm_snapshot
                 .clone(),
             components,
             blocking_signals,
@@ -1665,7 +1496,7 @@ impl HealthState {
                         "tick_time_hist",
                         "chunks_count",
                         "entity_count",
-                        "veloren_build_info",
+                        "caldrayne_build_info",
                     ],
                     rollout_use: "watch the steady-state gameplay loop and coarse world pressure \
                                   during rollout and incident review",
@@ -2641,20 +2472,20 @@ fn file_check(name: impl Into<String>, path: &Path, required: bool) -> HealthChe
     }
 }
 
-fn public_entry_handoff_review_item() -> PreflightReviewItem {
+fn public_realm_handoff_review_item() -> PreflightReviewItem {
     PreflightReviewItem {
-        kind: "public-entry-handoff-review",
+        kind: "public-realm-handoff-review",
         blocking: false,
-        detail: "verify the shipped Public client artifact reference plus bundled official_entry \
-                 artifact identity, official_entry.server_address, official_entry.auth_server, \
-                 and official_entry transport flags against the intended Public rollout target; \
+        detail: "verify the shipped Public client artifact reference plus bundled public realm \
+                 artifact identity, bundled server address, bundled auth pin, and bundled \
+                 transport flags against the intended Public rollout target; \
                  exact-match the bundled auth pin against the authoritative handshake \
                  auth_provider from /health/compatibility; use the repo/local bundled baseline \
                  snapshot only as an advisory comparison when it is available, and still record \
                  the client-exported bundled target posture/gap reasons, target environment, \
                  compatibility generation, ready/backup/drill evidence references, rollback \
                  reference, rollback Public client artifact reference, and rollback bundled \
-                 official_entry artifact identity using /health/compatibility, /health/ready, \
+                 public realm artifact identity using /health/compatibility, /health/ready, \
                  /health/backup, and /health/recovery/drill before reopening Public traffic; \
                  after terminal archive handoff completes, append post_archive verification \
                  fields on the same external review section instead of treating archive receipt \
@@ -2663,60 +2494,60 @@ fn public_entry_handoff_review_item() -> PreflightReviewItem {
     }
 }
 
-fn public_entry_handoff_preflight_review_decision_contract(
-    public_entry_handoff: &PublicEntryHandoffReport,
+fn public_realm_handoff_preflight_review_decision_contract(
+    public_realm_handoff: &PublicRealmHandoffReport,
 ) -> PreflightReviewDecisionContract {
-    let required_decision_field_contracts = if public_entry_handoff
+    let required_decision_field_contracts = if public_realm_handoff
         .required_external_review_field_contracts
         .is_empty()
     {
-        public_entry_handoff_required_review_field_contracts()
+        public_realm_handoff_required_review_field_contracts()
     } else {
-        public_entry_handoff
+        public_realm_handoff
             .required_external_review_field_contracts
             .clone()
     };
-    let required_decision_fields = if public_entry_handoff
+    let required_decision_fields = if public_realm_handoff
         .required_external_review_fields
         .is_empty()
     {
         external_record_field_names(&required_decision_field_contracts)
     } else {
-        public_entry_handoff.required_external_review_fields.clone()
+        public_realm_handoff.required_external_review_fields.clone()
     };
-    let exception_record_field_contracts = public_entry_handoff_exception_field_contracts();
-    let public_entry_transition_contract = public_entry_handoff
-        .public_entry_transition_contract
+    let exception_record_field_contracts = public_realm_handoff_exception_field_contracts();
+    let public_realm_transition_contract = public_realm_handoff
+        .public_realm_transition_contract
         .clone()
-        .or_else(|| Some(public_entry_transition_contract()));
-    let public_entry_lifecycle_transition_contract = public_entry_handoff
-        .public_entry_lifecycle_transition_contract
+        .or_else(|| Some(public_realm_transition_contract()));
+    let public_realm_lifecycle_transition_contract = public_realm_handoff
+        .public_realm_lifecycle_transition_contract
         .clone()
-        .or_else(|| Some(public_entry_lifecycle_transition_contract()));
-    let section_instance_validation_contract = public_entry_handoff
+        .or_else(|| Some(public_realm_lifecycle_transition_contract()));
+    let section_instance_validation_contract = public_realm_handoff
         .section_instance_validation_contract
         .clone()
         .or_else(|| {
-            Some(public_entry_section_instance_validation_contract(
+            Some(public_realm_section_instance_validation_contract(
                 &required_decision_field_contracts,
             ))
         });
-    let required_authority_pairing_checks = if public_entry_handoff
+    let required_authority_pairing_checks = if public_realm_handoff
         .required_authority_pairing_checks
         .is_empty()
     {
-        public_entry_authority_pairing_checks()
+        public_realm_authority_pairing_checks()
     } else {
-        public_entry_handoff
+        public_realm_handoff
             .required_authority_pairing_checks
             .clone()
     };
-    let terminal_states_requiring_archive_receipt = public_entry_lifecycle_transition_contract
+    let terminal_states_requiring_archive_receipt = public_realm_lifecycle_transition_contract
         .as_ref()
         .map(|contract| contract.terminal_states_requiring_archive_receipt.clone())
         .unwrap_or_default();
     let archive_handoff_contract = release_review_record_archive_handoff_contract(
-        "public-entry-handoff",
+        "public-realm-handoff",
         "release-review-record reached a terminal Public cutover decision state with the bundled \
          artifact review, required evidence references, and rollback path recorded where \
          applicable",
@@ -2725,7 +2556,7 @@ fn public_entry_handoff_preflight_review_decision_contract(
     );
     let post_archive_writeback_fields = release_review_post_archive_writeback_field_names();
     let section_record_template = release_review_section_template_contract(
-        "public-entry-handoff",
+        "public-realm-handoff",
         "draft",
         &required_decision_field_contracts,
         &exception_record_field_contracts,
@@ -2740,7 +2571,7 @@ fn public_entry_handoff_preflight_review_decision_contract(
         ],
     );
     let minimum_section_example = release_review_section_example_contract(
-        "public-entry-handoff",
+        "public-realm-handoff",
         "cutover-approved",
         &required_decision_field_contracts,
         vec![
@@ -2751,14 +2582,14 @@ fn public_entry_handoff_preflight_review_decision_contract(
         ],
     );
     let section_execution_workflow =
-        release_review_section_execution_workflow("public-entry-handoff");
+        release_review_section_execution_workflow("public-realm-handoff");
     let terminal_mutation_contract = release_review_terminal_mutation_contract(
-        "public-entry-handoff",
+        "public-realm-handoff",
         &archive_handoff_contract,
         &post_archive_writeback_fields,
     );
     let execution_boundary_contract = release_review_record_execution_boundary_contract(
-        "public-entry-handoff",
+        "public-realm-handoff",
         &required_decision_field_contracts,
         &exception_record_field_contracts,
         &archive_handoff_contract,
@@ -2768,9 +2599,9 @@ fn public_entry_handoff_preflight_review_decision_contract(
         .map(validator_integration_readiness_summary);
 
     PreflightReviewDecisionContract {
-        signal: "public-entry-handoff",
+        signal: "public-realm-handoff",
         review_owner: "release-operator",
-        decision_scope: "bundled Public official entry server/auth pin handoff for non-local \
+        decision_scope: "bundled Public public realm server/auth pin handoff for non-local \
                          rollout",
         current_result_status_hint: None,
         current_terminal_record_fields: Vec::new(),
@@ -2793,38 +2624,38 @@ fn public_entry_handoff_preflight_review_decision_contract(
         ),
         archive_handoff_contract,
         retention_contract: release_review_record_retention_contract(
-            "public-entry-handoff",
+            "public-realm-handoff",
             &post_archive_writeback_fields,
         ),
         terminal_mutation_contract,
-        public_entry_transition_contract,
-        public_entry_lifecycle_transition_contract,
+        public_realm_transition_contract,
+        public_realm_lifecycle_transition_contract,
         section_instance_validation_contract,
         validator_integration_readiness_summary,
         authority_pairing_checks: required_authority_pairing_checks,
         execution_boundary_contract,
-        result_status_model: public_entry_handoff_result_status_model(),
+        result_status_model: public_realm_handoff_result_status_model(),
         section_record_template,
         minimum_section_example,
         section_execution_workflow,
         accepted_exception_follow_up: vec![
-            "public-entry-handoff currently does not support exception-accepted as a valid \
+            "public-realm-handoff currently does not support exception-accepted as a valid \
              terminal/archive lifecycle; keep exception records informational only until a \
              dedicated exception path is formalized",
         ],
         external_record_owner: "release-operator",
         external_record_authority: "external-release-tracker",
         decision_reference_kind: "release-review-record",
-        exception_reference_kind: "public-entry-handoff-exception-record",
+        exception_reference_kind: "public-realm-handoff-exception-record",
         local_contract_role: "minimum-schema-only",
-        supporting_endpoints: public_entry_handoff_supporting_endpoints(public_entry_handoff),
+        supporting_endpoints: public_realm_handoff_supporting_endpoints(public_realm_handoff),
     }
 }
 
-fn public_entry_handoff_supporting_endpoints(
-    public_entry_handoff: &PublicEntryHandoffReport,
+fn public_realm_handoff_supporting_endpoints(
+    public_realm_handoff: &PublicRealmHandoffReport,
 ) -> Vec<PreflightSupportingEndpoint> {
-    public_entry_handoff
+    public_realm_handoff
         .supporting_health_endpoints
         .iter()
         .map(|endpoint| match *endpoint {
@@ -2834,7 +2665,7 @@ fn public_entry_handoff_supporting_endpoints(
                 owner: "release-operator",
                 purpose: "compare authoritative handshake auth mode, target environment, \
                           compatibility generation, and query auth_required hint with the \
-                          external bundled official_entry review record",
+                          external bundled public realm review record",
                 related_findings: Vec::new(),
             },
             "/health/ready" => PreflightSupportingEndpoint {
@@ -2861,7 +2692,7 @@ fn public_entry_handoff_supporting_endpoints(
                 related_findings: Vec::new(),
             },
             _ => PreflightSupportingEndpoint {
-                signal: "public-entry-supporting-contract",
+                signal: "public-realm-supporting-contract",
                 endpoint,
                 owner: "release-operator",
                 purpose: "consume the supporting health contract required for external Public \
@@ -2870,159 +2701,6 @@ fn public_entry_handoff_supporting_endpoints(
             },
         })
         .collect()
-}
-
-fn world_compat_preflight_review_decision_contract(
-    report: &WorldCompatReport,
-) -> PreflightReviewDecisionContract {
-    fn minimum_world_compat_example_status(report: &WorldCompatReport) -> &'static str {
-        match report.review_result_status_hint {
-            Some("approved") => "rolled-back",
-            _ => "approved",
-        }
-    }
-
-    let required_decision_field_contracts = world_compat_required_decision_field_contracts();
-    let exception_record_field_contracts = world_compat_exception_field_contracts();
-    let archive_handoff_contract = release_review_record_archive_handoff_contract(
-        "world-compat",
-        "release-review-record reached a terminal world compatibility review state with the \
-         runtime audit tuple, decision, and rollback path recorded where applicable",
-        vec!["approved", "exception-accepted", "rejected", "rolled-back"],
-        vec!["approved", "exception-accepted", "rejected", "rolled-back"],
-    );
-    let post_archive_writeback_fields = release_review_post_archive_writeback_field_names();
-    let section_record_template = release_review_section_template_contract(
-        "world-compat",
-        "draft",
-        &required_decision_field_contracts,
-        &exception_record_field_contracts,
-        &archive_handoff_contract,
-        &post_archive_writeback_fields,
-        vec![
-            "keep world-compat review in the same release-review-record as the rest of the \
-             rollout unit",
-            "copy runtime world compatibility truth exactly from /health/world-compat; use \
-             unrecorded only when the runtime surface itself did not publish structured context",
-            "exception fields are only required when a world compatibility gap is explicitly \
-             accepted or when a rollback is recorded",
-        ],
-    );
-    let minimum_section_example = release_review_section_example_contract(
-        "world-compat",
-        minimum_world_compat_example_status(report),
-        &required_decision_field_contracts,
-        vec![
-            "illustrative only; replace example recipe hashes, topology ids, preset ids, and \
-             release references with the real runtime values under review",
-        ],
-    );
-    let section_execution_workflow = release_review_section_execution_workflow("world-compat");
-    let terminal_mutation_contract = release_review_terminal_mutation_contract(
-        "world-compat",
-        &archive_handoff_contract,
-        &post_archive_writeback_fields,
-    );
-    let execution_boundary_contract = release_review_record_execution_boundary_contract(
-        "world-compat",
-        &required_decision_field_contracts,
-        &exception_record_field_contracts,
-        &archive_handoff_contract,
-    );
-    let section_instance_validation_contract =
-        world_compat_section_instance_validation_contract(&required_decision_field_contracts);
-    let validator_integration_readiness_summary =
-        validator_integration_readiness_summary(&section_instance_validation_contract);
-
-    PreflightReviewDecisionContract {
-        signal: "world-compat",
-        review_owner: "release-operator",
-        decision_scope: "dedicated world compatibility runtime review and rollback posture for \
-                         the rollout world state",
-        current_result_status_hint: report.review_result_status_hint,
-        current_terminal_record_fields: report.required_terminal_record_fields.clone(),
-        required_archive_receipt_fields_when_terminal: report
-            .required_archive_receipt_fields_when_terminal
-            .clone(),
-        required_post_archive_writeback_fields_after_archive: report
-            .required_post_archive_writeback_fields_after_archive
-            .clone(),
-        required_archive_correlation_dimensions_when_terminal: report
-            .required_archive_correlation_dimensions_when_terminal
-            .clone(),
-        same_section_archive_receipt_required: report
-            .same_section_archive_receipt_required
-            .unwrap_or(
-                archive_handoff_contract.terminal_section_not_complete_without_archive_receipt,
-            ),
-        same_section_post_archive_verification_required: report
-            .same_section_post_archive_verification_required
-            .unwrap_or(true),
-        required_decision_fields: external_record_field_names(&required_decision_field_contracts),
-        required_decision_field_contracts: required_decision_field_contracts.clone(),
-        exception_record_fields: external_record_field_names(&exception_record_field_contracts),
-        exception_record_field_contracts,
-        record_lifecycle_contract: release_review_record_lifecycle_contract(
-            &required_decision_field_contracts,
-        ),
-        archive_handoff_contract,
-        retention_contract: release_review_record_retention_contract(
-            "world-compat",
-            &post_archive_writeback_fields,
-        ),
-        terminal_mutation_contract,
-        public_entry_transition_contract: None,
-        public_entry_lifecycle_transition_contract: None,
-        section_instance_validation_contract: Some(section_instance_validation_contract),
-        validator_integration_readiness_summary: Some(validator_integration_readiness_summary),
-        authority_pairing_checks: Vec::new(),
-        execution_boundary_contract,
-        result_status_model: world_compat_review_result_status_model(),
-        section_record_template,
-        minimum_section_example,
-        section_execution_workflow,
-        accepted_exception_follow_up: vec![
-            "record the explicit rollback reference before accepting a world compatibility gap",
-            "if the accepted transition window later closes under load_legacy_mode = deny and \
-             load_or_generate_sidecarless_mode = deny, append an explicit approved follow-up on \
-             the same release-review-record instead of silently rewriting the archived exception \
-             section, and preserve or directly reference archive_reference, source_record_state, \
-             and post_archive_verification_reference in that follow-up history; \
-             source_record_state must stay aligned with the current approved terminal \
-             result_status recorded for that follow-up, while prior_result_statuses remains the \
-             same-section proof that the superseded terminal state was exception-accepted",
-            "if an approved deny-rehearsal later rolls back, append an explicit rolled-back \
-             follow-up on the same release-review-record, preserve the reviewed recipe and \
-             topology fingerprint on that follow-up history, and preserve or directly reference \
-             archive_reference, source_record_state, and post_archive_verification_reference; \
-             source_record_state must stay aligned with the current rolled-back terminal \
-             result_status recorded for that follow-up, while prior_result_statuses remains the \
-             same-section proof that the superseded terminal state was approved",
-        ],
-        external_record_owner: "release-operator",
-        external_record_authority: "external-release-tracker",
-        decision_reference_kind: "release-review-record",
-        exception_reference_kind: "world-compat-exception-record",
-        local_contract_role: "minimum-schema-only",
-        supporting_endpoints: vec![
-            PreflightSupportingEndpoint {
-                signal: "world-compat",
-                endpoint: "/health/world-compat",
-                owner: "release-operator",
-                purpose: "record the dedicated world compatibility status, audit tuple, and world \
-                          recipe fingerprint before approving rollout",
-                related_findings: Vec::new(),
-            },
-            PreflightSupportingEndpoint {
-                signal: "compatibility-contract",
-                endpoint: "/health/compatibility",
-                owner: "release-operator",
-                purpose: "cross-check that the dedicated world-compat surface stays aligned with \
-                          the broader compatibility contract during rollout review",
-                related_findings: Vec::new(),
-            },
-        ],
-    }
 }
 
 fn governance_preflight_review_decision_contract(
@@ -3046,7 +2724,7 @@ fn governance_preflight_review_decision_contract(
         &archive_handoff_contract,
         &post_archive_writeback_fields,
         vec![
-            "keep governance review in the same release-review-record as public-entry-handoff and \
+            "keep governance review in the same release-review-record as public-realm-handoff and \
              management-auth for the rollout unit",
             "exception fields are only required when governance exceptions are accepted",
         ],
@@ -3106,8 +2784,8 @@ fn governance_preflight_review_decision_contract(
             &post_archive_writeback_fields,
         ),
         terminal_mutation_contract,
-        public_entry_transition_contract: None,
-        public_entry_lifecycle_transition_contract: None,
+        public_realm_transition_contract: None,
+        public_realm_lifecycle_transition_contract: None,
         section_instance_validation_contract: Some(section_instance_validation_contract),
         validator_integration_readiness_summary: Some(validator_integration_readiness_summary),
         authority_pairing_checks: Vec::new(),
@@ -3210,8 +2888,8 @@ fn management_auth_preflight_review_decision_contract() -> PreflightReviewDecisi
             &post_archive_writeback_fields,
         ),
         terminal_mutation_contract,
-        public_entry_transition_contract: None,
-        public_entry_lifecycle_transition_contract: None,
+        public_realm_transition_contract: None,
+        public_realm_lifecycle_transition_contract: None,
         section_instance_validation_contract: Some(section_instance_validation_contract),
         validator_integration_readiness_summary: Some(validator_integration_readiness_summary),
         authority_pairing_checks: Vec::new(),
@@ -3249,7 +2927,7 @@ fn validator_integration_readiness_summary(
     }
 }
 
-fn public_entry_external_execution_dependencies(
+fn public_realm_external_execution_dependencies(
     applies_to_non_local_public_rollout: bool,
     release_blocked: bool,
     authoritative_auth_mode: common_net::msg::ServerAuthMode,
@@ -3305,12 +2983,12 @@ fn public_entry_external_execution_dependencies(
             blocks_real_cutover: true,
             current_stage_status: "external-material-required",
             detail: "the real shipped Public client artifact, rollback client artifact, bundled \
-                     official_entry material, and rollout-specific rollback path are not created \
+                     public realm material, and rollout-specific rollback path are not created \
                      or frozen by this local process, so module C can close its development-stage \
                      contract without them but cannot claim a real non-local Public cutover"
                 .to_owned(),
             operator_next_step: "freeze the forward and rollback client artifacts, review the \
-                                 bundled official_entry payload, and attach the rollout-specific \
+                                 bundled public realm payload, and attach the rollout-specific \
                                  references to the external release review record",
             supporting_endpoints: vec![
                 "/health/compatibility",
@@ -3347,12 +3025,12 @@ fn runtime_auth_mode(authoritative_auth_provider: Option<&str>) -> common_net::m
 }
 
 fn query_server_environment_str(
-    environment: veloren_query_server::proto::ServerEnvironment,
+    environment: veldr_query_server::proto::ServerEnvironment,
 ) -> &'static str {
     match environment {
-        veloren_query_server::proto::ServerEnvironment::Local => "local",
-        veloren_query_server::proto::ServerEnvironment::Test => "test",
-        veloren_query_server::proto::ServerEnvironment::Production => "production",
+        veldr_query_server::proto::ServerEnvironment::Local => "local",
+        veldr_query_server::proto::ServerEnvironment::Test => "test",
+        veldr_query_server::proto::ServerEnvironment::Production => "production",
     }
 }
 

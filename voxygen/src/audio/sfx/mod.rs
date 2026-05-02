@@ -2,13 +2,13 @@
 //! playback at the requested position and volume
 //!
 //! The game's sfx are managed through a configuration which lives in the
-//! codebase under `/assets/voxygen/audio/sfx.ron`.
+//! codebase under `/assets/veldr/audio/sfx.ron`.
 //!
 //! If there are errors while reading or deserialising the configuration file, a
 //! warning is logged and sfx will be disabled.
 //!
 //! Each entry in the configuration consists of an
-//! [SfxEvent](../../../veloren_common/event/enum.SfxEvent.html) item, with some
+//! [SfxEvent](../../../veldr_common/event/enum.SfxEvent.html) item, with some
 //! additional information to allow playback:
 //! - `files` - the paths to the `.wav` files to be played for the sfx. minus
 //!   the file extension. This can be a single item if the same sound can be
@@ -24,18 +24,18 @@
 //! ```ignore
 //! Run(Grass): ( // depends on underfoot block
 //!    files: [
-//!        "voxygen.audio.sfx.footsteps.stepgrass_1",
-//!        "voxygen.audio.sfx.footsteps.stepgrass_2",
-//!        "voxygen.audio.sfx.footsteps.stepgrass_3",
-//!        "voxygen.audio.sfx.footsteps.stepgrass_4",
-//!        "voxygen.audio.sfx.footsteps.stepgrass_5",
-//!        "voxygen.audio.sfx.footsteps.stepgrass_6",
+//!        "veldr.audio.sfx.footsteps.stepgrass_1",
+//!        "veldr.audio.sfx.footsteps.stepgrass_2",
+//!        "veldr.audio.sfx.footsteps.stepgrass_3",
+//!        "veldr.audio.sfx.footsteps.stepgrass_4",
+//!        "veldr.audio.sfx.footsteps.stepgrass_5",
+//!        "veldr.audio.sfx.footsteps.stepgrass_6",
 //!    ],
 //!    threshold: 1.6, // travelled distance before next play
 //! ),
 //! Wield(Sword): ( // depends on the player's weapon
 //!    files: [
-//!        "voxygen.audio.sfx.weapon.sword_out",
+//!        "veldr.audio.sfx.weapon.sword_out",
 //!    ],
 //!    threshold: 0.5, // wait 0.5s between plays
 //! ),
@@ -44,7 +44,7 @@
 //!
 //! These items (for example, the `Wield(Sword)` occasionally depend on some
 //! property which varies in game. The
-//! [SfxEvent](../../../veloren_common/event/enum.SfxEvent.html) documentation
+//! [SfxEvent](../../../veldr_common/event/enum.SfxEvent.html) documentation
 //! provides links to those variables, some examples are provided her for longer
 //! items:
 //!
@@ -52,22 +52,22 @@
 //! // An inventory action
 //! Inventory(Dropped): (
 //!     files: [
-//!        "voxygen.audio.sfx.footsteps.stepgrass_4",
+//!        "veldr.audio.sfx.footsteps.stepgrass_4",
 //!    ],
 //!    threshold: 0.5,
 //! ),
 //! // An inventory action which depends upon the item
 //! Inventory(Consumed(Apple)): (
 //!    files: [
-//!        "voxygen.audio.sfx.inventory.consumable.apple",
+//!        "veldr.audio.sfx.inventory.consumable.apple",
 //!    ],
 //!    threshold: 0.5
 //! ),
 //! // An attack ability which depends on the weapon
 //! Attack(DashMelee, Sword): (
 //!     files: [
-//!         "voxygen.audio.sfx.weapon.sword_dash_01",
-//!         "voxygen.audio.sfx.weapon.sword_dash_02",
+//!         "veldr.audio.sfx.weapon.sword_dash_01",
+//!         "veldr.audio.sfx.weapon.sword_dash_02",
 //!     ],
 //!     threshold: 1.2,
 //! ),
@@ -963,7 +963,7 @@ impl SfxMgr {
     }
 
     fn load_sfx_items() -> AssetHandle<SfxTriggers> {
-        SfxTriggers::load_or_insert_with("voxygen.audio.sfx", |error| {
+        SfxTriggers::load_or_insert_with("veldr.audio.sfx", |error| {
             warn!(
                 "Error reading sfx config file, sfx will not be available: {:#?}",
                 error
@@ -984,14 +984,14 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     #[test]
-    fn test_load_sfx_triggers() { let _ = SfxTriggers::load_expect("voxygen.audio.sfx"); }
+    fn test_load_sfx_triggers() { let _ = SfxTriggers::load_expect("veldr.audio.sfx"); }
 
     #[test]
     fn new_sfx_credited() {
-        let sfx_path = assets::ASSETS_PATH.join(std::path::PathBuf::from("voxygen/audio/sfx/"));
+        let sfx_path = assets::ASSETS_PATH.join(std::path::PathBuf::from("veldr/audio/sfx/"));
         sfx_path.try_exists().unwrap_or_else(|_| {
             panic!(
-                "{}/voxygen/audio/sfx does not exist",
+                "{}/veldr/audio/sfx does not exist",
                 assets::ASSETS_PATH.display()
             )
         });

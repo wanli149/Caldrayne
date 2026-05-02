@@ -2,7 +2,7 @@
 ///
 /// # Example
 /// ```
-/// use veloren_common::match_some;
+/// use veldr_common::match_some;
 ///
 /// let x = 5;
 /// let res = match_some!(x,

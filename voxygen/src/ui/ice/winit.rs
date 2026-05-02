@@ -1,5 +1,5 @@
 // Copied and adapted from `iced_winit` (MIT licensed)
-// Original version at https://github.com/Imberflur/iced/tree/veloren-winit-0.28/winit
+// Original version at https://github.com/Imberflur/iced/tree/veldr-winit-0.28/winit
 
 use iced::{Event, Point, keyboard, mouse, touch, window};
 use winit::{event::WindowEvent, keyboard::NamedKey};

@@ -12,9 +12,9 @@ If you are working from this Caldrayne repository, the local flake commands
 below are the primary path. The upstream [Cachix](https://cachix.org) cache may
 still save time with shared dependencies:
 ```shell
-nix shell nixpkgs#cachix -c cachix use veloren-nix
+nix shell nixpkgs#cachix -c cachix use veldr-nix
 # or if you don't have flakes:
-nix-shell -p cachix --run "cachix use veloren-nix"
+nix-shell -p cachix --run "cachix use veldr-nix"
 ```
 
 As this repository uses `git-lfs`, please make sure `git-lfs` is in your path.
@@ -35,21 +35,21 @@ nixpkgs.
 
 If you just want to run the game without installing it, you can do so with:
 ```shell
-# Caldrayne desktop client (technical package id: veloren-voxygen):
+# Caldrayne desktop client (technical package id: veldr-voxygen):
 nix run github:wanli149/Caldrayne
-# Caldrayne dedicated server CLI (technical package id: veloren-server-cli):
-nix run github:wanli149/Caldrayne#veloren-server-cli
+# Caldrayne dedicated server CLI (technical package id: veldr-server-cli):
+nix run github:wanli149/Caldrayne#veldr-server-cli
 # or if you have a local repo
 nix run
-nix run .#veloren-server-cli
+nix run .#veldr-server-cli
 ```
 
 Current packaging stance:
 
-- `veloren-voxygen` is the current technical desktop client package family.
+- `veldr-voxygen` is the current technical desktop client package family.
 - `Public` and `Dev` are two runtime product modes of that same client family, not two separate install products.
 - Flake outputs suffixed with `-dev` are development build-profile outputs, not a second desktop client product.
-- Technical names such as `veloren-voxygen`, `veloren-server-cli`, `veloren-voxygen-dev`, and `veloren-server-cli-dev` are currently retained as compatibility-oriented package/output identifiers, not brand names.
+- Technical names such as `veldr-voxygen`, `veldr-server-cli`, `veldr-voxygen-dev`, and `veldr-server-cli-dev` are currently retained as compatibility-oriented package/output identifiers, not brand names.
 - The `-dev` outputs are development convenience surfaces and should not be treated as long-term player-facing install product names.
 
 For local or private deployments, the server examples in this repository
@@ -60,16 +60,16 @@ To install the game into your user profile:
 # Caldrayne desktop client:
 nix profile install github:wanli149/Caldrayne
 # Caldrayne dedicated server CLI:
-nix profile install github:wanli149/Caldrayne#veloren-server-cli
+nix profile install github:wanli149/Caldrayne#veldr-server-cli
 # or if you have a local repo:
 nix profile install
-nix profile install .#veloren-server-cli
+nix profile install .#veldr-server-cli
 ```
 
 To install (for example) Voxygen on your system, the NixOS configuration (if
 you use a flake based setup) could look something like this:
 
-Technical package names such as `veloren-voxygen` and `veloren-server-cli`
+Technical package names such as `veldr-voxygen` and `veldr-server-cli`
 remain unchanged here for compatibility with the current build graph.
 ```nix
 { description = "NixOS configuration with flakes";
@@ -87,7 +87,7 @@ remain unchanged here for compatibility with the current build graph.
           nixpkgs.overlays = [
             # ...
             (final: prev: {
-              inherit (caldrayne.packages."${system}") veloren-voxygen;
+              inherit (caldrayne.packages."${system}") veldr-voxygen;
             })
           ];
 
@@ -100,7 +100,7 @@ remain unchanged here for compatibility with the current build graph.
         # some module
         ({ pkgs, ... }: {
           environment.systemPackages = [
-            pkgs.veloren-voxygen
+            pkgs.veldr-voxygen
           ];
         })
         # ...
@@ -117,9 +117,9 @@ You can do this to run the game without installing it (you will need a local clo
 # build the game
 nix-build nix/default.nix
 # run the desktop client
-./result/bin/veloren-voxygen
+./result/bin/veldr-voxygen
 # or run the dedicated server CLI
-./result-2/bin/veloren-server-cli
+./result-2/bin/veldr-server-cli
 ```
 
 To install Voxygen and server CLI into user profile:
@@ -134,15 +134,15 @@ You'll need to use [nixGL](https://github.com/guibou/nixGL) to be able to run th
 ## For Intel and AMD:
 # Install it (sadly no flake yet)
 nix-env -f https://github.com/guibou/nixGL/archive/master.tar.gz -iA nixGLIntel
-nixGLIntel veloren-voxygen
+nixGLIntel veldr-voxygen
 ## For Nvidia:
 # Install it
 nix-env -f https://github.com/guibou/nixGL/archive/master.tar.gz -iA nixGLNvidia
-nixGLNvidia veloren-voxygen
+nixGLNvidia veldr-voxygen
 ## For Nvidia driver on hybrid hardware:
 # Install it
 nix-env -f https://github.com/guibou/nixGL/archive/master.tar.gz -iA nixGLNvidiaBumblebee
-nixGLNvidiaBumblebee veloren-voxygen
+nixGLNvidiaBumblebee veldr-voxygen
 ```
 
 ## Usage for developers
@@ -163,12 +163,12 @@ You can use the `bundle` subcommand to bundle the game into a single distro-agno
 # Caldrayne desktop client:
 nix bundle github:wanli149/Caldrayne
 # Caldrayne dedicated server CLI:
-nix bundle github:wanli149/Caldrayne#veloren-server-cli
+nix bundle github:wanli149/Caldrayne#veldr-server-cli
 ## for local repo:
 # Caldrayne desktop client:
-nix bundle .#veloren-voxygen
+nix bundle .#veldr-voxygen
 # Caldrayne dedicated server CLI:
-nix bundle .#veloren-server-cli
+nix bundle .#veldr-server-cli
 ```
 
 ### Without flakes

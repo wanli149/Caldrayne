@@ -1,9 +1,9 @@
 [package]
-name = "veloren-voxygen"
+name = "veldr-voxygen"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-default-run = "veloren-voxygen"
+default-run = "caldrayne"
 # Cargo thinks it should build the voxygen binary even when a specific bench is specified for building
 # Uncomment below and comment out default-run if you want to avoid this
 # autobins = false
@@ -14,9 +14,9 @@ workspace = true
 [package.metadata.nix]
 build = true
 app = true
-desktopFile = "./assets/voxygen/io.github.wanli149.caldrayne.desktop"
+desktopFile = "./assets/veldr/io.github.wanli149.caldrayne.desktop"
 longDescription = """
-Caldrayne Online is a multiplayer voxel RPG built on the Veloren open-source foundation.
+Caldrayne Online is a multiplayer voxel RPG derived from the Veloren open-source foundation.
 It is inspired by games such as Cube World, The Legend of Zelda: Breath of the Wild, Dwarf Fortress and Minecraft.
 
 This package includes the Caldrayne Online desktop client.
@@ -49,20 +49,20 @@ default-dev = ["default-common", "singleplayer"]
 default = ["default-dev", "hot-reloading", "shaderc-from-source", "egui-ui"]
 
 [dependencies]
-client = { package = "veloren-client", path = "../client" }
-common = { package = "veloren-common", path = "../common" }
-common-base = { package = "veloren-common-base", path = "../common/base" }
-common-ecs = { package = "veloren-common-ecs", path = "../common/ecs" }
-common-frontend = { package = "veloren-common-frontend", path = "../common/frontend" }
-common-i18n = { package = "veloren-common-i18n", path = "../common/i18n" }
-common-net = { package = "veloren-common-net", path = "../common/net" }
-common-state = { package = "veloren-common-state", path = "../common/state" }
-common-systems = { package = "veloren-common-systems", path = "../common/systems" }
+client = { package = "veldr-client", path = "../client" }
+common = { package = "veldr-common", path = "../common" }
+common-base = { package = "veldr-common-base", path = "../common/base" }
+common-ecs = { package = "veldr-common-ecs", path = "../common/ecs" }
+common-frontend = { package = "veldr-common-frontend", path = "../common/frontend" }
+common-i18n = { package = "veldr-common-i18n", path = "../common/i18n" }
+common-net = { package = "veldr-common-net", path = "../common/net" }
+common-state = { package = "veldr-common-state", path = "../common/state" }
+common-systems = { package = "veldr-common-systems", path = "../common/systems" }
 
-anim = { package = "veloren-voxygen-anim", path = "anim" }
-i18n = { package = "veloren-client-i18n", path = "../client/i18n" }
-i18n-helpers = { package = "veloren-voxygen-i18n-helpers", path = "i18n-helpers" }
-voxygen-egui = { package = "veloren-voxygen-egui", path = "egui", optional = true }
+anim = { package = "veldr-voxygen-anim", path = "anim" }
+i18n = { package = "veldr-client-i18n", path = "../client/i18n" }
+i18n-helpers = { package = "veldr-voxygen-i18n-helpers", path = "i18n-helpers" }
+voxygen-egui = { package = "veldr-voxygen-egui", path = "egui", optional = true }
 
 # Graphics
 winit = { version = "0.30.12", features = ["serde"] }
@@ -95,7 +95,7 @@ levenshtein = "1.0.5"
 gilrs = { version = "0.11.0", features = ["serde-serialize"] }
 
 # Singleplayer
-server = { package = "veloren-server", path = "../server", optional = true, default-features = false, features = [
+server = { package = "veldr-server", path = "../server", optional = true, default-features = false, features = [
     "worldgen",
 ] }
 
@@ -162,7 +162,7 @@ mumble-link = "0.2.0"
 
 [dev-dependencies]
 criterion = { workspace = true }
-world = { package = "veloren-world", path = "../world" }
+world = { package = "veldr-world", path = "../world" }
 rayon = { workspace = true }
 
 [[bench]]
@@ -176,3 +176,7 @@ required-features = []
 [[bin]]
 name = "cmd_doc_gen"
 required-features = ["bin_cmd_doc_gen"]
+
+[[bin]]
+name = "caldrayne"
+path = "src/main.rs"

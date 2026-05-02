@@ -2,7 +2,7 @@ use common::comp::Player;
 use common_ecs::{Origin, Phase, System};
 use specs::{Join, Read, ReadStorage};
 use tracing::warn;
-use veloren_query_server::proto::ServerInfo;
+use veldr_query_server::proto::ServerInfo;
 
 use crate::{Settings, Tick, build_query_server_info, client::Client, settings::ServerIdentity};
 

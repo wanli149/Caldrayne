@@ -31,7 +31,7 @@ impl LoadingAnimation {
             } else {
                 frames.push(
                     ui.add_graphic(Graphic::Image(
-                        assets::Image::load("voxygen.element.not_found")
+                        assets::Image::load("veldr.element.not_found")
                             .unwrap_or_else(|_| panic!("Missing asset '{}'", frame_path))
                             .read()
                             .to_image(),
@@ -58,9 +58,9 @@ pub struct Screen {
 impl Screen {
     pub fn new(ui: &mut Ui) -> Self {
         let animations = Ron::<Vec<(f32, Vec<String>)>>::load_cloned(
-            "voxygen.element.animation.loaders.manifest",
+            "veldr.element.animation.loaders.manifest",
         )
-        .expect("Missing loader manifest file 'voxygen/element/animation/loaders/manifest.ron'")
+        .expect("Missing loader manifest file 'veldr/element/animation/loaders/manifest.ron'")
         .into_inner();
         Self {
             cancel_button: Default::default(),
@@ -134,7 +134,7 @@ impl Screen {
                 let stage = {
                     let stage_message = match init_stage {
                         DetailedInitializationStage::PreparingHost(host_kind) => match host_kind {
-                            HostKind::PublicOfficial
+                            HostKind::PublicRealm
                             | HostKind::DevDirectConnect
                             | HostKind::DevLocalDedicated => {
                                 i18n.get_msg("hud-init-stage-multiplayer")

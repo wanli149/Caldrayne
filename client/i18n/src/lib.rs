@@ -226,7 +226,7 @@ impl assets::Asset for Language {
         // At the moment, covers all languages except Korean, so Korean uses
         // different font here.
         fonts.entry("universal".to_owned()).or_insert(Font {
-            asset_key: "voxygen.font.GoNotoCurrent".to_owned(),
+            asset_key: "veldr.font.GoNotoCurrent".to_owned(),
             scale_ratio: 1.0,
         });
 
@@ -238,7 +238,7 @@ impl assets::Asset for Language {
     }
 }
 
-/// The central data structure to handle localization in Veloren
+/// The central data structure to handle localization in Caldrayne
 // inherit Copy + Clone from AssetHandle (what?)
 #[derive(Copy, Clone)]
 pub struct LocalizationHandle {
@@ -249,7 +249,7 @@ pub struct LocalizationHandle {
 }
 
 /// Read [`LocalizationGuard`]
-// arbitrary choice to minimize changing all of veloren
+    // arbitrary choice to minimize changing all of veldr
 pub type Localization = LocalizationGuard;
 
 /// RAII guard returned from [`LocalizationHandle::read()`], resembles
@@ -590,8 +590,8 @@ impl LocalizationHandle {
     /// # Errors
     /// Returns error if active of fallback language can't be loaded
     pub fn load(specifier: &str) -> Result<Self, assets::Error> {
-        let default_key = ["voxygen.i18n.", REFERENCE_LANG].concat();
-        let language_key = ["voxygen.i18n.", specifier].concat();
+        let default_key = ["veldr.i18n.", REFERENCE_LANG].concat();
+        let language_key = ["veldr.i18n.", specifier].concat();
         let is_default = language_key == default_key;
         let active = Language::load(&language_key)?;
         Ok(Self {
@@ -632,10 +632,10 @@ impl assets::Asset for LocalizationList {
     }
 }
 
-/// Load all the available languages located in the voxygen asset directory
+/// Load all the available languages located in the veldr asset directory
 #[must_use]
 pub fn list_localizations() -> Vec<LanguageMetadata> {
-    let LocalizationList(list) = LocalizationList::load_expect_cloned("voxygen.i18n");
+    let LocalizationList(list) = LocalizationList::load_expect_cloned("veldr.i18n");
     list
 }
 
@@ -668,7 +668,7 @@ mod tests {
         use analysis::{Language, ReferenceLanguage};
 
         let root = assets::find_root().unwrap();
-        let i18n_directory = root.join("assets/voxygen/i18n");
+        let i18n_directory = root.join("assets/veldr/i18n");
         let reference = ReferenceLanguage::at(&i18n_directory.join(REFERENCE_LANG));
 
         let list = list_localizations();

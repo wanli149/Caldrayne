@@ -1,6 +1,6 @@
 use clap::{Arg, Command};
 use common_assets::find_root;
-use veloren_client_i18n::{
+use veldr_client_i18n::{
     REFERENCE_LANG,
     analysis::{Language, ReferenceLanguage},
 };
@@ -16,7 +16,7 @@ fn main() {
         .get_matches();
 
     let root = find_root().unwrap();
-    let i18n_directory = root.join("assets/voxygen/i18n");
+    let i18n_directory = root.join("assets/veldr/i18n");
     let reference = ReferenceLanguage::at(&i18n_directory.join(REFERENCE_LANG));
 
     let code = args

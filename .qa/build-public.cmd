@@ -21,4 +21,4 @@ if exist "I:\Tools\Ninja\bin\ninja.exe" (
     set "PATH=I:\Tools\Ninja\bin;%PATH%"
 )
 set "CARGO_TARGET_DIR=J:\Caldrayne\.qa\build\public\target"
-"%CARGO_EXE%" rustc -p veloren-voxygen --bin veloren-voxygen --no-default-features --features "default-publish,hot-reloading,shaderc-from-source,egui-ui" -- -C link-arg=/DEBUG:NONE
+"%CARGO_EXE%" rustc -p veldr-voxygen --bin caldrayne --no-default-features --features "default-publish,hot-reloading,shaderc-from-source,egui-ui" -- -C link-arg=/DEBUG:NONE

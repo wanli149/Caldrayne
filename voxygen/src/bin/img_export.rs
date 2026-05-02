@@ -27,7 +27,7 @@ use rand_chacha::ChaChaRng;
 use vek::{Mat4, Quaternion, Vec2, Vec3};
 
 use common::assets::{AssetExt, AssetHandle};
-use veloren_voxygen::{
+use veldr_voxygen::{
     hud::item_imgs::{ImageSpec, ItemImagesSpec},
     scene::{
         CameraMode,
@@ -78,7 +78,7 @@ pub fn main() {
         };
         let mut img_count = 0;
         if args.all_items {
-            let manifest = ItemImagesSpec::load_expect("voxygen.item_image_manifest");
+            let manifest = ItemImagesSpec::load_expect("veldr.item_image_manifest");
             for (_, spec) in manifest.read().0.iter() {
                 let specifier = match spec {
                     ImageSpec::Vox(specifier, _, _) => specifier,
@@ -124,7 +124,7 @@ pub fn main() {
                 let img = draw_voxes(
                     &bones,
                     image_size,
-                    veloren_voxygen::ui::Transform {
+                    veldr_voxygen::ui::Transform {
                         ori: Quaternion::rotation_x(-90.0 * std::f32::consts::PI / 180.0)
                             .rotated_y(180.0 * std::f32::consts::PI / 180.0)
                             .rotated_z(0.0 * std::f32::consts::PI / 180.0),
@@ -133,7 +133,7 @@ pub fn main() {
                         orth: true,
                         stretch: false,
                     },
-                    veloren_voxygen::ui::SampleStrat::None,
+                    veldr_voxygen::ui::SampleStrat::None,
                     Vec3::new(0.0, 1.0, 1.0),
                 );
 

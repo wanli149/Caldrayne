@@ -287,8 +287,7 @@ fn external_section_snapshot_input_contract(
             "ordered-enum-string-array",
             "records prior result_status values from the same section when lifecycle history is \
              needed to prove that a follow-up state preserved the prior terminal history it is \
-             superseding, such as world-compat approved after exception-accepted or rolled-back \
-             after approved",
+             superseding",
         )],
         field_values_key: "field_values",
         always_present_field_values,
@@ -393,8 +392,7 @@ fn snapshot_template_contract(
                 "prior_result_statuses",
                 "<[prior-result-status,...]-when-required>",
                 "include only when the current result_status requires lifecycle history proof, \
-                 such as rolled-back or a world-compat follow-up that must prove which prior \
-                 terminal state it is superseding",
+                 such as rolled-back",
             ),
         ],
         field_value_entries: snapshot_template_field_value_entries(
@@ -410,15 +408,14 @@ fn snapshot_template_contract(
 
 fn snapshot_example_terminal_result_status(signal: &'static str) -> &'static str {
     match signal {
-        "public-entry-handoff" => "rolled-back",
+        "public-realm-handoff" => "rolled-back",
         _ => "approved",
     }
 }
 
 fn snapshot_example_prior_result_statuses(signal: &'static str) -> Option<&'static str> {
     match signal {
-        "public-entry-handoff" => Some("[\"cutover-approved\"]"),
-        "world-compat" => Some("[\"exception-accepted\"]"),
+        "public-realm-handoff" => Some("[\"cutover-approved\"]"),
         _ => None,
     }
 }
@@ -433,7 +430,7 @@ fn snapshot_field_value_example(
             "illustrative current section lifecycle state in the snapshot input",
         ),
         "archive_reference" => (
-            "archive://release-review/2026-05-01/public-entry-handoff-terminal",
+            "archive://release-review/2026-05-01/public-realm-handoff-terminal",
             "illustrative archive receipt reference",
         ),
         "archived_at_utc" => (
@@ -496,13 +493,12 @@ fn snapshot_example_field_value_entries(
 }
 
 fn snapshot_example_includes_field(
-    signal: &'static str,
+    _signal: &'static str,
     result_status: &'static str,
     field_name: &'static str,
 ) -> bool {
     match (result_status, field_name) {
         ("exception-accepted", _) => true,
-        ("approved", "rollback_reference") => signal == "world-compat",
         ("rolled-back", "rollback_reference") => true,
         ("approved" | "rolled-back", "exception_reason" | "compensating_controls") => false,
         _ => true,
@@ -663,10 +659,10 @@ fn validation_result_contract(
                 "highest_satisfied_stage may be lower than evaluated_stage when the snapshot does \
                  not yet satisfy the requested stage",
             ];
-            if signal == "public-entry-handoff" {
+            if signal == "public-realm-handoff" {
                 merged.push(
                     "failed_authority_pairing_check_ids is especially relevant for \
-                     public-entry-handoff because bundle/runtime authority mismatches are \
+                     public-realm-handoff because bundle/runtime authority mismatches are \
                      release-blocking",
                 );
             }
@@ -681,11 +677,11 @@ fn validation_result_example(
     notes: Vec<&'static str>,
 ) -> ExternalSectionValidationResultExampleContract {
     let highest_satisfied_stage = match signal {
-        "public-entry-handoff" => "post-archive-verified",
+        "public-realm-handoff" => "post-archive-verified",
         _ => "post-archive-verified",
     };
     let evaluated_result_status = match signal {
-        "public-entry-handoff" => "rolled-back",
+        "public-realm-handoff" => "rolled-back",
         _ => "approved",
     };
 
@@ -745,7 +741,7 @@ fn validation_result_example(
             ),
             example_field(
                 "failed_authority_pairing_check_ids",
-                if signal == "public-entry-handoff" {
+                if signal == "public-realm-handoff" {
                     "[]"
                 } else {
                     "[]"
@@ -808,13 +804,13 @@ pub(super) fn cutover_gap_reason_summary(gap_reasons: &[&'static str]) -> String
     }
 }
 
-pub(super) fn public_entry_cutover_material_checklist(
+pub(super) fn public_realm_cutover_material_checklist(
     environment: &'static str,
     authoritative_auth_mode: common_net::msg::ServerAuthMode,
     authoritative_auth_provider: Option<&str>,
-    repo_bundled_official_entry_snapshot: &RepoBundledOfficialEntrySnapshotReport,
+    repo_bundled_public_realm_snapshot: &RepoBundledPublicRealmSnapshotReport,
 ) -> Vec<CutoverMaterialChecklistItem> {
-    let repo_bundled_baseline = repo_bundled_official_entry_snapshot.baseline.as_ref();
+    let repo_bundled_baseline = repo_bundled_public_realm_snapshot.baseline.as_ref();
     let authoritative_auth_provider_detail = authoritative_auth_provider.unwrap_or("none");
 
     let bundled_artifact_review_detail = match repo_bundled_baseline {
@@ -828,10 +824,10 @@ pub(super) fn public_entry_cutover_material_checklist(
             cutover_gap_reason_summary(&baseline.non_local_cutover_gap_reasons)
         ),
         None => format!(
-            "repo/local bundled official_entry baseline is unavailable in-process (status={}); \
+            "repo/local bundled public realm baseline is unavailable in-process (status={}); \
              shipped Public client artifact review is the only authoritative bundle-side source \
              exposed here",
-            repo_bundled_official_entry_snapshot.status
+            repo_bundled_public_realm_snapshot.status
         ),
     };
 
@@ -852,7 +848,7 @@ pub(super) fn public_entry_cutover_material_checklist(
                                 provider
                             ),
                             "copy the shipped bundle auth pin and authoritative handshake \
-                             auth_provider into the same public-entry-handoff review section",
+                             auth_provider into the same public-realm-handoff review section",
                         )
                     },
                     (Some(bundled_auth_server), Some(provider)) => (
@@ -863,7 +859,7 @@ pub(super) fn public_entry_cutover_material_checklist(
                              pass until they converge",
                             bundled_auth_server, provider
                         ),
-                        "update bundled official_entry.auth_server so the shipped Public bundle \
+                        "update the bundled public realm auth pin so the shipped Public bundle \
                          pins the same auth authority as the target realm handshake",
                     ),
                     (Some(_), None) => (
@@ -885,7 +881,7 @@ pub(super) fn public_entry_cutover_material_checklist(
                              pass",
                             provider
                         ),
-                        "set bundled official_entry.auth_server to the target realm auth \
+                        "set the bundled public realm auth pin to the target realm auth \
                          authority before release review",
                     ),
                     (None, None) => (
@@ -903,10 +899,10 @@ pub(super) fn public_entry_cutover_material_checklist(
             None => (
                 CUTOVER_MATERIAL_STATUS_EXTERNAL_MATERIAL_REQUIRED,
                 format!(
-                    "repo/local bundled official_entry baseline is unavailable in-process \
+                    "repo/local bundled public realm baseline is unavailable in-process \
                      (status={}); external shipped bundle review must carry the auth pin evidence \
                      and exact-match validation against authoritative auth_provider {}",
-                    repo_bundled_official_entry_snapshot.status, authoritative_auth_provider_detail
+                    repo_bundled_public_realm_snapshot.status, authoritative_auth_provider_detail
                 ),
                 "capture the shipped bundle auth pin and authoritative handshake auth_provider in \
                  the external release review record",
@@ -934,16 +930,16 @@ pub(super) fn public_entry_cutover_material_checklist(
                     baseline.target_kind.as_str(),
                     cutover_gap_reason_summary(&baseline.non_local_cutover_gap_reasons)
                 ),
-                "replace bundled official_entry.server_address/auth posture until the bundle is a \
+                "replace the bundled public realm address/auth posture until the bundle is a \
                  non-local candidate with no remaining cutover gap reasons",
             ),
             None => (
                 CUTOVER_MATERIAL_STATUS_EXTERNAL_MATERIAL_REQUIRED,
                 format!(
-                    "repo/local bundled official_entry baseline is unavailable in-process \
+                    "repo/local bundled public realm baseline is unavailable in-process \
                      (status={}); external shipped bundle review must prove the bundle targets a \
                      non-local candidate and carries no remaining cutover gaps",
-                    repo_bundled_official_entry_snapshot.status
+                    repo_bundled_public_realm_snapshot.status
                 ),
                 "capture the shipped bundle target posture and gap reasons in the external \
                  release review record",
@@ -952,12 +948,12 @@ pub(super) fn public_entry_cutover_material_checklist(
 
     vec![
         cutover_material_checklist_item(
-            "bundled-public-entry-artifact-reviewed",
+            "bundled-public-realm-artifact-reviewed",
             "release-operator",
             "external-release-tracker + bundled-client-artifact-review + \
              client-exported-entry-contract",
             true,
-            "record the shipped Public client artifact reference plus the bundled official_entry \
+            "record the shipped Public client artifact reference plus the bundled public realm \
              artifact identity, server_address, auth_server, use_srv, use_quic, validate_tls, \
              bundled target kind, and non-local gap reasons for the exact Public client artifact \
              being considered",
@@ -966,7 +962,7 @@ pub(super) fn public_entry_cutover_material_checklist(
             CUTOVER_MATERIAL_STATUS_EXTERNAL_MATERIAL_REQUIRED,
             bundled_artifact_review_detail,
             "capture the shipped Public client artifact review and the client-exported bundled \
-             entry posture in the same public-entry-handoff section",
+             entry posture in the same public-realm-handoff section",
         ),
         cutover_material_checklist_item(
             "authoritative-runtime-target-confirmed",
@@ -996,7 +992,7 @@ pub(super) fn public_entry_cutover_material_checklist(
             "release-operator",
             "bundled-client-artifact-review + realm handshake auth_provider",
             true,
-            "bundled official_entry.auth_server must be non-empty for non-local Public rollout \
+            "the bundled public realm auth pin must be non-empty for non-local Public rollout \
              and must exactly match the authoritative handshake auth provider for the target realm",
             "current repo baseline cannot pass this check because bundled auth_server is None",
             external_auth_authority_status,
@@ -1057,34 +1053,34 @@ pub(super) fn public_entry_cutover_material_checklist(
             true,
             "same release-review-record must include rollback_reference, \
              rollback_public_client_artifact_reference, and \
-             rollback_bundled_official_entry_artifact_identity before cutover so the rollback \
+             rollback_bundled_public_realm_artifact_identity before cutover so the rollback \
              path plus the restored Public client artifact and entry material are already fixed \
              if traffic must be reverted",
             "rollback_reference is contractually required but still depends on external operator \
-             recording; rollback bundled official_entry material is not auto-filled in this repo",
+             recording; rollback bundled public realm material is not auto-filled in this repo",
             CUTOVER_MATERIAL_STATUS_EXTERNAL_MATERIAL_REQUIRED,
             "rollback path capture still depends on external operator recording because this \
              process does not auto-fill rollback_reference, rollback Public client artifact, or \
-             rollback bundled official_entry material into the authoritative review record"
+             rollback bundled public realm material into the authoritative review record"
                 .to_owned(),
             "fix rollback_reference, rollback_public_client_artifact_reference, and \
-             rollback_bundled_official_entry_artifact_identity in the same external review \
+             rollback_bundled_public_realm_artifact_identity in the same external review \
              section before cutover approval",
         ),
     ]
 }
 
-pub(super) fn public_entry_authority_pairing_checks() -> Vec<ExternalRecordAuthorityPairingCheck> {
+pub(super) fn public_realm_authority_pairing_checks() -> Vec<ExternalRecordAuthorityPairingCheck> {
     vec![
         authority_pairing_check(
             "bundled-artifact-vs-release-unit",
             vec![
                 "bundled_public_client_artifact_reference",
-                "bundled_official_entry_artifact_identity",
+                "bundled_public_realm_artifact_identity",
                 "release_reference",
             ],
             vec!["external-release-tracker", "bundled-client-artifact-review"],
-            "the shipped Public client artifact reference and the bundled official_entry artifact \
+            "the shipped Public client artifact reference and the bundled public realm artifact \
              identity recorded in the review must both belong to the same release_reference; do \
              not approve if the rollout record points at a different client bundle or a different \
              bundled entry payload",
@@ -1093,10 +1089,10 @@ pub(super) fn public_entry_authority_pairing_checks() -> Vec<ExternalRecordAutho
         authority_pairing_check(
             "bundled-target-transport-vs-runtime-contract",
             vec![
-                "bundled_official_entry_server_address",
-                "bundled_official_entry_use_srv",
-                "bundled_official_entry_use_quic",
-                "bundled_official_entry_validate_tls",
+                "bundled_public_realm_server_address",
+                "bundled_public_realm_use_srv",
+                "bundled_public_realm_use_quic",
+                "bundled_public_realm_validate_tls",
                 "target_runtime_environment",
                 "authoritative_compatibility_generation",
             ],
@@ -1110,7 +1106,7 @@ pub(super) fn public_entry_authority_pairing_checks() -> Vec<ExternalRecordAutho
         authority_pairing_check(
             "bundled-auth-pin-vs-handshake-authority",
             vec![
-                "bundled_official_entry_auth_server",
+                "bundled_public_realm_auth_server",
                 "expected_handshake_auth_mode",
                 "authoritative_handshake_auth_provider",
                 "query_auth_required_hint",
@@ -1141,30 +1137,30 @@ pub(super) fn public_entry_authority_pairing_checks() -> Vec<ExternalRecordAutho
             vec![
                 "rollback_reference",
                 "rollback_public_client_artifact_reference",
-                "rollback_bundled_official_entry_artifact_identity",
+                "rollback_bundled_public_realm_artifact_identity",
                 "release_reference",
             ],
             vec!["external-release-tracker"],
             "the same release review record must identify the rollback path, rollback Public \
-             client artifact reference, and rollback bundled official_entry artifact identity \
+             client artifact reference, and rollback bundled public realm artifact identity \
              that will be restored if this rollout unit is reverted",
             true,
         ),
     ]
 }
 
-pub(super) fn public_entry_transition_contract() -> PublicEntryTransitionContract {
-    PublicEntryTransitionContract {
-        transition_scope: "non-local Public official_entry cutover transition unit",
-        record_scope: "same public-entry-handoff section keyed by release_reference",
+pub(super) fn public_realm_transition_contract() -> PublicRealmTransitionContract {
+    PublicRealmTransitionContract {
+        transition_scope: "non-local Public public realm cutover transition unit",
+        record_scope: "same public-realm-handoff section keyed by release_reference",
         atomic_bundle_fields: vec![
             "bundled_public_client_artifact_reference",
-            "bundled_official_entry_artifact_identity",
-            "bundled_official_entry_server_address",
-            "bundled_official_entry_auth_server",
-            "bundled_official_entry_use_srv",
-            "bundled_official_entry_use_quic",
-            "bundled_official_entry_validate_tls",
+            "bundled_public_realm_artifact_identity",
+            "bundled_public_realm_server_address",
+            "bundled_public_realm_auth_server",
+            "bundled_public_realm_use_srv",
+            "bundled_public_realm_use_quic",
+            "bundled_public_realm_validate_tls",
             "bundled_target_kind",
             "bundled_target_is_non_local_candidate",
             "non_local_cutover_ready",
@@ -1183,35 +1179,35 @@ pub(super) fn public_entry_transition_contract() -> PublicEntryTransitionContrac
         atomic_rollback_restore_fields: vec![
             "rollback_reference",
             "rollback_public_client_artifact_reference",
-            "rollback_bundled_official_entry_artifact_identity",
+            "rollback_bundled_public_realm_artifact_identity",
         ],
         forbidden_partial_transitions: vec![
-            "do not publish a new official_entry.server_address without the matching auth pin and \
-             transport flags from the same shipped bundle review",
-            "do not move official_entry.auth_server without capturing the matching \
+            "do not publish a new bundled public realm server address without the matching auth \
+             pin and transport flags from the same shipped bundle review",
+            "do not move the bundled public realm auth pin without capturing the matching \
              authoritative_handshake_auth_provider and expected_handshake_auth_mode for the same \
              rollout unit",
             "do not reopen Public traffic before ready_report_status, backup_evidence_reference, \
              and recovery_drill_reference are linked for the same release_reference",
             "do not approve the bundle-side transition until rollback_reference, \
              rollback_public_client_artifact_reference, and \
-             rollback_bundled_official_entry_artifact_identity are fixed for the same rollout unit",
+             rollback_bundled_public_realm_artifact_identity are fixed for the same rollout unit",
         ],
         approval_gate: "reopen Public traffic only after bundle-side tuple, runtime gate, and \
                         rollback restore unit are all recorded on the same release_reference",
     }
 }
 
-pub(super) fn public_entry_lifecycle_transition_contract() -> PublicEntryLifecycleTransitionContract
+pub(super) fn public_realm_lifecycle_transition_contract() -> PublicRealmLifecycleTransitionContract
 {
     let evidence_linked_required_fields = vec![
         "bundled_public_client_artifact_reference",
-        "bundled_official_entry_artifact_identity",
-        "bundled_official_entry_server_address",
-        "bundled_official_entry_auth_server",
-        "bundled_official_entry_use_srv",
-        "bundled_official_entry_use_quic",
-        "bundled_official_entry_validate_tls",
+        "bundled_public_realm_artifact_identity",
+        "bundled_public_realm_server_address",
+        "bundled_public_realm_auth_server",
+        "bundled_public_realm_use_srv",
+        "bundled_public_realm_use_quic",
+        "bundled_public_realm_validate_tls",
         "bundled_target_kind",
         "bundled_target_is_non_local_candidate",
         "non_local_cutover_ready",
@@ -1230,12 +1226,12 @@ pub(super) fn public_entry_lifecycle_transition_contract() -> PublicEntryLifecyc
         "approval_decision",
         "rollback_reference",
         "rollback_public_client_artifact_reference",
-        "rollback_bundled_official_entry_artifact_identity",
+        "rollback_bundled_public_realm_artifact_identity",
         "result_status",
     ];
 
-    PublicEntryLifecycleTransitionContract {
-        lifecycle_scope: "public-entry-handoff approval-to-terminal lifecycle on the same \
+    PublicRealmLifecycleTransitionContract {
+        lifecycle_scope: "public-realm-handoff approval-to-terminal lifecycle on the same \
                           release-review-record section",
         initial_state: "draft",
         evidence_ready_state: "evidence-linked",
@@ -1245,13 +1241,13 @@ pub(super) fn public_entry_lifecycle_transition_contract() -> PublicEntryLifecyc
             "rolled-back",
         ],
         unsupported_paths: vec![
-            "exception-accepted is currently unsupported for public-entry-handoff; do not treat \
+            "exception-accepted is currently unsupported for public-realm-handoff; do not treat \
              exception fields as a valid terminal/archive path until a dedicated lifecycle is \
              formalized",
             "rolled-back is invalid before the same section was previously cutover-approved",
         ],
         transitions: vec![
-            PublicEntryLifecycleTransition {
+            PublicRealmLifecycleTransition {
                 from_state: "draft",
                 to_state: "evidence-linked",
                 approval_decision: None,
@@ -1264,7 +1260,7 @@ pub(super) fn public_entry_lifecycle_transition_contract() -> PublicEntryLifecyc
                      contract requirements still fail for the same release_reference",
                 ],
             },
-            PublicEntryLifecycleTransition {
+            PublicRealmLifecycleTransition {
                 from_state: "evidence-linked",
                 to_state: "cutover-approved",
                 approval_decision: Some("approved"),
@@ -1277,7 +1273,7 @@ pub(super) fn public_entry_lifecycle_transition_contract() -> PublicEntryLifecyc
                      Public traffic is reopened",
                 ],
             },
-            PublicEntryLifecycleTransition {
+            PublicRealmLifecycleTransition {
                 from_state: "evidence-linked",
                 to_state: "cutover-rejected",
                 approval_decision: Some("rejected"),
@@ -1290,7 +1286,7 @@ pub(super) fn public_entry_lifecycle_transition_contract() -> PublicEntryLifecyc
                      remains audit-complete and reversible",
                 ],
             },
-            PublicEntryLifecycleTransition {
+            PublicRealmLifecycleTransition {
                 from_state: "cutover-approved",
                 to_state: "rolled-back",
                 approval_decision: Some("approved"),
@@ -1358,85 +1354,66 @@ pub(super) fn review_record_field_placeholder(
 ) -> &'static str {
     match (signal, name) {
         (_, "reviewed_by") => "<release-operator-id>",
-        ("public-entry-handoff", "approval_decision") => "<approved|rejected>",
+        ("public-realm-handoff", "approval_decision") => "<approved|rejected>",
         (_, "approval_decision") => "<approved|rejected|exception-accepted>",
         (_, "decision_recorded_at_utc") => "<utc-timestamp>",
         (_, "result_status") => "<state-from-result_status_model>",
         (_, "release_reference") => "<release-reference>",
-        ("public-entry-handoff", "bundled_public_client_artifact_reference") => {
+        ("public-realm-handoff", "bundled_public_client_artifact_reference") => {
             "<public-client-release-artifact-ref>"
         },
-        ("public-entry-handoff", "bundled_official_entry_artifact_identity") => {
-            "<official-entry-content-sha256-v1:...>"
+        ("public-realm-handoff", "bundled_public_realm_artifact_identity") => {
+            "<caldrayne-public-realm-sha256-v1:...>"
         },
-        ("public-entry-handoff", "bundled_official_entry_server_address") => {
+        ("public-realm-handoff", "bundled_public_realm_server_address") => {
             "<public-realm-host-or-socket>"
         },
-        ("public-entry-handoff", "bundled_official_entry_auth_server") => {
+        ("public-realm-handoff", "bundled_public_realm_auth_server") => {
             "<https://auth.realm.example-or-null>"
         },
-        ("public-entry-handoff", "bundled_official_entry_use_srv") => "<true|false>",
-        ("public-entry-handoff", "bundled_official_entry_use_quic") => "<true|false>",
-        ("public-entry-handoff", "bundled_official_entry_validate_tls") => "<true|false>",
-        ("public-entry-handoff", "bundled_target_kind") => {
+        ("public-realm-handoff", "bundled_public_realm_use_srv") => "<true|false>",
+        ("public-realm-handoff", "bundled_public_realm_use_quic") => "<true|false>",
+        ("public-realm-handoff", "bundled_public_realm_validate_tls") => "<true|false>",
+        ("public-realm-handoff", "bundled_target_kind") => {
             "<missing|localhost-or-loopback|private-or-unique-local-ip|reserved-non-public-ip|named-host-candidate|public-ip-candidate>"
         },
-        ("public-entry-handoff", "bundled_target_is_non_local_candidate") => "<true|false>",
-        ("public-entry-handoff", "non_local_cutover_ready") => "<true|false>",
-        ("public-entry-handoff", "non_local_cutover_gap_reasons") => {
+        ("public-realm-handoff", "bundled_target_is_non_local_candidate") => "<true|false>",
+        ("public-realm-handoff", "non_local_cutover_ready") => "<true|false>",
+        ("public-realm-handoff", "non_local_cutover_gap_reasons") => {
             "<[]-or-gap-reason-list>"
         },
-        ("public-entry-handoff", "target_runtime_environment") => "<test|production>",
-        ("public-entry-handoff", "authoritative_compatibility_generation") => {
+        ("public-realm-handoff", "target_runtime_environment") => "<test|production>",
+        ("public-realm-handoff", "authoritative_compatibility_generation") => {
             "<u16-generation>"
         },
-        ("public-entry-handoff", "expected_handshake_auth_mode") => {
+        ("public-realm-handoff", "expected_handshake_auth_mode") => {
             "<no-external-auth|external-provider>"
         },
-        ("public-entry-handoff", "authoritative_handshake_auth_provider") => {
+        ("public-realm-handoff", "authoritative_handshake_auth_provider") => {
             "<https://auth.realm.example-or-null>"
         },
-        ("public-entry-handoff", "query_auth_required_hint") => "<true|false>",
-        ("public-entry-handoff", "ready_report_status") => "<ready-status>",
-        ("public-entry-handoff", "backup_evidence_reference") => {
+        ("public-realm-handoff", "query_auth_required_hint") => "<true|false>",
+        ("public-realm-handoff", "ready_report_status") => "<ready-status>",
+        ("public-realm-handoff", "backup_evidence_reference") => {
             "<backup-evidence-reference>"
         },
-        ("public-entry-handoff", "recovery_drill_reference") => {
+        ("public-realm-handoff", "recovery_drill_reference") => {
             "<recovery-drill-reference>"
         },
-        ("public-entry-handoff", "rollback_public_client_artifact_reference") => {
+        ("public-realm-handoff", "rollback_public_client_artifact_reference") => {
             "<rollback-public-client-release-artifact-ref>"
         },
-        ("public-entry-handoff", "rollback_bundled_official_entry_artifact_identity") => {
-            "<rollback-official-entry-content-sha256-v1:...>"
+        ("public-realm-handoff", "rollback_bundled_public_realm_artifact_identity") => {
+            "<rollback-caldrayne-public-realm-sha256-v1:...>"
         },
-        ("public-entry-handoff", "rollback_reference") => "<rollback-runbook-or-release-ref>",
-        ("public-entry-handoff", "bundled_auth_pin_review_reference") => {
+        ("public-realm-handoff", "rollback_reference") => "<rollback-runbook-or-release-ref>",
+        ("public-realm-handoff", "bundled_auth_pin_review_reference") => {
             "<review-note-reference>"
         },
-        ("world-compat", "world_compat_status") => {
-            "<world-compat-clear|world-compat-review-required|world-compat-unrecorded|world-compat-not-applicable>"
-        },
-        ("world-compat", "configured_mode") => "<configured-mode-or-unrecorded>",
-        ("world-compat", "load_legacy_mode") => "<load-legacy-mode-or-unrecorded>",
-        ("world-compat", "load_or_generate_sidecarless_mode") => {
-            "<load-or-generate-sidecarless-mode-or-unrecorded>"
-        },
-        ("world-compat", "compat_entry") => "<compat-entry-or-unrecorded>",
-        ("world-compat", "compat_decision") => "<compat-decision-or-unrecorded>",
-        ("world-compat", "compat_failure") => "<compat-failure-or-unrecorded>",
-        ("world-compat", "strict_load_contract_gap") => "<true|false|unrecorded>",
-        ("world-compat", "managed_recipe_sidecar_missing") => "<true|false|unrecorded>",
-        ("world-compat", "world_recipe_hash") => "<world-recipe-hash-or-unrecorded>",
-        ("world-compat", "chunk_recipe_hash") => "<chunk-recipe-hash-or-unrecorded>",
-        ("world-compat", "topology_id") => "<topology-id-or-unrecorded>",
-        ("world-compat", "preset_id") => "<preset-id-or-unrecorded>",
         (_, "post_archive_verified_by") => "<release-operator-id>",
         (_, "post_archive_verified_at_utc") => "<utc-timestamp>",
         (_, "post_archive_verification_result") => "<verified|needs-follow-up>",
         (_, "post_archive_verification_reference") => "<archive-review-note-or-ticket>",
-        ("world-compat", "exception_reason") => "<operator-rationale>",
-        ("world-compat", "rollback_reference") => "<rollback-runbook-or-release-ref>",
         ("governance-audit", "exception_reason") => "<operator-rationale>",
         ("governance-audit", "governance_note_reference") => "<governance-note-reference>",
         ("governance-audit", "rollback_reference") => "<rollback-runbook-or-release-ref>",
@@ -1453,8 +1430,8 @@ pub(super) fn review_record_field_completion_rule(
 ) -> &'static str {
     match (signal, name) {
         (_, "reviewed_by") => "record the human owner who made the review decision",
-        ("public-entry-handoff", "approval_decision") => {
-            "record approved or rejected only; public-entry-handoff does not currently support \
+        ("public-realm-handoff", "approval_decision") => {
+            "record approved or rejected only; public-realm-handoff does not currently support \
              exception-accepted as a valid lifecycle transition"
         },
         (_, "approval_decision") => {
@@ -1469,118 +1446,60 @@ pub(super) fn review_record_field_completion_rule(
         (_, "release_reference") => {
             "must match the rollout unit key used as the canonical external record id"
         },
-        ("public-entry-handoff", "bundled_public_client_artifact_reference") => {
+        ("public-realm-handoff", "bundled_public_client_artifact_reference") => {
             "record the exact shipped Public client release artifact reference whose bundled \
-             official_entry is under review"
+             public realm is under review"
         },
-        ("public-entry-handoff", "bundled_official_entry_artifact_identity") => {
-            "copy the exact artifact identity derived from the shipped bundled official_entry"
+        ("public-realm-handoff", "bundled_public_realm_artifact_identity") => {
+            "copy the exact artifact identity derived from the shipped bundled public realm"
         },
-        ("public-entry-handoff", "bundled_official_entry_server_address") => {
+        ("public-realm-handoff", "bundled_public_realm_server_address") => {
             "copy the exact bundled Public realm target under review"
         },
-        ("public-entry-handoff", "bundled_official_entry_auth_server") => {
+        ("public-realm-handoff", "bundled_public_realm_auth_server") => {
             "copy the exact bundled Public auth pin, using null only if the bundle truly has no \
              auth authority configured"
         },
-        ("public-entry-handoff", "bundled_official_entry_use_srv")
-        | ("public-entry-handoff", "bundled_official_entry_use_quic")
-        | ("public-entry-handoff", "bundled_official_entry_validate_tls") => {
+        ("public-realm-handoff", "bundled_public_realm_use_srv")
+        | ("public-realm-handoff", "bundled_public_realm_use_quic")
+        | ("public-realm-handoff", "bundled_public_realm_validate_tls") => {
             "copy the bundled transport policy from the shipped Public artifact"
         },
-        ("public-entry-handoff", "bundled_target_kind")
-        | ("public-entry-handoff", "bundled_target_is_non_local_candidate")
-        | ("public-entry-handoff", "non_local_cutover_ready")
-        | ("public-entry-handoff", "non_local_cutover_gap_reasons") => {
+        ("public-realm-handoff", "bundled_target_kind")
+        | ("public-realm-handoff", "bundled_target_is_non_local_candidate")
+        | ("public-realm-handoff", "non_local_cutover_ready")
+        | ("public-realm-handoff", "non_local_cutover_gap_reasons") => {
             "copy the client-exported interpretation of the bundled target posture"
         },
-        ("public-entry-handoff", "target_runtime_environment")
-        | ("public-entry-handoff", "authoritative_compatibility_generation")
-        | ("public-entry-handoff", "expected_handshake_auth_mode")
-        | ("public-entry-handoff", "authoritative_handshake_auth_provider")
-        | ("public-entry-handoff", "query_auth_required_hint") => {
+        ("public-realm-handoff", "target_runtime_environment")
+        | ("public-realm-handoff", "authoritative_compatibility_generation")
+        | ("public-realm-handoff", "expected_handshake_auth_mode")
+        | ("public-realm-handoff", "authoritative_handshake_auth_provider")
+        | ("public-realm-handoff", "query_auth_required_hint") => {
             "copy the authoritative rollout contract values from /health/compatibility"
         },
-        ("public-entry-handoff", "ready_report_status") => {
+        ("public-realm-handoff", "ready_report_status") => {
             "copy the observed ready status from /health/ready for the rollout unit"
         },
-        ("public-entry-handoff", "backup_evidence_reference") => {
+        ("public-realm-handoff", "backup_evidence_reference") => {
             "link the backup evidence record supporting this rollout"
         },
-        ("public-entry-handoff", "recovery_drill_reference") => {
+        ("public-realm-handoff", "recovery_drill_reference") => {
             "link a recovery drill record that reached a rollout-acceptable state"
         },
-        ("public-entry-handoff", "rollback_public_client_artifact_reference") => {
+        ("public-realm-handoff", "rollback_public_client_artifact_reference") => {
             "record the exact Public client release artifact reference that rollback will restore \
              if this rollout unit is reverted"
         },
-        ("public-entry-handoff", "rollback_bundled_official_entry_artifact_identity") => {
-            "record the exact bundled official_entry artifact identity that rollback will restore \
+        ("public-realm-handoff", "rollback_bundled_public_realm_artifact_identity") => {
+            "record the exact bundled public realm artifact identity that rollback will restore \
              if this rollout unit is reverted"
         },
-        ("public-entry-handoff", "rollback_reference") => {
+        ("public-realm-handoff", "rollback_reference") => {
             "record the rollback path before Public traffic is reopened"
         },
-        ("public-entry-handoff", "bundled_auth_pin_review_reference") => {
+        ("public-realm-handoff", "bundled_auth_pin_review_reference") => {
             "link the review note that justifies any auth pin exception"
-        },
-        ("world-compat", "world_compat_status") => {
-            "copy the exact status published by /health/world-compat for the rollout unit under \
-             review"
-        },
-        ("world-compat", "configured_mode") => {
-            "copy configured_mode from /health/world-compat, or record unrecorded if the runtime \
-             surface did not publish structured compatibility context"
-        },
-        ("world-compat", "load_legacy_mode") => {
-            "copy load_legacy_mode from /health/world-compat, or record unrecorded if the runtime \
-             surface did not publish structured compatibility context; allow means the reviewed \
-             rollout unit still keeps the transitional LoadLegacy admission window open, while \
-             deny marks the closed-posture rehearsal/default-flip candidate that future removal \
-             review depends on"
-        },
-        ("world-compat", "load_or_generate_sidecarless_mode") => {
-            "copy load_or_generate_sidecarless_mode from /health/world-compat, or record \
-             unrecorded if the runtime surface did not publish structured compatibility context; \
-             allow means the reviewed rollout unit still keeps sidecarless managed reuse open as a \
-             transitional path, while deny marks the closed-posture rehearsal/default-flip \
-             candidate that future removal review depends on"
-        },
-        ("world-compat", "compat_entry") => {
-            "copy compat_entry from /health/world-compat, or record unrecorded if structured \
-             context is unavailable"
-        },
-        ("world-compat", "compat_decision") => {
-            "copy compat_decision from /health/world-compat, or record unrecorded if structured \
-             context is unavailable"
-        },
-        ("world-compat", "compat_failure") => {
-            "copy compat_failure from /health/world-compat, or record unrecorded if structured \
-             context is unavailable"
-        },
-        ("world-compat", "strict_load_contract_gap") => {
-            "copy strict_load_contract_gap from /health/world-compat, or record unrecorded if \
-             structured context is unavailable"
-        },
-        ("world-compat", "managed_recipe_sidecar_missing") => {
-            "copy managed_recipe_sidecar_missing from /health/world-compat, or record unrecorded \
-             if structured context is unavailable"
-        },
-        ("world-compat", "world_recipe_hash") => {
-            "copy world_recipe_hash from /health/world-compat, or record unrecorded if the runtime \
-             surface did not publish the structured recipe fingerprint"
-        },
-        ("world-compat", "chunk_recipe_hash") => {
-            "copy chunk_recipe_hash from /health/world-compat, or record unrecorded if the runtime \
-             surface did not publish the structured recipe fingerprint"
-        },
-        ("world-compat", "topology_id") => {
-            "copy topology_id from /health/world-compat, or record unrecorded if the runtime \
-             surface did not publish structured topology context"
-        },
-        ("world-compat", "preset_id") => {
-            "copy preset_id from /health/world-compat, or record unrecorded if the runtime surface \
-             did not publish structured preset context"
         },
         (_, "post_archive_verified_by") => {
             "record who completed post-archive verification for the terminal review section"
@@ -1597,15 +1516,6 @@ pub(super) fn review_record_field_completion_rule(
         },
         ("governance-audit", "exception_reason") => {
             "record why the governance exception is being accepted"
-        },
-        ("world-compat", "exception_reason") => {
-            "record why the rollout proceeds despite world compatibility review findings"
-        },
-        ("world-compat", "rollback_reference") => {
-            "record the rollback runbook or release reference used to restore the last compatible \
-             world posture; required when the world-compat terminal path either accepts a \
-             transitional allow window, records an approved deny rehearsal/default-flip candidate, \
-             or documents a rolled-back outcome"
         },
         ("governance-audit", "governance_note_reference") => {
             "link the ticket or note that backs the governance decision"
@@ -1680,79 +1590,54 @@ pub(super) fn review_record_example_value(
     name: &'static str,
 ) -> &'static str {
     match (signal, name) {
-        ("world-compat", "result_status") => "approved",
-        ("world-compat", "release_reference") => "release-2026-05-01-world-compat-01",
         (_, "reviewed_by") => "ops-release-owner",
         (_, "approval_decision") => "approved",
         (_, "decision_recorded_at_utc") => "2026-05-01T08:15:00Z",
         (_, "result_status") => "cutover-approved",
         (_, "release_reference") => "release-2026-05-01-public-cutover-01",
-        ("public-entry-handoff", "bundled_public_client_artifact_reference") => {
+        ("public-realm-handoff", "bundled_public_client_artifact_reference") => {
             "artifact://public-client/release-2026-05-01-build-01"
         },
-        ("public-entry-handoff", "bundled_official_entry_artifact_identity") => {
-            "official-entry-content-sha256-v1:examplebundledeadbeef"
+        ("public-realm-handoff", "bundled_public_realm_artifact_identity") => {
+            "caldrayne-public-realm-sha256-v1:examplebundledeadbeef"
         },
-        ("public-entry-handoff", "bundled_official_entry_server_address") => {
+        ("public-realm-handoff", "bundled_public_realm_server_address") => {
             "prod.realm.example:14004"
         },
-        ("public-entry-handoff", "bundled_official_entry_auth_server") => {
+        ("public-realm-handoff", "bundled_public_realm_auth_server") => {
             "https://auth.realm.example"
         },
-        ("public-entry-handoff", "bundled_official_entry_use_srv") => "true",
-        ("public-entry-handoff", "bundled_official_entry_use_quic") => "true",
-        ("public-entry-handoff", "bundled_official_entry_validate_tls") => "true",
-        ("public-entry-handoff", "bundled_target_kind") => "named-host-candidate",
-        ("public-entry-handoff", "bundled_target_is_non_local_candidate") => "true",
-        ("public-entry-handoff", "non_local_cutover_ready") => "true",
-        ("public-entry-handoff", "non_local_cutover_gap_reasons") => "[]",
-        ("public-entry-handoff", "target_runtime_environment") => "production",
-        ("public-entry-handoff", "authoritative_compatibility_generation") => "104",
-        ("public-entry-handoff", "expected_handshake_auth_mode") => "external-provider",
-        ("public-entry-handoff", "authoritative_handshake_auth_provider") => {
+        ("public-realm-handoff", "bundled_public_realm_use_srv") => "true",
+        ("public-realm-handoff", "bundled_public_realm_use_quic") => "true",
+        ("public-realm-handoff", "bundled_public_realm_validate_tls") => "true",
+        ("public-realm-handoff", "bundled_target_kind") => "named-host-candidate",
+        ("public-realm-handoff", "bundled_target_is_non_local_candidate") => "true",
+        ("public-realm-handoff", "non_local_cutover_ready") => "true",
+        ("public-realm-handoff", "non_local_cutover_gap_reasons") => "[]",
+        ("public-realm-handoff", "target_runtime_environment") => "production",
+        ("public-realm-handoff", "authoritative_compatibility_generation") => "104",
+        ("public-realm-handoff", "expected_handshake_auth_mode") => "external-provider",
+        ("public-realm-handoff", "authoritative_handshake_auth_provider") => {
             "https://auth.realm.example"
         },
-        ("public-entry-handoff", "query_auth_required_hint") => "true",
-        ("public-entry-handoff", "ready_report_status") => "ready",
-        ("public-entry-handoff", "backup_evidence_reference") => {
+        ("public-realm-handoff", "query_auth_required_hint") => "true",
+        ("public-realm-handoff", "ready_report_status") => "ready",
+        ("public-realm-handoff", "backup_evidence_reference") => {
             "backup-evidence:release-2026-05-01-public-cutover-01"
         },
-        ("public-entry-handoff", "recovery_drill_reference") => {
+        ("public-realm-handoff", "recovery_drill_reference") => {
             "recovery-drill:2026-04-30-prod-restore"
         },
-        ("public-entry-handoff", "rollback_public_client_artifact_reference") => {
+        ("public-realm-handoff", "rollback_public_client_artifact_reference") => {
             "artifact://public-client/release-2026-04-18-build-03"
         },
-        ("public-entry-handoff", "rollback_bundled_official_entry_artifact_identity") => {
-            "official-entry-content-sha256-v1:previousbundlecafebabe"
+        ("public-realm-handoff", "rollback_bundled_public_realm_artifact_identity") => {
+            "caldrayne-public-realm-sha256-v1:previousbundlecafebabe"
         },
-        ("public-entry-handoff", "rollback_reference") => "runbook://public-cutover/rollback-01",
-        ("public-entry-handoff", "bundled_auth_pin_review_reference") => {
+        ("public-realm-handoff", "rollback_reference") => "runbook://public-cutover/rollback-01",
+        ("public-realm-handoff", "bundled_auth_pin_review_reference") => {
             "note://release-review/auth-pin-exception"
         },
-        ("world-compat", "world_compat_status") => "world-compat-clear",
-        ("world-compat", "configured_mode") => "record",
-        ("world-compat", "load_legacy_mode") => "deny",
-        ("world-compat", "load_or_generate_sidecarless_mode") => "deny",
-        ("world-compat", "compat_entry") => "load",
-        ("world-compat", "compat_decision") => "loaded_existing",
-        ("world-compat", "compat_failure") => "unrecorded",
-        ("world-compat", "strict_load_contract_gap") => "false",
-        ("world-compat", "managed_recipe_sidecar_missing") => "false",
-        ("world-compat", "world_recipe_hash") => "sha256:worldrecipeexampledeadbeef",
-        ("world-compat", "chunk_recipe_hash") => "sha256:chunkrecipeexamplecafebabe",
-        ("world-compat", "topology_id") => "toroidal-2d",
-        ("world-compat", "preset_id") => "default",
-        ("world-compat", "exception_reason") => {
-            "operator accepted a reviewed record-mode compatibility gap with rollback prepared"
-        },
-        ("world-compat", "archive_reference") => {
-            "archive://release-review/2026-05-01/public-entry-handoff-terminal"
-        },
-        ("world-compat", "post_archive_verification_reference") => {
-            "note://archive-review/release-2026-05-01"
-        },
-        ("world-compat", "rollback_reference") => "runbook://world-compat/rollback-01",
         ("governance-audit", "exception_reason") => {
             "temporary operator-approved exposure retained during scheduled migration window"
         },
@@ -1782,36 +1667,26 @@ pub(super) fn review_record_example_rationale(
              real decision"
         },
         (_, "release_reference") => "illustrative rollout unit key",
-        ("public-entry-handoff", "bundled_public_client_artifact_reference")
-        | ("public-entry-handoff", "rollback_public_client_artifact_reference") => {
+        ("public-realm-handoff", "bundled_public_client_artifact_reference")
+        | ("public-realm-handoff", "rollback_public_client_artifact_reference") => {
             "illustrative release artifact reference format; replace with your real shipped or \
              rollback Public client artifact id"
         },
-        ("public-entry-handoff", "bundled_official_entry_server_address")
-        | ("public-entry-handoff", "bundled_official_entry_auth_server")
-        | ("public-entry-handoff", "authoritative_handshake_auth_provider") => {
+        ("public-realm-handoff", "bundled_public_realm_server_address")
+        | ("public-realm-handoff", "bundled_public_realm_auth_server")
+        | ("public-realm-handoff", "authoritative_handshake_auth_provider") => {
             "uses RFC 2606 example hostnames instead of real production values"
         },
-        ("public-entry-handoff", "bundled_official_entry_artifact_identity") => {
+        ("public-realm-handoff", "bundled_public_realm_artifact_identity") => {
             "illustrative artifact identity shape only"
         },
-        ("public-entry-handoff", "rollback_bundled_official_entry_artifact_identity") => {
+        ("public-realm-handoff", "rollback_bundled_public_realm_artifact_identity") => {
             "illustrative rollback artifact identity shape only"
         },
-        ("public-entry-handoff", "backup_evidence_reference")
-        | ("public-entry-handoff", "recovery_drill_reference")
-        | ("public-entry-handoff", "rollback_reference") => {
+        ("public-realm-handoff", "backup_evidence_reference")
+        | ("public-realm-handoff", "recovery_drill_reference")
+        | ("public-realm-handoff", "rollback_reference") => {
             "illustrative reference format; replace with your real evidence or runbook id"
-        },
-        ("world-compat", "world_recipe_hash") | ("world-compat", "chunk_recipe_hash") => {
-            "illustrative fingerprint shape only; replace with the real runtime recipe hash"
-        },
-        ("world-compat", "topology_id") | ("world-compat", "preset_id") => {
-            "illustrative world recipe identity only; replace with the real runtime topology or \
-             preset id"
-        },
-        ("world-compat", "rollback_reference") => {
-            "illustrative reference format; replace with your real rollback runbook or release id"
         },
         _ => "illustrative value; replace with rollout-specific truth",
     }
@@ -1821,12 +1696,8 @@ fn review_record_section_state_value(
     signal: &'static str,
     section_state: &'static str,
 ) -> &'static str {
-    match (signal, section_state) {
-        ("world-compat", "approved") => "approved",
-        ("world-compat", "rolled-back") => "rolled-back",
-        ("world-compat", "exception-accepted") => "exception-accepted",
-        _ => section_state,
-    }
+    let _ = signal;
+    section_state
 }
 
 pub(super) fn release_review_section_example_contract(
@@ -1872,88 +1743,18 @@ pub(super) fn review_record_example_extra_fields(
     signal: &'static str,
     section_state: &'static str,
 ) -> Vec<ExternalRecordExampleField> {
-    match (signal, section_state) {
-        ("world-compat", "approved") => world_compat_follow_up_example_fields(
-            "approved",
-            "illustrative deny-rehearsal rollback evidence; if this approved section is closing a \
-             previously accepted transition window, keep the follow-up on the same \
-             release-review-record section and preserve the same-section history proof that the \
-             prior terminal state was exception-accepted",
-        ),
-        ("world-compat", "rolled-back") => world_compat_follow_up_example_fields(
-            "rolled-back",
-            "illustrative rollback evidence for a post-flip rollback follow-up; keep the \
-             follow-up on the same release-review-record section and preserve the same-section \
-             history proof that the prior terminal state was approved",
-        ),
-        ("world-compat", "exception-accepted") => vec![
-            example_field(
-                "exception_reason",
-                review_record_example_value(signal, "exception_reason"),
-                review_record_example_rationale(signal, "exception_reason"),
-            ),
-            example_field(
-                "rollback_reference",
-                review_record_example_value(signal, "rollback_reference"),
-                "illustrative rollback evidence for the accepted transitional posture; replace \
-                 with the real rollback runbook or release reference",
-            ),
-        ],
-        _ => Vec::new(),
-    }
-}
-
-fn world_compat_follow_up_example_fields(
-    source_record_state: &'static str,
-    rollback_rationale: &'static str,
-) -> Vec<ExternalRecordExampleField> {
-    vec![
-        example_field(
-            "prior_result_statuses",
-            if source_record_state == "approved" {
-                "[\"exception-accepted\"]"
-            } else {
-                "[\"approved\"]"
-            },
-            "illustrative same-section history proof showing which prior terminal state this \
-             follow-up superseded",
-        ),
-        example_field(
-            "rollback_reference",
-            review_record_example_value("world-compat", "rollback_reference"),
-            rollback_rationale,
-        ),
-        example_field(
-            "archive_reference",
-            review_record_example_value("world-compat", "archive_reference"),
-            "illustrative archived terminal evidence carried forward on the same \
-             release-review-record section when approved or rolled-back is acting as a follow-up",
-        ),
-        example_field(
-            "source_record_state",
-            source_record_state,
-            "illustrative archive-receipt source_record_state preserved on the same section; it \
-             must stay aligned with the terminal result_status recorded for this follow-up while \
-             prior_result_statuses remains the same-section history proof for the superseded \
-             terminal state",
-        ),
-        example_field(
-            "post_archive_verification_reference",
-            review_record_example_value("world-compat", "post_archive_verification_reference"),
-            "illustrative post-archive verification evidence that remains readable on the same \
-             release-review-record section when approved or rolled-back is acting as a follow-up",
-        ),
-    ]
+    let _ = (signal, section_state);
+    Vec::new()
 }
 
 pub(super) fn release_review_section_execution_workflow(
     signal: &'static str,
 ) -> Vec<ExternalRecordWorkflowStep> {
     match signal {
-        "public-entry-handoff" => vec![
+        "public-realm-handoff" => vec![
             workflow_step(
                 1,
-                "open or locate the public-entry-handoff section inside the release-review-record \
+                "open or locate the public-realm-handoff section inside the release-review-record \
                  for the rollout unit",
                 "release-operator",
                 "external-release-tracker",
@@ -1969,7 +1770,7 @@ pub(super) fn release_review_section_execution_workflow(
             ),
             workflow_step(
                 2,
-                "copy the shipped Public client artifact reference, bundled official_entry \
+                "copy the shipped Public client artifact reference, bundled public realm \
                  artifact identity, address, auth pin, transport flags, and client-exported \
                  target posture into the review section",
                 "release-operator",
@@ -1979,12 +1780,12 @@ pub(super) fn release_review_section_execution_workflow(
                  any approval decision",
                 vec![
                     "bundled_public_client_artifact_reference",
-                    "bundled_official_entry_artifact_identity",
-                    "bundled_official_entry_server_address",
-                    "bundled_official_entry_auth_server",
-                    "bundled_official_entry_use_srv",
-                    "bundled_official_entry_use_quic",
-                    "bundled_official_entry_validate_tls",
+                    "bundled_public_realm_artifact_identity",
+                    "bundled_public_realm_server_address",
+                    "bundled_public_realm_auth_server",
+                    "bundled_public_realm_use_srv",
+                    "bundled_public_realm_use_quic",
+                    "bundled_public_realm_validate_tls",
                     "bundled_target_kind",
                     "bundled_target_is_non_local_candidate",
                     "non_local_cutover_ready",
@@ -2016,7 +1817,7 @@ pub(super) fn release_review_section_execution_workflow(
                 4,
                 "record approval_decision, rollback_reference, \
                  rollback_public_client_artifact_reference, \
-                 rollback_bundled_official_entry_artifact_identity, and terminal result_status \
+                 rollback_bundled_public_realm_artifact_identity, and terminal result_status \
                  once the operator decides whether cutover is approved or rejected; only record \
                  rolled-back after the same section was previously cutover-approved",
                 "release-operator",
@@ -2024,12 +1825,12 @@ pub(super) fn release_review_section_execution_workflow(
                 "write the terminal result_status on the same section and keep rollout/rollback \
                  history on the same release-review-record with the rollback Public client \
                  artifact and entry material fixed before traffic is reopened; approval_decision \
-                 must stay aligned with the public-entry lifecycle transition contract",
+                 must stay aligned with the public-realm lifecycle transition contract",
                 vec![
                     "approval_decision",
                     "rollback_reference",
                     "rollback_public_client_artifact_reference",
-                    "rollback_bundled_official_entry_artifact_identity",
+                    "rollback_bundled_public_realm_artifact_identity",
                     "result_status",
                 ],
                 true,
@@ -2043,9 +1844,9 @@ pub(super) fn release_review_section_execution_workflow(
                  on the same release-review-record once archiving completes; the archive handoff \
                  must remain correlated to the same release_reference, section_signal, terminal \
                  result_status, bundled_public_client_artifact_reference, \
-                 bundled_official_entry_artifact_identity, rollback_reference, \
+                 bundled_public_realm_artifact_identity, rollback_reference, \
                  rollback_public_client_artifact_reference, and \
-                 rollback_bundled_official_entry_artifact_identity",
+                 rollback_bundled_public_realm_artifact_identity",
                 release_review_archive_receipt_field_names(),
                 true,
             ),
@@ -2120,103 +1921,6 @@ pub(super) fn release_review_section_execution_workflow(
                 "append post_archive_verified_by, post_archive_verified_at_utc, \
                  post_archive_verification_result, and post_archive_verification_reference after \
                  governance archive verification completes",
-                release_review_post_archive_writeback_field_names(),
-                false,
-            ),
-        ],
-        "world-compat" => vec![
-            workflow_step(
-                1,
-                "open or locate the world-compat section inside the release-review-record",
-                "release-operator",
-                "external-release-tracker",
-                "set release_reference and result_status = draft for the world-compat section",
-                vec![
-                    "release_reference",
-                    "reviewed_by",
-                    "decision_recorded_at_utc",
-                    "result_status",
-                ],
-                true,
-            ),
-            workflow_step(
-                2,
-                "copy the dedicated world compatibility status, runtime audit tuple, and recipe \
-                 fingerprint into the section",
-                "release-operator",
-                "/health/world-compat + /health/compatibility + external-release-tracker",
-                "populate world compatibility runtime truth on the same section before recording \
-                 the final rollout decision; copied load_legacy_mode and \
-                 load_or_generate_sidecarless_mode define whether this section is still \
-                 documenting a transitional allow window or a deny rehearsal/default-flip \
-                 candidate; if the terminal path later becomes exception-accepted, append \
-                 exception_reason and rollback_reference before writing the terminal state; if \
-                 both copied gates are already deny and rollout proceeds, append \
-                 rollback_reference before writing approved so the deny rehearsal keeps an \
-                 explicit restore path; any later reopen or rollback follow-up must preserve \
-                 same-section history proof of the prior terminal result_status it is superseding",
-                vec![
-                    "world_compat_status",
-                    "configured_mode",
-                    "load_legacy_mode",
-                    "load_or_generate_sidecarless_mode",
-                    "compat_entry",
-                    "compat_decision",
-                    "compat_failure",
-                    "strict_load_contract_gap",
-                    "managed_recipe_sidecar_missing",
-                    "world_recipe_hash",
-                    "chunk_recipe_hash",
-                    "topology_id",
-                    "preset_id",
-                ],
-                true,
-            ),
-            workflow_step(
-                3,
-                "record approval_decision and terminal result_status for the reviewed world \
-                 compatibility posture",
-                "release-operator",
-                "external-release-tracker",
-                "write the terminal result_status on the world-compat section without opening a \
-                 second review record; if either copied legacy-tail gate still remains allow and \
-                 rollout proceeds, use exception-accepted on the same section so exception_reason \
-                 and rollback_reference keep the transitional posture explicit; if both copied \
-                 gates are deny and rollout proceeds, approved still requires rollback_reference \
-                 on the same section as deny-rehearsal rollback evidence; approved is reserved \
-                 for deny/clear posture, while rolled-back requires rollback_reference on the \
-                 same section; any explicit approved follow-up closing an archived \
-                 exception-accepted window must retain same-section history proof that the prior \
-                 terminal state was exception-accepted, and any rolled-back follow-up must retain \
-                 same-section history proof that the prior terminal state was approved",
-                vec!["approval_decision", "result_status"],
-                true,
-            ),
-            workflow_step(
-                4,
-                "archive the terminal world-compat section and write back the archive receipt",
-                "release-operator",
-                "external-release-tracker archive handoff",
-                "write archive receipt fields after world-compat section archiving completes and \
-                 keep the archive handoff correlated to the same release_reference, \
-                 section_signal, and terminal result_status; approved deny-rehearsal terminals \
-                 must preserve rollback_reference through the same archive handoff",
-                release_review_archive_receipt_field_names(),
-                true,
-            ),
-            workflow_step(
-                5,
-                "retrieve the archived world-compat section and append post-archive verification \
-                 fields",
-                "release-operator",
-                "external archive retrieval + external-release-tracker",
-                "append post_archive_verified_by, post_archive_verified_at_utc, \
-                 post_archive_verification_result, and post_archive_verification_reference after \
-                 world-compat archive verification completes while preserving any approved deny \
-                 rehearsal rollback_reference on the same section; if a later approved or \
-                 rolled-back follow-up is appended, keep archive_reference, source_record_state, \
-                 and post_archive_verification_reference readable on that same section so the \
-                 follow-up still points back to the archived terminal evidence it is superseding",
                 release_review_post_archive_writeback_field_names(),
                 false,
             ),
@@ -2354,16 +2058,16 @@ pub(super) fn section_validation_stage(
     }
 }
 
-pub(super) fn public_entry_section_instance_validation_contract(
+pub(super) fn public_realm_section_instance_validation_contract(
     required_decision_field_contracts: &[ExternalRecordFieldContract],
 ) -> ExternalSectionInstanceValidationContract {
-    let workflow = release_review_section_execution_workflow("public-entry-handoff");
-    let lifecycle_transition_contract = public_entry_lifecycle_transition_contract();
+    let workflow = release_review_section_execution_workflow("public-realm-handoff");
+    let lifecycle_transition_contract = public_realm_lifecycle_transition_contract();
     let terminal_states = lifecycle_transition_contract
         .terminal_states_requiring_archive_receipt
         .clone();
     let archive_handoff_contract = release_review_record_archive_handoff_contract(
-        "public-entry-handoff",
+        "public-realm-handoff",
         "release-review-record reached a terminal Public cutover decision state with the bundled \
          artifact review, required evidence references, and rollback path recorded where \
          applicable",
@@ -2371,19 +2075,19 @@ pub(super) fn public_entry_section_instance_validation_contract(
         terminal_states.clone(),
     );
     let post_archive_writeback_fields = release_review_post_archive_writeback_field_names();
-    let exception_record_field_contracts = public_entry_handoff_exception_field_contracts();
+    let exception_record_field_contracts = public_realm_handoff_exception_field_contracts();
     let retention_contract = release_review_record_retention_contract(
-        "public-entry-handoff",
+        "public-realm-handoff",
         &post_archive_writeback_fields,
     );
     let terminal_mutation_contract = release_review_terminal_mutation_contract(
-        "public-entry-handoff",
+        "public-realm-handoff",
         &archive_handoff_contract,
         &post_archive_writeback_fields,
     );
-    let authority_pairing_checks = public_entry_authority_pairing_checks();
+    let authority_pairing_checks = public_realm_authority_pairing_checks();
     let execution_boundary_contract = release_review_record_execution_boundary_contract(
-        "public-entry-handoff",
+        "public-realm-handoff",
         required_decision_field_contracts,
         &exception_record_field_contracts,
         &archive_handoff_contract,
@@ -2391,13 +2095,13 @@ pub(super) fn public_entry_section_instance_validation_contract(
 
     ExternalSectionInstanceValidationContract {
         record_kind: "release-review-record",
-        section_signal: "public-entry-handoff",
+        section_signal: "public-realm-handoff",
         lifecycle_state_field: "result_status",
-        validation_scope: "validate one concrete public-entry-handoff section instance inside the \
+        validation_scope: "validate one concrete public-realm-handoff section instance inside the \
                            authoritative release-review-record from draft through post-archive \
                            verification",
         snapshot_input_contract: external_section_snapshot_input_contract(
-            "public-entry-handoff",
+            "public-realm-handoff",
             required_decision_field_contracts,
             &exception_record_field_contracts,
             &archive_handoff_contract,
@@ -2414,7 +2118,7 @@ pub(super) fn public_entry_section_instance_validation_contract(
             ],
         ),
         snapshot_template_contract: snapshot_template_contract(
-            "public-entry-handoff",
+            "public-realm-handoff",
             required_decision_field_contracts,
             &exception_record_field_contracts,
             &archive_handoff_contract,
@@ -2429,7 +2133,7 @@ pub(super) fn public_entry_section_instance_validation_contract(
             ],
         ),
         minimum_snapshot_example: snapshot_example_contract(
-            "public-entry-handoff",
+            "public-realm-handoff",
             required_decision_field_contracts,
             &exception_record_field_contracts,
             &archive_handoff_contract,
@@ -2441,11 +2145,11 @@ pub(super) fn public_entry_section_instance_validation_contract(
                  with rollout-specific truth from the real external section snapshot",
             ],
         ),
-        validation_result_contract: validation_result_contract("public-entry-handoff", vec![
+        validation_result_contract: validation_result_contract("public-realm-handoff", vec![
             "stage_status=invalid or incomplete must be treated as release-blocking until the \
              snapshot satisfies the required Public cutover stage",
         ]),
-        minimum_validation_result_example: validation_result_example("public-entry-handoff", vec![
+        minimum_validation_result_example: validation_result_example("public-realm-handoff", vec![
             "illustrative only; the sample shows a fully valid rolled-back Public section after \
              archive and post-archive verification",
         ]),
@@ -2489,11 +2193,11 @@ pub(super) fn public_entry_section_instance_validation_contract(
             4,
             Vec::new(),
             vec![
-                "approval_decision must stay aligned with the public-entry lifecycle transition \
+                "approval_decision must stay aligned with the public-realm lifecycle transition \
                  contract for the terminal result_status recorded on the same section",
                 "rolled-back is only valid after the same section was previously cutover-approved",
                 "the rollback reference, rollback Public client artifact reference, and rollback \
-                 bundled official_entry artifact identity must be fixed on the same section \
+                 bundled public realm artifact identity must be fixed on the same section \
                  before Public traffic is reopened or reverted",
             ],
             "a terminal Public cutover section must carry lifecycle-aligned approval data and the \
@@ -2739,311 +2443,6 @@ pub(super) fn governance_section_instance_validation_contract(
     }
 }
 
-pub(super) fn world_compat_section_instance_validation_contract(
-    required_decision_field_contracts: &[ExternalRecordFieldContract],
-) -> ExternalSectionInstanceValidationContract {
-    let workflow = release_review_section_execution_workflow("world-compat");
-    let terminal_states = vec!["approved", "exception-accepted", "rejected", "rolled-back"];
-    let archive_handoff_contract = release_review_record_archive_handoff_contract(
-        "world-compat",
-        "release-review-record reached a terminal world compatibility review state with the \
-         runtime audit tuple, decision, and rollback evidence recorded for any approved deny \
-         rehearsal/default-flip candidate, accepted transition window, or rolled-back follow-up",
-        terminal_states.clone(),
-        terminal_states.clone(),
-    );
-    let post_archive_writeback_fields = release_review_post_archive_writeback_field_names();
-    let exception_record_field_contracts = world_compat_exception_field_contracts();
-    let retention_contract =
-        release_review_record_retention_contract("world-compat", &post_archive_writeback_fields);
-    let terminal_mutation_contract = release_review_terminal_mutation_contract(
-        "world-compat",
-        &archive_handoff_contract,
-        &post_archive_writeback_fields,
-    );
-    let execution_boundary_contract = release_review_record_execution_boundary_contract(
-        "world-compat",
-        required_decision_field_contracts,
-        &exception_record_field_contracts,
-        &archive_handoff_contract,
-    );
-    let exception_terminal_fields = vec!["exception_reason", "rollback_reference"];
-    let rollback_terminal_fields = vec!["rollback_reference"];
-
-    ExternalSectionInstanceValidationContract {
-        record_kind: "release-review-record",
-        section_signal: "world-compat",
-        lifecycle_state_field: "result_status",
-        validation_scope: "validate one concrete world-compat section instance inside the \
-                           authoritative release-review-record from draft through post-archive \
-                           verification",
-        snapshot_input_contract: external_section_snapshot_input_contract(
-            "world-compat",
-            required_decision_field_contracts,
-            &exception_record_field_contracts,
-            &archive_handoff_contract,
-            &post_archive_writeback_fields,
-            vec![
-                "field_values.result_status is the authoritative current lifecycle state for the \
-                 world-compat section snapshot under validation",
-                "when field_values.result_status = approved, the same field_values map must also \
-                 retain rollback_reference because approved world-compat records act as deny \
-                 rehearsal/default-flip evidence rather than transition-window exceptions",
-                "when field_values.result_status = exception-accepted, the same field_values map \
-                 must also retain exception_reason and rollback_reference so the validator can \
-                 enforce the accepted-gap path",
-                "field_values.load_legacy_mode and field_values.load_or_generate_sidecarless_mode \
-                 mark whether the reviewed rollout unit is still inside the transitional allow \
-                 window or has already rehearsed the deny posture needed before default \
-                 flip/removal",
-                "when field_values.result_status = rolled-back, the same field_values map must \
-                 retain rollback_reference so the validator can prove the reviewed rollout has a \
-                 concrete reversal path",
-                "prior_result_statuses must preserve same-section terminal history whenever the \
-                 validator needs to prove which earlier terminal world-compat state the current \
-                 follow-up is superseding",
-                "when field_values.result_status = approved and the world-compat section is being \
-                 validated as a follow-up that closes a prior accepted transition window, \
-                 prior_result_statuses must show that the same section previously reached \
-                 exception-accepted",
-                "when field_values.result_status = rolled-back, prior_result_statuses must show \
-                 that the same section previously reached approved before the rollback follow-up \
-                 was appended",
-                "when field_values.result_status is an approved or rolled-back follow-up, the \
-                 same field_values map must preserve or directly reference archive_reference, \
-                 source_record_state, and post_archive_verification_reference so the validator \
-                 can confirm the archived terminal evidence being superseded",
-            ],
-        ),
-        snapshot_template_contract: snapshot_template_contract(
-            "world-compat",
-            required_decision_field_contracts,
-            &exception_record_field_contracts,
-            &archive_handoff_contract,
-            &post_archive_writeback_fields,
-            vec![
-                "expand field_values with the concrete world-compat section fields captured from \
-                 the external tracker",
-                "keep exception_reason absent unless the current snapshot is validating the \
-                 exception-accepted path; rollback_reference may remain present for approved deny \
-                 rehearsal, exception-accepted, or rolled-back world-compat snapshots",
-                "omit prior_result_statuses unless the current field_values.result_status \
-                 requires lifecycle history proof; world-compat follow-up snapshots should use \
-                 prior_result_statuses to prove whether approved closed a prior \
-                 exception-accepted window or rolled-back followed a prior approved state",
-                "when approved or rolled-back is acting as a follow-up, keep archive_reference, \
-                 source_record_state, and post_archive_verification_reference preserved on or \
-                 directly referenced from the same section snapshot",
-            ],
-        ),
-        minimum_snapshot_example: snapshot_example_contract(
-            "world-compat",
-            required_decision_field_contracts,
-            &exception_record_field_contracts,
-            &archive_handoff_contract,
-            &post_archive_writeback_fields,
-            vec![
-                "illustrative only; the example uses an approved world-compat follow-up so \
-                 prior_result_statuses shows how to prove the same section previously ended in \
-                 exception-accepted before the transition window closed",
-                "real approved deny-rehearsal snapshots must still keep rollback_reference on the \
-                 same section, and any follow-up snapshot must keep the same-section prior \
-                 terminal history needed to prove what it superseded",
-                "real follow-up snapshots must also preserve or directly reference the archived \
-                 evidence fields on the same section so archive_reference, source_record_state, \
-                 and post_archive_verification_reference remain reviewable",
-                "replace every recipe hash, topology id, preset id, timestamp, archive reference, \
-                 and operator identity with rollout-specific truth from the real world-compat \
-                 snapshot",
-            ],
-        ),
-        validation_result_contract: validation_result_contract("world-compat", vec![
-            "stage_status=invalid or incomplete means the world-compat section is not yet a valid \
-             authoritative review record for the rollout unit",
-        ]),
-        minimum_validation_result_example: validation_result_example("world-compat", vec![
-            "illustrative only; the sample shows a fully valid approved world-compat section \
-             after archive and post-archive verification",
-        ]),
-        draft_requirements: section_validation_stage(
-            "draft-minimum",
-            vec!["draft"],
-            &workflow,
-            1,
-            Vec::new(),
-            vec![
-                "result_status must remain draft until the dedicated world compatibility runtime \
-                 fields are linked on the same section",
-                "release_reference and section_signal must still identify the same rollout unit \
-                 and world-compat review section in the authoritative external record",
-            ],
-            "the world-compat section exists and carries the minimum identity, authorship, and \
-             initial lifecycle fields before runtime compatibility evidence is linked",
-            true,
-        ),
-        evidence_linked_requirements: section_validation_stage(
-            "runtime-linked",
-            vec!["runtime-linked"],
-            &workflow,
-            2,
-            Vec::new(),
-            vec![
-                "the dedicated world compatibility status, runtime audit tuple, and recipe \
-                 fingerprint must be linked on the same section before result_status advances to \
-                 runtime-linked",
-                "load_legacy_mode and load_or_generate_sidecarless_mode must be copied exactly \
-                 because they are the stage markers for future default-flip/removal review",
-                "if either copied gate remains allow, the section is still documenting a \
-                 transitional posture and must not be interpreted as removal-complete",
-            ],
-            "advance to runtime-linked only after the dedicated world compatibility runtime truth \
-             is recorded on the same section, including the copied legacy-tail posture fields",
-            true,
-        ),
-        terminal_requirements: section_validation_stage(
-            "terminal-decision",
-            terminal_states.clone(),
-            &workflow,
-            3,
-            vec![
-                conditional_field_requirement(
-                    vec!["approved"],
-                    rollback_terminal_fields.clone(),
-                    "approved world-compat deny-rehearsal posture also requires \
-                     rollback_reference on the same section",
-                ),
-                conditional_field_requirement(
-                    vec!["exception-accepted"],
-                    exception_terminal_fields.clone(),
-                    "exception-accepted world-compat posture also requires exception_reason and \
-                     rollback_reference on the same section",
-                ),
-                conditional_field_requirement(
-                    vec!["rolled-back"],
-                    rollback_terminal_fields.clone(),
-                    "rolled-back world-compat posture also requires rollback_reference on the \
-                     same section",
-                ),
-            ],
-            vec![
-                "approval_decision must remain aligned with the terminal world-compat \
-                 result_status recorded on the same section",
-                "if load_legacy_mode = deny and load_or_generate_sidecarless_mode = deny and \
-                 result_status = approved, rollback_reference must already be recorded on the \
-                 same section as the deny rehearsal restore path",
-                "if load_legacy_mode = allow or load_or_generate_sidecarless_mode = allow and the \
-                 rollout still proceeds, result_status should take the exception-accepted path so \
-                 exception_reason and rollback_reference remain attached to that transition window",
-                "approved is reserved for world-compat sections whose copied legacy-tail posture \
-                 no longer relies on a transitional allow window for the reviewed rollout unit",
-                "if an approved world-compat follow-up is closing a previously archived \
-                 exception-accepted window, prior_result_statuses must still prove that the same \
-                 section previously reached exception-accepted, and \
-                 archive_reference/source_record_state/post_archive_verification_reference must \
-                 remain preserved or directly referenced on the same section",
-                "rolled-back is only valid after the same rollout unit has already passed through \
-                 a prior approved terminal world-compat decision state, and prior_result_statuses \
-                 must prove that approved history on the same section; the approved terminal \
-                 archive_reference/source_record_state/post_archive_verification_reference must \
-                 likewise remain preserved or directly referenced on the same section",
-            ],
-            "a terminal world-compat section must carry the terminal decision on the same \
-             section; approved deny-rehearsal posture, exception-accepted transitional posture, \
-             and rolled-back follow-up all require rollback_reference, while exception-accepted \
-             additionally requires exception_reason; reopen/rollback follow-up validation also \
-             depends on same-section prior_result_statuses history proof instead of inferred \
-             state transitions",
-            true,
-        ),
-        archive_receipt_requirements: section_validation_stage(
-            "archive-receipt-linked",
-            terminal_states.clone(),
-            &workflow,
-            4,
-            vec![
-                conditional_field_requirement(
-                    vec!["approved"],
-                    rollback_terminal_fields.clone(),
-                    "archive-ready approved world-compat deny-rehearsal sections must still carry \
-                     rollback_reference on the same section",
-                ),
-                conditional_field_requirement(
-                    vec!["exception-accepted"],
-                    exception_terminal_fields.clone(),
-                    "archive-ready exception world-compat sections must still carry \
-                     exception_reason and rollback_reference on the same section",
-                ),
-                conditional_field_requirement(
-                    vec!["rolled-back"],
-                    rollback_terminal_fields.clone(),
-                    "archive-ready rolled-back world-compat sections must still carry \
-                     rollback_reference on the same section",
-                ),
-            ],
-            vec![
-                "source_record_state must exactly match the terminal result_status written on the \
-                 same section",
-                "archive handoff must stay correlated to the same release_reference, \
-                 section_signal, and terminal result_status for the world-compat review section",
-            ],
-            "the terminal world-compat section is not complete until archive receipt fields are \
-             written back on the same section",
-            true,
-        ),
-        post_archive_verification_requirements: section_validation_stage(
-            "post-archive-verified",
-            terminal_states,
-            &workflow,
-            5,
-            vec![
-                conditional_field_requirement(
-                    vec!["approved"],
-                    rollback_terminal_fields.clone(),
-                    "post-archive verification of approved world-compat deny-rehearsal sections \
-                     still requires the preserved rollback_reference field",
-                ),
-                conditional_field_requirement(
-                    vec!["exception-accepted"],
-                    exception_terminal_fields,
-                    "post-archive verification of exception world-compat sections still requires \
-                     the preserved exception_reason and rollback_reference fields",
-                ),
-                conditional_field_requirement(
-                    vec!["rolled-back"],
-                    rollback_terminal_fields,
-                    "post-archive verification of rolled-back world-compat sections still \
-                     requires the preserved rollback_reference field",
-                ),
-            ],
-            {
-                let mut checks = retention_contract.required_post_archive_checks.clone();
-                checks.push(
-                    "approved or rolled-back follow-up validation is incomplete if \
-                     archive_reference, source_record_state, or \
-                     post_archive_verification_reference are no longer preserved on or directly \
-                     referenced from the same section",
-                );
-                checks
-            },
-            "append post-archive verification fields on the same world-compat section after \
-             archive retrieval and retention verification complete",
-            false,
-        ),
-        required_authority_pairing_check_ids: Vec::new(),
-        required_archive_correlation_dimensions: archive_handoff_contract
-            .required_archive_correlation_dimensions
-            .clone(),
-        source_record_state_field: "source_record_state",
-        blocking_interpretation: "missing draft, runtime-linked, terminal, or archive-receipt \
-                                  requirements means the world-compat section is not yet a valid \
-                                  authoritative review record for the rollout unit; missing \
-                                  post-archive verification keeps audit closure incomplete even \
-                                  after archiving",
-        forbidden_shortcuts: execution_boundary_contract.forbidden_shortcuts,
-        forbidden_post_terminal_mutations: terminal_mutation_contract.forbidden_mutations,
-    }
-}
-
 pub(super) fn management_auth_section_instance_validation_contract(
     required_decision_field_contracts: &[ExternalRecordFieldContract],
 ) -> ExternalSectionInstanceValidationContract {
@@ -3236,7 +2635,7 @@ pub(super) fn management_auth_section_instance_validation_contract(
     }
 }
 
-pub(super) fn public_entry_handoff_required_review_field_contracts()
+pub(super) fn public_realm_handoff_required_review_field_contracts()
 -> Vec<ExternalRecordFieldContract> {
     vec![
         external_record_field_contract(
@@ -3261,49 +2660,49 @@ pub(super) fn public_entry_handoff_required_review_field_contracts()
             "result_status",
             "result-status-enum",
             "external-release-tracker",
-            "current lifecycle state for this public-entry-handoff review section; must match one \
+            "current lifecycle state for this public-realm-handoff review section; must match one \
              of the published result_status_model states",
         ),
         external_record_field_contract(
             "bundled_public_client_artifact_reference",
             "release-artifact-reference",
             "external-release-tracker + bundled-client-artifact-review",
-            "exact shipped Public client artifact reference whose bundled official_entry content \
+            "exact shipped Public client artifact reference whose bundled public realm content \
              is being reviewed for rollout",
         ),
         external_record_field_contract(
-            "bundled_official_entry_artifact_identity",
+            "bundled_public_realm_artifact_identity",
             "artifact-identity-string",
             "bundled-client-artifact-review",
-            "stable identity of the shipped bundled official_entry content inside the referenced \
+            "stable identity of the shipped bundled public realm content inside the referenced \
              Public client artifact",
         ),
         external_record_field_contract(
-            "bundled_official_entry_server_address",
+            "bundled_public_realm_server_address",
             "host-or-socket-address",
             "bundled-client-artifact-review",
             "server address bundled into the Public client artifact",
         ),
         external_record_field_contract(
-            "bundled_official_entry_auth_server",
+            "bundled_public_realm_auth_server",
             "url-or-null",
             "bundled-client-artifact-review",
             "exact auth authority pin bundled into the Public client artifact",
         ),
         external_record_field_contract(
-            "bundled_official_entry_use_srv",
+            "bundled_public_realm_use_srv",
             "boolean",
             "bundled-client-artifact-review",
             "whether the bundled Public entry resolves the realm via SRV lookup",
         ),
         external_record_field_contract(
-            "bundled_official_entry_use_quic",
+            "bundled_public_realm_use_quic",
             "boolean",
             "bundled-client-artifact-review",
             "whether the bundled Public entry expects QUIC transport",
         ),
         external_record_field_contract(
-            "bundled_official_entry_validate_tls",
+            "bundled_public_realm_validate_tls",
             "boolean",
             "bundled-client-artifact-review",
             "whether the bundled Public entry requires TLS validation",
@@ -3312,7 +2711,7 @@ pub(super) fn public_entry_handoff_required_review_field_contracts()
             "bundled_target_kind",
             "target-kind-enum",
             "client-exported-entry-contract",
-            "client-side static interpretation of the bundled official_entry target posture",
+            "client-side static interpretation of the bundled public realm target posture",
         ),
         external_record_field_contract(
             "bundled_target_is_non_local_candidate",
@@ -3392,10 +2791,10 @@ pub(super) fn public_entry_handoff_required_review_field_contracts()
              reverted",
         ),
         external_record_field_contract(
-            "rollback_bundled_official_entry_artifact_identity",
+            "rollback_bundled_public_realm_artifact_identity",
             "artifact-identity-string",
             "external-release-tracker",
-            "bundled official_entry artifact identity that rollback will restore if this Public \
+            "bundled public realm artifact identity that rollback will restore if this Public \
              cutover is reverted",
         ),
         external_record_field_contract(
@@ -3414,7 +2813,7 @@ pub(super) fn public_entry_handoff_required_review_field_contracts()
     ]
 }
 
-pub(super) fn public_entry_handoff_exception_field_contracts() -> Vec<ExternalRecordFieldContract> {
+pub(super) fn public_realm_handoff_exception_field_contracts() -> Vec<ExternalRecordFieldContract> {
     vec![
         external_record_field_contract(
             "bundled_public_client_artifact_reference",
@@ -3423,7 +2822,7 @@ pub(super) fn public_entry_handoff_exception_field_contracts() -> Vec<ExternalRe
             "Public client artifact reference covered by the exception record",
         ),
         external_record_field_contract(
-            "bundled_official_entry_artifact_identity",
+            "bundled_public_realm_artifact_identity",
             "artifact-identity-string",
             "bundled-client-artifact-review",
             "identity of the bundled Public entry artifact covered by the exception record",
@@ -3433,7 +2832,7 @@ pub(super) fn public_entry_handoff_exception_field_contracts() -> Vec<ExternalRe
             "review-note-reference",
             "external-release-tracker",
             "reference to the review note reserved for bundled auth pin exception handling; \
-             public-entry-handoff does not yet publish a valid exception-accepted terminal path",
+             public-realm-handoff does not yet publish a valid exception-accepted terminal path",
         ),
         external_record_field_contract(
             "recovery_drill_reference",
@@ -3452,157 +2851,6 @@ pub(super) fn public_entry_handoff_exception_field_contracts() -> Vec<ExternalRe
             "release-or-runbook-reference",
             "external-release-tracker",
             "rollback path linked to the exception decision",
-        ),
-    ]
-}
-
-pub(super) fn world_compat_required_decision_field_contracts() -> Vec<ExternalRecordFieldContract> {
-    vec![
-        external_record_field_contract(
-            "reviewed_by",
-            "operator-identity",
-            "release-operator-attestation",
-            "human owner who reviewed the dedicated world compatibility status for the rollout \
-             unit",
-        ),
-        external_record_field_contract(
-            "approval_decision",
-            "approval-decision-enum",
-            "release-operator-attestation",
-            "operator decision for the world compatibility review",
-        ),
-        external_record_field_contract(
-            "decision_recorded_at_utc",
-            "utc-timestamp",
-            "release-operator-attestation",
-            "time when the world compatibility review decision was recorded",
-        ),
-        external_record_field_contract(
-            "result_status",
-            "result-status-enum",
-            "external-release-tracker",
-            "current lifecycle state for this world-compat review section; must match one of the \
-             published result_status_model states",
-        ),
-        external_record_field_contract(
-            "release_reference",
-            "release-reference",
-            "external-release-tracker",
-            "release tracker identifier tied to the world compatibility review decision",
-        ),
-        external_record_field_contract(
-            "world_compat_status",
-            "enum-string",
-            "/health/world-compat",
-            "dedicated world compatibility status published by the runtime review surface",
-        ),
-        external_record_field_contract(
-            "configured_mode",
-            "enum-string",
-            "/health/world-compat",
-            "configured world compatibility mode captured by the dedicated runtime surface, or \
-             unrecorded if structured context was unavailable",
-        ),
-        external_record_field_contract(
-            "load_legacy_mode",
-            "enum-string",
-            "/health/world-compat",
-            "configured LoadLegacy admission gate captured by the dedicated runtime surface, or \
-             unrecorded if structured context was unavailable; allow means the reviewed rollout \
-             unit still keeps the transitional compat-import window open, while deny records the \
-             closed posture required before default flip/removal can be treated as complete",
-        ),
-        external_record_field_contract(
-            "load_or_generate_sidecarless_mode",
-            "enum-string",
-            "/health/world-compat",
-            "configured managed LoadOrGenerate sidecarless admission gate captured by the \
-             dedicated runtime surface, or unrecorded if structured context was unavailable; \
-             allow means the reviewed rollout unit still keeps sidecarless managed reuse open as \
-             a transitional path, while deny records the closed posture required before default \
-             flip/removal can be treated as complete",
-        ),
-        external_record_field_contract(
-            "compat_entry",
-            "enum-string",
-            "/health/world-compat",
-            "compatibility audit entry captured by the dedicated runtime surface, or unrecorded \
-             if structured context was unavailable",
-        ),
-        external_record_field_contract(
-            "compat_decision",
-            "enum-string",
-            "/health/world-compat",
-            "compatibility audit decision captured by the dedicated runtime surface, or \
-             unrecorded if structured context was unavailable",
-        ),
-        external_record_field_contract(
-            "compat_failure",
-            "enum-string",
-            "/health/world-compat",
-            "compatibility audit failure kind captured by the dedicated runtime surface, or \
-             unrecorded if structured context was unavailable",
-        ),
-        external_record_field_contract(
-            "strict_load_contract_gap",
-            "boolean-or-enum-string",
-            "/health/world-compat",
-            "whether the runtime surfaced a strict world load contract gap, or unrecorded if \
-             structured context was unavailable",
-        ),
-        external_record_field_contract(
-            "managed_recipe_sidecar_missing",
-            "boolean-or-enum-string",
-            "/health/world-compat",
-            "whether the runtime loaded an existing managed world without an adjacent recipe \
-             sidecar, or unrecorded if structured context was unavailable",
-        ),
-        external_record_field_contract(
-            "world_recipe_hash",
-            "string",
-            "/health/world-compat",
-            "effective world recipe fingerprint published by the dedicated runtime surface, or \
-             unrecorded if unavailable",
-        ),
-        external_record_field_contract(
-            "chunk_recipe_hash",
-            "string",
-            "/health/world-compat",
-            "effective chunk recipe fingerprint published by the dedicated runtime surface, or \
-             unrecorded if unavailable",
-        ),
-        external_record_field_contract(
-            "topology_id",
-            "string",
-            "/health/world-compat",
-            "world topology id published by the dedicated runtime surface, or unrecorded if \
-             unavailable",
-        ),
-        external_record_field_contract(
-            "preset_id",
-            "string",
-            "/health/world-compat",
-            "world preset id published by the dedicated runtime surface, or unrecorded if \
-             unavailable",
-        ),
-    ]
-}
-
-pub(super) fn world_compat_exception_field_contracts() -> Vec<ExternalRecordFieldContract> {
-    vec![
-        external_record_field_contract(
-            "exception_reason",
-            "freeform-text",
-            "external-release-tracker",
-            "operator rationale for accepting a reviewed world compatibility gap",
-        ),
-        external_record_field_contract(
-            "rollback_reference",
-            "release-or-runbook-reference",
-            "external-release-tracker",
-            "rollback path linked to the world compatibility review decision; preserve it on the \
-             same section for approved deny rehearsals, exception-accepted transition windows, \
-             and rolled-back follow-up states",
         ),
     ]
 }
@@ -3735,7 +2983,7 @@ pub(super) fn release_review_record_lifecycle_contract(
         canonical_record_location: "single authoritative release-review-record keyed by \
                                     release_reference in the external release tracker",
         instance_scope: "one release-review-record per rollout unit; keep one section per review \
-                         signal such as public-entry-handoff, governance-audit, or \
+                         signal such as public-realm-handoff, governance-audit, or \
                          management-auth within that same record",
         write_mode: "same external record updated across review lifecycle state transitions",
         record_granularity: "one decision-scope section per review signal within the \
@@ -3752,15 +3000,15 @@ pub(super) fn release_review_archive_correlation_dimensions(
     signal: &'static str,
 ) -> Vec<&'static str> {
     match signal {
-        "public-entry-handoff" => vec![
+        "public-realm-handoff" => vec![
             "release_reference",
             "section_signal",
             "terminal_result_status",
             "bundled_public_client_artifact_reference",
-            "bundled_official_entry_artifact_identity",
+            "bundled_public_realm_artifact_identity",
             "rollback_reference",
             "rollback_public_client_artifact_reference",
-            "rollback_bundled_official_entry_artifact_identity",
+            "rollback_bundled_public_realm_artifact_identity",
         ],
         _ => vec![
             "release_reference",
@@ -3809,7 +3057,7 @@ pub(super) fn release_review_record_retention_contract(
         authoritative_storage_scope: "authoritative review record plus archived terminal record \
                                       material kept outside this process",
         retention_policy: match signal {
-            "public-entry-handoff" => {
+            "public-realm-handoff" => {
                 "retain the authoritative Public cutover review and its archived terminal state \
                  for the full rollback, incident review, and audit window defined by external \
                  release governance"
@@ -3847,13 +3095,13 @@ pub(super) fn release_review_record_retention_contract(
             "source_record_state matches the terminal result_status recorded for the section",
             "release_reference still resolves to the same rollout unit across tracker and archive",
             match signal {
-                "public-entry-handoff" => {
+                "public-realm-handoff" => {
                     "archive material stays correlated to the same release_reference, \
                      section_signal, terminal result_status, \
                      bundled_public_client_artifact_reference, and \
-                     bundled_official_entry_artifact_identity reviewed for cutover, together with \
+                     bundled_public_realm_artifact_identity reviewed for cutover, together with \
                      rollback_reference, rollback_public_client_artifact_reference, and \
-                     rollback_bundled_official_entry_artifact_identity for the same reversible \
+                     rollback_bundled_public_realm_artifact_identity for the same reversible \
                      rollout unit"
                 },
                 _ => {
@@ -3861,34 +3109,13 @@ pub(super) fn release_review_record_retention_contract(
                      section_signal, and terminal result_status captured for the section"
                 },
             },
-            match signal {
-                "world-compat" => {
-                    "after archive, close accepted transition windows with an explicit approved \
-                     follow-up history entry and represent post-flip rollback with an explicit \
-                     rolled-back follow-up history entry on the same release-review-record; do not \
-                     rewrite archived terminal world-compat sections in place"
-                },
-                _ => {
-                    "after terminal capture, later decision changes must remain append-only \
-                     follow-up history instead of silent archived-section rewrites"
-                },
-            },
+            "after terminal capture, later decision changes must remain append-only \
+             follow-up history instead of silent archived-section rewrites",
             "after terminal capture, only append-only archive receipt or explicit superseding \
              follow-up updates are allowed; decision evidence must not be silently rewritten",
-            match signal {
-                "world-compat" => {
-                    "before any approved or rolled-back follow-up is appended, keep \
-                     archive_reference, source_record_state, and \
-                     post_archive_verification_reference preserved on or directly referenced from \
-                     the same section so the follow-up still carries the archived terminal \
-                     evidence it is superseding"
-                },
-                _ => {
-                    "before any follow-up is appended, keep previously written archive receipt and \
-                     post-archive verification evidence preserved on or directly referenced from \
-                     the same section"
-                },
-            },
+            "before any follow-up is appended, keep previously written archive receipt and \
+             post-archive verification evidence preserved on or directly referenced from \
+             the same section",
         ],
         required_post_archive_writeback_fields: post_archive_writeback_fields.to_vec(),
         post_archive_writeback_target: "append post-archive verification fields to the same \
@@ -3922,7 +3149,7 @@ pub(super) fn release_review_terminal_mutation_contract(
             .clone(),
         allowed_append_only_updates,
         allowed_follow_up_actions: match signal {
-            "public-entry-handoff" => vec![
+            "public-realm-handoff" => vec![
                 "append archive receipt fields and post-archive verification fields after the \
                  terminal Public cutover section is archived",
                 "append an explicit correction or superseding review reference if archived \
@@ -3946,27 +3173,6 @@ pub(super) fn release_review_terminal_mutation_contract(
                 "append a new explicit management-auth follow-up on the same \
                  release-review-record instead of silently rewriting archived auth posture",
             ],
-            "world-compat" => vec![
-                "append archive receipt fields and post-archive verification fields after the \
-                 terminal world-compat section is archived",
-                "append an explicit correction or superseding world-compat reference if archived \
-                 metadata must be clarified, but do not use a correction-only reference to \
-                 represent accepted-window closure or post-flip rollback posture changes",
-                "append an explicit approved follow-up on the same release-review-record when an \
-                 archived exception-accepted transition window later closes under deny/deny \
-                 posture, while preserving archive_reference, source_record_state, and \
-                 post_archive_verification_reference on the same section and keeping \
-                 prior_result_statuses as the same-section history proof that the superseded \
-                 terminal state was exception-accepted; do not represent that posture change as \
-                 metadata clarification only",
-                "append an explicit rolled-back follow-up on the same release-review-record when \
-                 an archived approved deny-rehearsal later reopens or rolls back, while \
-                 preserving archive_reference, source_record_state, and \
-                 post_archive_verification_reference on the same section and keeping \
-                 prior_result_statuses as the same-section history proof that the superseded \
-                 terminal state was approved; do not represent that posture change as metadata \
-                 clarification only",
-            ],
             _ => vec![
                 "append archive receipt fields and post-archive verification fields after the \
                  terminal review section is archived",
@@ -3975,8 +3181,8 @@ pub(super) fn release_review_terminal_mutation_contract(
             ],
         },
         forbidden_mutations: match signal {
-            "public-entry-handoff" => vec![
-                "do not overwrite release_reference, bundled_official_entry_artifact_identity, \
+            "public-realm-handoff" => vec![
+                "do not overwrite release_reference, bundled_public_realm_artifact_identity, \
                  bundled_public_client_artifact_reference, \
                  rollback_public_client_artifact_reference, bundled target posture, or terminal \
                  decision evidence after terminal capture",
@@ -3985,25 +3191,6 @@ pub(super) fn release_review_terminal_mutation_contract(
                  once it has been appended; record an explicit superseding follow-up instead",
                 "do not replace archived Public cutover history with a new bundle review without \
                  recording an explicit superseding follow-up",
-            ],
-            "world-compat" => vec![
-                "do not overwrite release_reference, load_legacy_mode, \
-                 load_or_generate_sidecarless_mode, decision evidence, exception_reason, or \
-                 rollback_reference after terminal capture",
-                "do not change a terminal result_status in place once archive receipt is written",
-                "do not rewrite archive receipt or post-archive verification evidence in place \
-                 once it has been appended; record an explicit world-compat follow-up instead",
-                "do not drop archive_reference, source_record_state, \
-                 post_archive_verification_reference, or prior_result_statuses from the same \
-                 section when appending an approved or rolled-back world-compat follow-up",
-                "do not treat accepted-window closure or post-flip rollback as a correction-only \
-                 archived metadata clarification; record an explicit approved or rolled-back \
-                 follow-up instead",
-                "do not close an archived exception-accepted transition window by silently \
-                 replacing it with approved; append an explicit approved follow-up on the same \
-                 release-review-record instead",
-                "do not represent post-flip rollback by silently mutating an archived approved \
-                 deny-rehearsal section; append an explicit rolled-back follow-up instead",
             ],
             _ => vec![
                 "do not overwrite release_reference, decision evidence, or exception rationale \
@@ -4016,17 +3203,10 @@ pub(super) fn release_review_terminal_mutation_contract(
             ],
         },
         superseding_change_rule: match signal {
-            "public-entry-handoff" => {
+            "public-realm-handoff" => {
                 "if a Public cutover decision later changes, preserve the archived terminal \
                  snapshot and record the new outcome as an explicit follow-up transition or \
                  superseding section history entry tied to the same release_reference"
-            },
-            "world-compat" => {
-                "if a terminal world-compat decision later changes, preserve the archived terminal \
-                 snapshot and record the new outcome as an explicit follow-up history entry tied \
-                 to the same release_reference; close accepted transition windows with an approved \
-                 follow-up and represent post-flip rollback with a rolled-back follow-up instead \
-                 of rewriting archived terminal history"
             },
             _ => {
                 "if a terminal review decision later changes, preserve the archived terminal \
@@ -4095,12 +3275,12 @@ pub(super) fn release_review_record_execution_boundary_contract(
              release-review-record or its immutable archive copy",
         ],
         forbidden_shortcuts: match signal {
-            "public-entry-handoff" => vec![
+            "public-realm-handoff" => vec![
                 "do not treat a terminal state in the live tracker alone as sufficient archive \
                  completion",
                 "do not archive a Public cutover section without the shipped Public client \
                  artifact reference, bundled artifact identity, rollback path, rollback Public \
-                 client artifact reference, and rollback bundled official_entry artifact identity \
+                 client artifact reference, and rollback bundled public realm artifact identity \
                  that define the reversible rollout unit",
                 "do not use a local ronl evidence file or this process output as a substitute for \
                  the authoritative external review record or archive snapshot",
@@ -4117,7 +3297,7 @@ pub(super) fn release_review_record_execution_boundary_contract(
     }
 }
 
-pub(super) fn public_entry_handoff_result_status_model() -> Vec<ResultStatusContract> {
+pub(super) fn public_realm_handoff_result_status_model() -> Vec<ResultStatusContract> {
     vec![
         ResultStatusContract {
             state: "draft",
@@ -4174,44 +3354,6 @@ pub(super) fn governance_review_result_status_model() -> Vec<ResultStatusContrac
             state: "rolled-back",
             semantics: "same release review record updated after the rollout reverted while \
                         governance review remained part of the release decision chain",
-        },
-    ]
-}
-
-pub(super) fn world_compat_review_result_status_model() -> Vec<ResultStatusContract> {
-    vec![
-        ResultStatusContract {
-            state: "draft",
-            semantics: "world-compat review section opened but runtime world compatibility truth \
-                        is not yet fully linked",
-        },
-        ResultStatusContract {
-            state: "runtime-linked",
-            semantics: "dedicated world compatibility status, runtime audit tuple, and recipe \
-                        fingerprint have been linked to the record, including whether legacy-tail \
-                        admission remains in transitional allow posture or has already moved to \
-                        deny",
-        },
-        ResultStatusContract {
-            state: "approved",
-            semantics: "world compatibility review cleared without accepted gaps and without \
-                        relying on a transitional legacy-tail allow posture for the reviewed \
-                        rollout unit; the same section keeps rollback_reference so the deny \
-                        rehearsal/default-flip candidate remains reversible",
-        },
-        ResultStatusContract {
-            state: "exception-accepted",
-            semantics: "world compatibility gap or still-open legacy-tail transition window \
-                        accepted with explicit rationale and rollback path recorded",
-        },
-        ResultStatusContract {
-            state: "rejected",
-            semantics: "world compatibility review rejected the rollout",
-        },
-        ResultStatusContract {
-            state: "rolled-back",
-            semantics: "same release review record updated after the rollout reverted due to or \
-                        after world compatibility review findings",
         },
     ]
 }

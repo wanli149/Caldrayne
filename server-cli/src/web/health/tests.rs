@@ -11,163 +11,12 @@ use crate::{
 use prometheus::Registry;
 #[cfg(feature = "worldgen")] use std::sync::Arc;
 use std::{
-    collections::BTreeMap,
     fs,
     net::SocketAddr,
     time::{SystemTime, UNIX_EPOCH},
 };
 #[cfg(feature = "worldgen")]
 use tokio::sync::Notify;
-
-#[cfg(feature = "worldgen")]
-#[derive(Clone, Debug)]
-struct SectionSnapshotFixture {
-    top_level_fields: BTreeMap<&'static str, &'static str>,
-    field_values: BTreeMap<&'static str, &'static str>,
-}
-
-#[cfg(feature = "worldgen")]
-impl SectionSnapshotFixture {
-    fn from_section_example(example: &ExternalRecordSectionExampleContract) -> Self {
-        let mut top_level_fields = BTreeMap::new();
-        top_level_fields.insert("record_kind", example.record_kind);
-        top_level_fields.insert("section_signal", example.section_signal);
-
-        let mut field_values = BTreeMap::new();
-        for field in &example.example_fields {
-            if field.name == "prior_result_statuses" {
-                top_level_fields.insert(field.name, field.value);
-            } else {
-                field_values.insert(field.name, field.value);
-            }
-        }
-
-        Self {
-            top_level_fields,
-            field_values,
-        }
-    }
-
-    fn remove_top_level_field(&mut self, name: &'static str) { self.top_level_fields.remove(name); }
-
-    fn remove_field_value(&mut self, name: &'static str) { self.field_values.remove(name); }
-
-    fn set_field_value(&mut self, name: &'static str, value: &'static str) {
-        self.field_values.insert(name, value);
-    }
-}
-
-#[cfg(feature = "worldgen")]
-#[derive(Debug, PartialEq, Eq)]
-struct SectionSnapshotValidationFixtureResult {
-    stage_status: &'static str,
-    missing_required_fields: Vec<&'static str>,
-    failed_additional_checks: Vec<&'static str>,
-}
-
-#[cfg(feature = "worldgen")]
-fn push_unique_field(fields: &mut Vec<&'static str>, field: &'static str) {
-    if !fields.contains(&field) {
-        fields.push(field);
-    }
-}
-
-#[cfg(feature = "worldgen")]
-fn validate_world_compat_follow_up_history_proof_fixture(
-    validation: &ExternalSectionInstanceValidationContract,
-    snapshot: &SectionSnapshotFixture,
-) -> SectionSnapshotValidationFixtureResult {
-    let mut missing_required_fields = Vec::new();
-    let mut failed_additional_checks = Vec::new();
-
-    for field in &validation.snapshot_input_contract.required_top_level_fields {
-        if field.name == validation.snapshot_input_contract.field_values_key {
-            continue;
-        }
-        if !snapshot.top_level_fields.contains_key(field.name) {
-            push_unique_field(&mut missing_required_fields, field.name);
-        }
-    }
-
-    for field in &validation
-        .snapshot_input_contract
-        .always_present_field_values
-    {
-        if !snapshot.field_values.contains_key(field.name) {
-            push_unique_field(&mut missing_required_fields, field.name);
-        }
-    }
-
-    let result_status = snapshot
-        .field_values
-        .get(validation.lifecycle_state_field)
-        .copied();
-
-    if let Some(result_status) = result_status {
-        if matches!(result_status, "approved" | "rolled-back") {
-            for field in [
-                "rollback_reference",
-                "archive_reference",
-                validation.source_record_state_field,
-                "post_archive_verification_reference",
-            ] {
-                if !snapshot.field_values.contains_key(field) {
-                    push_unique_field(&mut missing_required_fields, field);
-                }
-            }
-        }
-
-        let expected_prior_result_statuses = match result_status {
-            "approved" => Some("[\"exception-accepted\"]"),
-            "rolled-back" => Some("[\"approved\"]"),
-            _ => None,
-        };
-        if let Some(expected) = expected_prior_result_statuses {
-            match snapshot
-                .top_level_fields
-                .get(validation.snapshot_input_contract.prior_result_statuses_key)
-                .copied()
-            {
-                Some(actual) if actual == expected => {},
-                Some(_) => {
-                    failed_additional_checks.push("prior_result_statuses history proof mismatch")
-                },
-                None => push_unique_field(
-                    &mut missing_required_fields,
-                    validation.snapshot_input_contract.prior_result_statuses_key,
-                ),
-            }
-        }
-
-        match snapshot
-            .field_values
-            .get(validation.source_record_state_field)
-            .copied()
-        {
-            Some(source_record_state) if source_record_state == result_status => {},
-            Some(_) => {
-                failed_additional_checks.push("source_record_state must match result_status");
-            },
-            None => push_unique_field(
-                &mut missing_required_fields,
-                validation.source_record_state_field,
-            ),
-        }
-    }
-
-    let stage_status = if missing_required_fields.is_empty() && failed_additional_checks.is_empty()
-    {
-        "valid"
-    } else {
-        "invalid"
-    };
-
-    SectionSnapshotValidationFixtureResult {
-        stage_status,
-        missing_required_fields,
-        failed_additional_checks,
-    }
-}
 
 fn unique_temp_dir() -> std::path::PathBuf {
     let unique = SystemTime::now()
@@ -245,19 +94,19 @@ fn test_auth_provider(configured: bool) -> Option<String> {
 }
 
 fn test_repo_bundled_snapshot_report(
-    baseline: Option<common::official_entry::BundledOfficialEntryPosture>,
-) -> RepoBundledOfficialEntrySnapshotReport {
-    RepoBundledOfficialEntrySnapshotReport {
+    baseline: Option<common::public_realm::BundledPublicRealmPosture>,
+) -> RepoBundledPublicRealmSnapshotReport {
+    RepoBundledPublicRealmSnapshotReport {
         status: if baseline.is_some() {
             "repo-bundled-entry-baseline-available"
         } else {
             "repo-bundled-entry-unavailable"
         },
-        evidence_scope: "repo/local bundled official_entry baseline only",
-        load_source: "voxygen.official_entry asset via common asset loader",
+        evidence_scope: "repo/local bundled public realm baseline only",
+        load_source: "bundled public realm asset via common asset loader",
         authoritative_for_release_cutover: false,
         required_external_match_fields: vec![
-            "bundled_official_entry_artifact_identity",
+            "bundled_public_realm_artifact_identity",
             "bundled_target_kind",
         ],
         baseline,
@@ -1512,11 +1361,11 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert_eq!(
         report.query_hint.protocol_version,
-        veloren_query_server::proto::CURRENT_PROTOCOL_VERSION
+        veldr_query_server::proto::CURRENT_PROTOCOL_VERSION
     );
     assert_eq!(
         report.query_hint.version_selection_policy,
-        veloren_query_server::proto::VERSION_SELECTION_POLICY
+        veldr_query_server::proto::VERSION_SELECTION_POLICY
     );
     assert!(!report.query_hint.supports_multi_version_negotiation);
     assert!(report.query_protocol_rollout.requires_lockstep_rollout);
@@ -1534,7 +1383,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert_eq!(
         report.query_protocol_rollout.authoritative_client_path,
-        "official_entry -> EntryPolicy -> realm handshake"
+        "public_realm -> EntryPolicy -> realm handshake"
     );
     assert!(
         report
@@ -1580,223 +1429,223 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
             .iter()
             .any(|field| *field == "compatibility")
     );
-    assert_eq!(report.public_entry_handoff.signal, "public-entry-handoff");
+    assert_eq!(report.public_realm_handoff.signal, "public-realm-handoff");
     assert_eq!(
-        report.public_entry_handoff.status,
+        report.public_realm_handoff.status,
         "external-review-required"
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .applies_to_non_local_public_rollout
     );
-    assert!(report.public_entry_handoff.requires_operator_review);
-    assert!(!report.public_entry_handoff.release_blocked);
+    assert!(report.public_realm_handoff.requires_operator_review);
+    assert!(!report.public_realm_handoff.release_blocked);
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .development_stage_closure_available_without_real_materials
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .development_stage_closure_scope
             .contains("typed Public handoff contract")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .real_cutover_still_requires_external_materials
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .real_cutover_dependency_boundary
             .contains("real realm/auth authority material")
     );
     assert_eq!(
-        report.public_entry_handoff.expected_handshake_auth_mode,
+        report.public_realm_handoff.expected_handshake_auth_mode,
         common_net::msg::ServerAuthMode::ExternalProvider.as_str()
     );
     assert_eq!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .authoritative_handshake_auth_provider
             .as_deref(),
         Some("https://auth.example.test")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .machine_verification_available_in_this_process
             == report
-                .public_entry_handoff
-                .repo_bundled_official_entry_snapshot
+                .public_realm_handoff
+                .repo_bundled_public_realm_snapshot
                 .baseline
                 .is_some()
     );
     assert_eq!(
-        report.public_entry_handoff.machine_verification_scope,
-        "repo/local bundled official_entry baseline only"
+        report.public_realm_handoff.machine_verification_scope,
+        "repo/local bundled public realm baseline only"
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .machine_verification_limitations
             .contains("shipped Public client artifact")
     );
     assert!(
         report
-            .public_entry_handoff
-            .repo_bundled_official_entry_snapshot
+            .public_realm_handoff
+            .repo_bundled_public_realm_snapshot
             .required_external_match_fields
             .iter()
-            .any(|field| *field == "bundled_official_entry_artifact_identity")
+            .any(|field| *field == "bundled_public_realm_artifact_identity")
     );
     assert!(
         report
-            .public_entry_handoff
-            .repo_bundled_official_entry_snapshot
+            .public_realm_handoff
+            .repo_bundled_public_realm_snapshot
             .required_external_match_fields
             .iter()
             .any(|field| *field == "bundled_target_kind")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "result_status")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "bundled_public_client_artifact_reference")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
-            .any(|field| *field == "bundled_official_entry_artifact_identity")
+            .any(|field| *field == "bundled_public_realm_artifact_identity")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
-            .any(|field| *field == "bundled_official_entry_server_address")
+            .any(|field| *field == "bundled_public_realm_server_address")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
-            .any(|field| *field == "bundled_official_entry_auth_server")
+            .any(|field| *field == "bundled_public_realm_auth_server")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
-            .any(|field| *field == "bundled_official_entry_use_srv")
+            .any(|field| *field == "bundled_public_realm_use_srv")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
-            .any(|field| *field == "bundled_official_entry_validate_tls")
+            .any(|field| *field == "bundled_public_realm_validate_tls")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "bundled_target_kind")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "non_local_cutover_gap_reasons")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "target_runtime_environment")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "authoritative_compatibility_generation")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "backup_evidence_reference")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "recovery_drill_reference")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "rollback_reference")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "rollback_public_client_artifact_reference")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
-            .any(|field| *field == "rollback_bundled_official_entry_artifact_identity")
+            .any(|field| *field == "rollback_bundled_public_realm_artifact_identity")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "expected_handshake_auth_mode")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "authoritative_handshake_auth_provider")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .iter()
             .any(|field| *field == "query_auth_required_hint")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_field_contracts
             .iter()
             .any(
@@ -1807,7 +1656,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_field_contracts
             .iter()
             .any(|field| field.name == "bundled_target_kind"
@@ -1816,7 +1665,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_field_contracts
             .iter()
             .any(
@@ -1827,7 +1676,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_field_contracts
             .iter()
             .any(|field| field.name == "ready_report_status"
@@ -1835,38 +1684,38 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_preconditions
             .iter()
             .any(|item| item.contains("authoritative handshake auth provider"))
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_preconditions
             .iter()
             .any(|item| item.contains("target runtime environment"))
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_preconditions
             .iter()
             .any(|item| item.contains("shipped Public client artifact reference"))
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_preconditions
             .iter()
-            .any(|item| item.contains("rollback_bundled_official_entry_artifact_identity"))
+            .any(|item| item.contains("rollback_bundled_public_realm_artifact_identity"))
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_material_checklist
             .iter()
-            .any(|item| item.id == "bundled-public-entry-artifact-reviewed"
+            .any(|item| item.id == "bundled-public-realm-artifact-reviewed"
                 && item
                     .completion_criteria
                     .contains("shipped Public client artifact reference")
@@ -1877,7 +1726,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_material_checklist
             .iter()
             .any(|item| item.id == "external-auth-authority-pinned"
@@ -1890,7 +1739,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_material_checklist
             .iter()
             .any(|item| item.id == "non-local-target-material-ready"
@@ -1902,7 +1751,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_material_checklist
             .iter()
             .any(|item| item.id == "authoritative-runtime-target-confirmed"
@@ -1914,7 +1763,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_material_checklist
             .iter()
             .any(|item| item.id == "rollback-path-recorded"
@@ -1923,7 +1772,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
                     .contains("rollback_public_client_artifact_reference")
                 && item
                     .completion_criteria
-                    .contains("rollback_bundled_official_entry_artifact_identity")
+                    .contains("rollback_bundled_public_realm_artifact_identity")
                 && item.current_stage_status == CUTOVER_MATERIAL_STATUS_EXTERNAL_MATERIAL_REQUIRED
                 && item
                     .operator_next_step
@@ -1931,41 +1780,41 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_preconditions
             .iter()
             .any(|item| item.contains("ready_report_status"))
     );
     let transition_contract = report
-        .public_entry_handoff
-        .public_entry_transition_contract
+        .public_realm_handoff
+        .public_realm_transition_contract
         .as_ref()
         .expect("non-local public handoff should expose a transition contract");
     assert_eq!(
         transition_contract.transition_scope,
-        "non-local Public official_entry cutover transition unit"
+        "non-local Public public realm cutover transition unit"
     );
     assert_eq!(
         transition_contract.record_scope,
-        "same public-entry-handoff section keyed by release_reference"
+        "same public-realm-handoff section keyed by release_reference"
     );
     assert!(
         transition_contract
             .atomic_bundle_fields
             .iter()
-            .any(|field| *field == "bundled_official_entry_server_address")
+            .any(|field| *field == "bundled_public_realm_server_address")
     );
     assert!(
         transition_contract
             .atomic_bundle_fields
             .iter()
-            .any(|field| *field == "bundled_official_entry_auth_server")
+            .any(|field| *field == "bundled_public_realm_auth_server")
     );
     assert!(
         transition_contract
             .atomic_bundle_fields
             .iter()
-            .any(|field| *field == "bundled_official_entry_use_quic")
+            .any(|field| *field == "bundled_public_realm_use_quic")
     );
     assert!(
         transition_contract
@@ -1989,13 +1838,13 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
         transition_contract
             .forbidden_partial_transitions
             .iter()
-            .any(|rule| rule.contains("official_entry.server_address"))
+            .any(|rule| rule.contains("bundled public realm server address"))
     );
     assert!(
         transition_contract
             .forbidden_partial_transitions
             .iter()
-            .any(|rule| rule.contains("official_entry.auth_server"))
+            .any(|rule| rule.contains("bundled public realm auth pin"))
     );
     assert!(
         transition_contract
@@ -2003,8 +1852,8 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
             .contains("same release_reference")
     );
     let lifecycle_contract = report
-        .public_entry_handoff
-        .public_entry_lifecycle_transition_contract
+        .public_realm_handoff
+        .public_realm_lifecycle_transition_contract
         .as_ref()
         .expect("non-local public handoff should expose a lifecycle transition contract");
     assert_eq!(lifecycle_contract.initial_state, "draft");
@@ -2056,7 +1905,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     }));
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_authority_pairing_checks
             .iter()
             .any(|check| {
@@ -2069,7 +1918,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_authority_pairing_checks
             .iter()
             .any(
@@ -2078,7 +1927,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
                     && check
                         .review_fields
                         .iter()
-                        .any(|field| *field == "bundled_official_entry_auth_server")
+                        .any(|field| *field == "bundled_public_realm_auth_server")
                     && check
                         .review_fields
                         .iter()
@@ -2087,7 +1936,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_authority_pairing_checks
             .iter()
             .any(|check| {
@@ -2099,12 +1948,12 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
                     && check
                         .review_fields
                         .iter()
-                        .any(|field| *field == "rollback_bundled_official_entry_artifact_identity")
+                        .any(|field| *field == "rollback_bundled_public_realm_artifact_identity")
             })
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_authority_pairing_checks
             .iter()
             .any(|check| {
@@ -2112,19 +1961,19 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
                     && check
                         .review_fields
                         .iter()
-                        .any(|field| *field == "rollback_bundled_official_entry_artifact_identity")
+                        .any(|field| *field == "rollback_bundled_public_realm_artifact_identity")
             })
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .supporting_health_endpoints
             .iter()
             .any(|endpoint| *endpoint == "/health/ready")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .supporting_health_endpoints
             .iter()
             .any(|endpoint| *endpoint == "/health/recovery/drill")
@@ -2154,7 +2003,7 @@ fn compatibility_contract_report_exposes_query_v2_as_hint_only() {
 }
 
 #[test]
-fn compatibility_contract_report_marks_local_public_entry_handoff_as_not_applicable() {
+fn compatibility_contract_report_marks_local_public_realm_handoff_as_not_applicable() {
     let report = HealthState {
         environment: "local",
         auth_server_configured: true,
@@ -2173,41 +2022,41 @@ fn compatibility_contract_report_marks_local_public_entry_handoff_as_not_applica
     }
     .compatibility_contract_report();
 
-    assert_eq!(report.public_entry_handoff.status, "not-applicable-local");
+    assert_eq!(report.public_realm_handoff.status, "not-applicable-local");
     assert!(
         !report
-            .public_entry_handoff
+            .public_realm_handoff
             .applies_to_non_local_public_rollout
     );
-    assert!(!report.public_entry_handoff.requires_operator_review);
-    assert!(!report.public_entry_handoff.release_blocked);
+    assert!(!report.public_realm_handoff.requires_operator_review);
+    assert!(!report.public_realm_handoff.release_blocked);
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .development_stage_closure_available_without_real_materials
     );
     assert_eq!(
-        report.public_entry_handoff.development_stage_closure_status,
+        report.public_realm_handoff.development_stage_closure_status,
         "not-applicable-local"
     );
     assert!(
         !report
-            .public_entry_handoff
+            .public_realm_handoff
             .real_cutover_still_requires_external_materials
     );
     assert_eq!(
-        report.public_entry_handoff.real_cutover_execution_status,
+        report.public_realm_handoff.real_cutover_execution_status,
         "not-applicable-local"
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .real_cutover_dependency_boundary
             .contains("outside local-mode scope")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .remaining_external_execution_dependencies
             .is_empty()
     );
@@ -2217,69 +2066,69 @@ fn compatibility_contract_report_marks_local_public_entry_handoff_as_not_applica
     );
     assert_eq!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .authoritative_handshake_auth_provider
             .as_deref(),
         Some("https://auth.example.test")
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields
             .is_empty()
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_field_contracts
             .is_empty()
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_preconditions
             .is_empty()
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_cutover_material_checklist
             .is_empty()
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .required_authority_pairing_checks
             .is_empty()
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .supporting_health_endpoints
             .is_empty()
     );
     assert!(
         report
-            .public_entry_handoff
-            .public_entry_transition_contract
+            .public_realm_handoff
+            .public_realm_transition_contract
             .is_none()
     );
     assert!(
         report
-            .public_entry_handoff
-            .public_entry_lifecycle_transition_contract
+            .public_realm_handoff
+            .public_realm_lifecycle_transition_contract
             .is_none()
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .section_instance_validation_contract
             .is_none()
     );
 }
 
 #[test]
-fn compatibility_contract_report_blocks_non_local_public_entry_handoff_without_external_auth() {
+fn compatibility_contract_report_blocks_non_local_public_realm_handoff_without_external_auth() {
     let report = HealthState {
         environment: "production",
         auth_server_configured: false,
@@ -2299,66 +2148,66 @@ fn compatibility_contract_report_blocks_non_local_public_entry_handoff_without_e
     .compatibility_contract_report();
 
     assert_eq!(
-        report.public_entry_handoff.status,
+        report.public_realm_handoff.status,
         "non-local-public-rollout-unsupported"
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .applies_to_non_local_public_rollout
     );
-    assert!(!report.public_entry_handoff.requires_operator_review);
-    assert!(report.public_entry_handoff.release_blocked);
+    assert!(!report.public_realm_handoff.requires_operator_review);
+    assert!(report.public_realm_handoff.release_blocked);
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .development_stage_closure_available_without_real_materials
     );
     assert_eq!(
-        report.public_entry_handoff.development_stage_closure_status,
+        report.public_realm_handoff.development_stage_closure_status,
         "development-contract-closure-available"
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .real_cutover_still_requires_external_materials
     );
     assert_eq!(
-        report.public_entry_handoff.real_cutover_execution_status,
+        report.public_realm_handoff.real_cutover_execution_status,
         "blocked-by-runtime-auth-posture-and-external-materials"
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .real_cutover_dependency_boundary
             .contains("supported external-auth handshake posture")
     );
     assert_eq!(
-        report.public_entry_handoff.expected_handshake_auth_mode,
+        report.public_realm_handoff.expected_handshake_auth_mode,
         common_net::msg::ServerAuthMode::NoExternalAuth.as_str()
     );
     assert_eq!(report.authoritative_handshake.auth_provider, None);
     assert_eq!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .authoritative_handshake_auth_provider,
         None
     );
     assert!(
         report
-            .public_entry_handoff
-            .public_entry_transition_contract
+            .public_realm_handoff
+            .public_realm_transition_contract
             .is_some()
     );
     assert!(
         report
-            .public_entry_handoff
-            .public_entry_lifecycle_transition_contract
+            .public_realm_handoff
+            .public_realm_lifecycle_transition_contract
             .is_some()
     );
     assert!(
         report
-            .public_entry_handoff
+            .public_realm_handoff
             .remaining_external_execution_dependencies
             .iter()
             .any(|dependency| {
@@ -2371,7 +2220,7 @@ fn compatibility_contract_report_blocks_non_local_public_entry_handoff_without_e
 }
 
 #[test]
-fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight() {
+fn public_realm_handoff_schema_stays_aligned_between_compatibility_and_preflight() {
     let root = unique_temp_dir();
     let live_state = server::ServerStatePaths::new(root.join("live"));
     let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
@@ -2401,62 +2250,62 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
     let preflight_contract = preflight
         .review_decision_contracts
         .iter()
-        .find(|contract| contract.signal == "public-entry-handoff")
-        .expect("public-entry-handoff decision contract should exist");
+        .find(|contract| contract.signal == "public-realm-handoff")
+        .expect("public-realm-handoff decision contract should exist");
 
     assert_eq!(
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_fields,
         preflight_contract.required_decision_fields
     );
     assert_eq!(
-        preflight.repo_bundled_official_entry_snapshot.status,
+        preflight.repo_bundled_public_realm_snapshot.status,
         compatibility
-            .public_entry_handoff
-            .repo_bundled_official_entry_snapshot
+            .public_realm_handoff
+            .repo_bundled_public_realm_snapshot
             .status
     );
     assert_eq!(
-        preflight.repo_bundled_official_entry_snapshot.baseline,
+        preflight.repo_bundled_public_realm_snapshot.baseline,
         compatibility
-            .public_entry_handoff
-            .repo_bundled_official_entry_snapshot
+            .public_realm_handoff
+            .repo_bundled_public_realm_snapshot
             .baseline
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .required_external_review_field_contracts,
         preflight_contract.required_decision_field_contracts
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .required_authority_pairing_checks,
         preflight_contract.authority_pairing_checks
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
-            .public_entry_transition_contract,
-        preflight_contract.public_entry_transition_contract
+            .public_realm_handoff
+            .public_realm_transition_contract,
+        preflight_contract.public_realm_transition_contract
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
-            .public_entry_lifecycle_transition_contract,
-        preflight_contract.public_entry_lifecycle_transition_contract
+            .public_realm_handoff
+            .public_realm_lifecycle_transition_contract,
+        preflight_contract.public_realm_lifecycle_transition_contract
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .section_instance_validation_contract,
         preflight_contract.section_instance_validation_contract
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .section_instance_validation_contract
             .as_ref()
             .map(|contract| &contract.snapshot_input_contract),
@@ -2467,7 +2316,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .section_instance_validation_contract
             .as_ref()
             .map(|contract| &contract.snapshot_template_contract),
@@ -2478,7 +2327,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .section_instance_validation_contract
             .as_ref()
             .map(|contract| &contract.minimum_snapshot_example),
@@ -2489,7 +2338,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .section_instance_validation_contract
             .as_ref()
             .map(|contract| &contract.validation_result_contract),
@@ -2500,7 +2349,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .section_instance_validation_contract
             .as_ref()
             .map(|contract| &contract.minimum_validation_result_example),
@@ -2511,7 +2360,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
     );
     assert_eq!(
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .supporting_health_endpoints,
         preflight_contract
             .supporting_endpoints
@@ -2522,33 +2371,33 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
     assert_eq!(
         preflight.development_stage_closure_status,
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .development_stage_closure_status
     );
     assert_eq!(
         preflight.real_cutover_execution_status,
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .real_cutover_execution_status
     );
     assert_eq!(
         preflight.remaining_external_execution_dependencies,
         compatibility
-            .public_entry_handoff
+            .public_realm_handoff
             .remaining_external_execution_dependencies
     );
     let lifecycle_contract = preflight_contract
-        .public_entry_lifecycle_transition_contract
+        .public_realm_lifecycle_transition_contract
         .as_ref()
-        .expect("public-entry-handoff preflight contract should expose lifecycle transitions");
+        .expect("public-realm-handoff preflight contract should expose lifecycle transitions");
     let validation_contract = preflight_contract
         .section_instance_validation_contract
         .as_ref()
-        .expect("public-entry-handoff preflight contract should expose section validation");
+        .expect("public-realm-handoff preflight contract should expose section validation");
     let readiness_summary = preflight_contract
         .validator_integration_readiness_summary
         .as_ref()
-        .expect("public-entry-handoff preflight contract should expose validator readiness");
+        .expect("public-realm-handoff preflight contract should expose validator readiness");
     assert_eq!(readiness_summary.status, "validator-contract-ready");
     assert_eq!(
         readiness_summary.input_snapshot_kind,
@@ -2998,14 +2847,14 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
             && transition.approval_decision == Some("rejected")
     }));
     let transition_contract = preflight_contract
-        .public_entry_transition_contract
+        .public_realm_transition_contract
         .as_ref()
-        .expect("public-entry-handoff preflight contract should expose transition rules");
+        .expect("public-realm-handoff preflight contract should expose transition rules");
     assert!(
         transition_contract
             .atomic_bundle_fields
             .iter()
-            .any(|field| *field == "bundled_official_entry_validate_tls")
+            .any(|field| *field == "bundled_public_realm_validate_tls")
     );
     assert!(
         transition_contract
@@ -3017,7 +2866,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
         transition_contract
             .atomic_rollback_restore_fields
             .iter()
-            .any(|field| *field == "rollback_bundled_official_entry_artifact_identity")
+            .any(|field| *field == "rollback_bundled_public_realm_artifact_identity")
     );
     assert!(
         transition_contract
@@ -3087,7 +2936,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
             .archive_handoff_contract
             .required_archive_correlation_dimensions
             .iter()
-            .any(|dimension| *dimension == "bundled_official_entry_artifact_identity")
+            .any(|dimension| *dimension == "bundled_public_realm_artifact_identity")
     );
     assert!(
         preflight_contract
@@ -3108,7 +2957,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
             .archive_handoff_contract
             .required_archive_correlation_dimensions
             .iter()
-            .any(|dimension| *dimension == "rollback_bundled_official_entry_artifact_identity")
+            .any(|dimension| *dimension == "rollback_bundled_public_realm_artifact_identity")
     );
     assert!(
         preflight_contract
@@ -3212,7 +3061,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
             .terminal_mutation_contract
             .forbidden_mutations
             .iter()
-            .any(|rule| rule.contains("bundled_official_entry_artifact_identity"))
+            .any(|rule| rule.contains("bundled_public_realm_artifact_identity"))
     );
     assert!(
         preflight_contract
@@ -3246,7 +3095,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
             .execution_boundary_contract
             .minimum_terminal_snapshot_record_fields
             .iter()
-            .any(|field| *field == "rollback_bundled_official_entry_artifact_identity")
+            .any(|field| *field == "rollback_bundled_public_realm_artifact_identity")
     );
     assert!(
         preflight_contract
@@ -3267,11 +3116,11 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
             .execution_boundary_contract
             .forbidden_shortcuts
             .iter()
-            .any(|rule| rule.contains("rollback bundled official_entry artifact identity"))
+            .any(|rule| rule.contains("rollback bundled public realm artifact identity"))
     );
     assert_eq!(
         preflight_contract.section_record_template.section_signal,
-        "public-entry-handoff"
+        "public-realm-handoff"
     );
     assert_eq!(
         preflight_contract
@@ -3295,7 +3144,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
             .required_fields
             .iter()
             .any(
-                |field| field.name == "bundled_official_entry_server_address"
+                |field| field.name == "bundled_public_realm_server_address"
                     && field.placeholder == "<public-realm-host-or-socket>"
             )
     );
@@ -3315,8 +3164,8 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
             .required_fields
             .iter()
             .any(
-                |field| field.name == "rollback_bundled_official_entry_artifact_identity"
-                    && field.placeholder == "<rollback-official-entry-content-sha256-v1:...>"
+                |field| field.name == "rollback_bundled_public_realm_artifact_identity"
+                    && field.placeholder == "<rollback-caldrayne-public-realm-sha256-v1:...>"
             )
     );
     assert!(
@@ -3355,7 +3204,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
             .minimum_section_example
             .example_fields
             .iter()
-            .any(|field| field.name == "bundled_official_entry_auth_server"
+            .any(|field| field.name == "bundled_public_realm_auth_server"
                 && field.value == "https://auth.realm.example")
     );
     assert!(
@@ -3374,8 +3223,8 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
             .example_fields
             .iter()
             .any(
-                |field| field.name == "rollback_bundled_official_entry_artifact_identity"
-                    && field.value == "official-entry-content-sha256-v1:previousbundlecafebabe"
+                |field| field.name == "rollback_bundled_public_realm_artifact_identity"
+                    && field.value == "caldrayne-public-realm-sha256-v1:previousbundlecafebabe"
             )
     );
     assert!(
@@ -3466,7 +3315,7 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
                     && step
                         .completion_record_fields
                         .iter()
-                        .any(|field| *field == "rollback_bundled_official_entry_artifact_identity")
+                        .any(|field| *field == "rollback_bundled_public_realm_artifact_identity")
             })
     );
     assert!(
@@ -3519,28 +3368,24 @@ fn public_entry_handoff_schema_stays_aligned_between_compatibility_and_preflight
 
 #[test]
 fn section_instance_validation_contracts_expose_snapshot_input_contracts() {
-    let public_entry = public_entry_section_instance_validation_contract(
-        &public_entry_handoff_required_review_field_contracts(),
+    let public_realm = public_realm_section_instance_validation_contract(
+        &public_realm_handoff_required_review_field_contracts(),
     );
     let governance = governance_section_instance_validation_contract(
         &governance_required_decision_field_contracts(),
-    );
-    #[cfg(feature = "worldgen")]
-    let world_compat = world_compat_section_instance_validation_contract(
-        &world_compat_required_decision_field_contracts(),
     );
     let management_auth = management_auth_section_instance_validation_contract(
         &management_auth_required_decision_field_contracts(),
     );
 
     assert_eq!(
-        public_entry
+        public_realm
             .snapshot_input_contract
             .prior_result_statuses_key,
         "prior_result_statuses"
     );
     assert!(
-        public_entry
+        public_realm
             .snapshot_input_contract
             .stage_scoped_field_values
             .iter()
@@ -3550,35 +3395,35 @@ fn section_instance_validation_contracts_expose_snapshot_input_contracts() {
             })
     );
     assert!(
-        public_entry
+        public_realm
             .snapshot_input_contract
             .notes
             .iter()
             .any(|note| note.contains("field_values.result_status"))
     );
     assert!(
-        public_entry
+        public_realm
             .snapshot_template_contract
             .top_level_fields
             .iter()
             .any(|field| field.name == "prior_result_statuses")
     );
     assert!(
-        public_entry
+        public_realm
             .minimum_snapshot_example
             .top_level_fields
             .iter()
             .any(|field| field.name == "prior_result_statuses")
     );
     assert!(
-        public_entry
+        public_realm
             .validation_result_contract
             .optional_fields
             .iter()
             .any(|field| field.name == "failed_authority_pairing_check_ids")
     );
     assert!(
-        public_entry
+        public_realm
             .minimum_validation_result_example
             .fields
             .iter()
@@ -3625,80 +3470,6 @@ fn section_instance_validation_contracts_expose_snapshot_input_contracts() {
             .required_fields
             .iter()
             .any(|field| field.name == "summary")
-    );
-    #[cfg(feature = "worldgen")]
-    assert!(
-        world_compat
-            .snapshot_input_contract
-            .stage_scoped_field_values
-            .iter()
-            .any(|field| field.name == "world_compat_status")
-    );
-    #[cfg(feature = "worldgen")]
-    assert!(
-        world_compat
-            .snapshot_template_contract
-            .field_value_entries
-            .iter()
-            .any(|field| field.name == "rollback_reference")
-    );
-    #[cfg(feature = "worldgen")]
-    assert!(
-        world_compat
-            .snapshot_input_contract
-            .notes
-            .iter()
-            .any(|note| note.contains("rolled-back"))
-    );
-    #[cfg(feature = "worldgen")]
-    assert!(
-        world_compat
-            .snapshot_input_contract
-            .notes
-            .iter()
-            .any(|note| note.contains("previously reached exception-accepted"))
-    );
-    #[cfg(feature = "worldgen")]
-    assert!(
-        world_compat
-            .snapshot_input_contract
-            .notes
-            .iter()
-            .any(|note| note.contains("previously reached approved"))
-    );
-    #[cfg(feature = "worldgen")]
-    assert!(
-        world_compat
-            .snapshot_template_contract
-            .notes
-            .iter()
-            .any(|note| note.contains("prior_result_statuses"))
-    );
-    #[cfg(feature = "worldgen")]
-    assert!(
-        world_compat
-            .minimum_snapshot_example
-            .top_level_fields
-            .iter()
-            .any(|field| {
-                field.name == "prior_result_statuses" && field.value == "[\"exception-accepted\"]"
-            })
-    );
-    #[cfg(feature = "worldgen")]
-    assert!(
-        world_compat
-            .minimum_snapshot_example
-            .field_value_entries
-            .iter()
-            .any(|field| field.name == "result_status" && field.value == "approved")
-    );
-    #[cfg(feature = "worldgen")]
-    assert!(
-        world_compat
-            .minimum_validation_result_example
-            .fields
-            .iter()
-            .any(|field| field.name == "stage_status" && field.value == "valid")
     );
     assert!(
         management_auth
@@ -3791,749 +3562,11 @@ fn section_instance_validation_contracts_expose_snapshot_input_contracts() {
             validation_contract.blocking_interpretation
         );
     }
-
-    #[cfg(feature = "worldgen")]
-    {
-        let root = unique_temp_dir();
-        let state = server::ServerStatePaths::new(root.join("live"));
-        let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
-        seed_live_runtime_state(&state);
-        seed_recovery_staging_restore_state(&recovery_staging_state);
-
-        let inventory = test_runtime_observability_inventory();
-        set_world_compat_observability_status(
-            &inventory,
-            "record",
-            "allow",
-            "allow",
-            server::CompatAuditV1::fallback_generate(
-                server::CompatEntryKindV1::Load,
-                server::CompatFailureKindV1::OptionMismatch,
-            ),
-            &server::RecipeManifestV1::record_only(
-                server::DEFAULT_WORLD_SEED,
-                &server::GenOpts::default(),
-                true,
-            ),
-            false,
-        );
-
-        let world_compat_preflight = HealthState {
-            environment: "local",
-            auth_server_configured: false,
-            authoritative_auth_provider: test_auth_provider(false),
-            server_state: state,
-            recovery_staging_state,
-            audit_retention: crate::settings::AuditRetentionPolicy::default(),
-            runtime_listener_inventory: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-            runtime_observability_inventory: inventory,
-            surface_inventory: Vec::new(),
-            management_auth_inventory: Vec::new(),
-            transport_security_inventory: Vec::new(),
-            governance_findings: Vec::new(),
-        }
-        .preflight_report();
-
-        let _ = fs::remove_dir_all(root);
-
-        let contract = world_compat_preflight
-            .review_decision_contracts
-            .iter()
-            .find(|contract| contract.signal == "world-compat")
-            .expect("world-compat review decision contract should exist");
-        let validation_contract = contract
-            .section_instance_validation_contract
-            .as_ref()
-            .expect(
-                "exported preflight review decision contracts should expose section validation",
-            );
-        let readiness_summary = contract
-            .validator_integration_readiness_summary
-            .as_ref()
-            .expect(
-                "exported preflight review decision contracts should expose validator readiness",
-            );
-
-        assert_eq!(readiness_summary.status, "validator-contract-ready");
-        assert_eq!(
-            readiness_summary.input_snapshot_kind,
-            validation_contract.snapshot_input_contract.snapshot_kind
-        );
-        assert_eq!(
-            readiness_summary.field_values_key,
-            validation_contract.snapshot_input_contract.field_values_key
-        );
-        assert_eq!(
-            readiness_summary.lifecycle_state_field,
-            validation_contract.lifecycle_state_field
-        );
-        assert_eq!(
-            readiness_summary.output_result_kind,
-            validation_contract.validation_result_contract.result_kind
-        );
-        assert_eq!(
-            readiness_summary.output_stage_status_field,
-            validation_contract
-                .validation_result_contract
-                .stage_status_field
-        );
-        assert_eq!(
-            readiness_summary.blocking_interpretation,
-            validation_contract.blocking_interpretation
-        );
-        assert!(contract.accepted_exception_follow_up.iter().any(|item| {
-            item.contains("append an explicit approved follow-up")
-                && item.contains("load_legacy_mode = deny")
-                && item.contains("metadata clarification")
-                && item.contains("archive_reference")
-                && item.contains("source_record_state")
-                && item.contains("post_archive_verification_reference")
-                && item.contains("current approved terminal result_status")
-                && item.contains("prior_result_statuses")
-                && item.contains("exception-accepted")
-        }));
-        assert!(contract.accepted_exception_follow_up.iter().any(|item| {
-            item.contains("append an explicit rolled-back follow-up")
-                && item.contains("recipe and topology fingerprint")
-                && item.contains("metadata clarification")
-                && item.contains("archive_reference")
-                && item.contains("source_record_state")
-                && item.contains("post_archive_verification_reference")
-                && item.contains("current rolled-back terminal result_status")
-                && item.contains("prior_result_statuses")
-                && item.contains("approved")
-        }));
-    }
 }
 
 #[test]
-#[cfg(feature = "worldgen")]
-fn world_compat_review_contracts_encode_flip_and_removal_stage_semantics() {
-    let required_fields = world_compat_required_decision_field_contracts();
-    let exception_fields = world_compat_exception_field_contracts();
-    let load_legacy_mode = required_fields
-        .iter()
-        .find(|field| field.name == "load_legacy_mode")
-        .expect("load_legacy_mode contract should exist");
-    let sidecarless_mode = required_fields
-        .iter()
-        .find(|field| field.name == "load_or_generate_sidecarless_mode")
-        .expect("load_or_generate_sidecarless_mode contract should exist");
-    let rollback_reference = exception_fields
-        .iter()
-        .find(|field| field.name == "rollback_reference")
-        .expect("rollback_reference contract should exist");
-    let workflow = release_review_section_execution_workflow("world-compat");
-    let validation = world_compat_section_instance_validation_contract(&required_fields);
-    let result_status_model = world_compat_review_result_status_model();
-    let example = release_review_section_example_contract(
-        "world-compat",
-        "approved",
-        &required_fields,
-        Vec::new(),
-    );
-    let post_archive_writeback_fields = release_review_post_archive_writeback_field_names();
-    let archive_handoff_contract = release_review_record_archive_handoff_contract(
-        "world-compat",
-        "release-review-record reached a terminal world-compat review state with rollout posture, \
-         recipe fingerprint, and rollback path recorded where applicable",
-        vec!["approved", "exception-accepted", "rejected", "rolled-back"],
-        vec!["approved", "exception-accepted", "rejected", "rolled-back"],
-    );
-    let retention_contract =
-        release_review_record_retention_contract("world-compat", &post_archive_writeback_fields);
-    let terminal_mutation_contract = release_review_terminal_mutation_contract(
-        "world-compat",
-        &archive_handoff_contract,
-        &post_archive_writeback_fields,
-    );
-
-    assert!(
-        load_legacy_mode
-            .semantics
-            .contains("transitional compat-import window")
-    );
-    assert!(load_legacy_mode.semantics.contains("default flip/removal"));
-    assert!(
-        sidecarless_mode
-            .semantics
-            .contains("sidecarless managed reuse open as a transitional path")
-    );
-    assert!(sidecarless_mode.semantics.contains("default flip/removal"));
-    assert!(
-        rollback_reference
-            .semantics
-            .contains("approved deny rehearsals")
-    );
-    assert!(workflow.iter().any(|step| {
-        step.sequence == 2
-            && step.record_effect.contains("transitional allow window")
-            && step
-                .record_effect
-                .contains("deny rehearsal/default-flip candidate")
-            && step
-                .record_effect
-                .contains("append rollback_reference before writing approved")
-            && step
-                .record_effect
-                .contains("same-section history proof of the prior terminal result_status")
-    }));
-    assert!(workflow.iter().any(|step| {
-        step.sequence == 3
-            && step.record_effect.contains("exception-accepted")
-            && step
-                .record_effect
-                .contains("approved is reserved for deny/clear posture")
-            && step
-                .record_effect
-                .contains("deny-rehearsal rollback evidence")
-            && step
-                .record_effect
-                .contains("prior terminal state was exception-accepted")
-            && step
-                .record_effect
-                .contains("prior terminal state was approved")
-    }));
-    assert!(workflow.iter().any(|step| {
-        step.sequence == 4
-            && step
-                .record_effect
-                .contains("approved deny-rehearsal terminals must preserve rollback_reference")
-    }));
-    assert!(workflow.iter().any(|step| {
-        step.sequence == 5
-            && step
-                .record_effect
-                .contains("approved deny rehearsal rollback_reference")
-            && step.record_effect.contains("archive_reference")
-            && step.record_effect.contains("source_record_state")
-            && step
-                .record_effect
-                .contains("post_archive_verification_reference")
-    }));
-    assert!(
-        validation
-            .snapshot_input_contract
-            .notes
-            .iter()
-            .any(|note| note.contains("default flip/removal"))
-    );
-    assert!(validation.snapshot_input_contract.notes.iter().any(|note| {
-        note.contains("result_status = approved") && note.contains("rollback_reference")
-    }));
-    assert!(
-        validation
-            .snapshot_input_contract
-            .notes
-            .iter()
-            .any(|note| { note.contains("previously reached exception-accepted") })
-    );
-    assert!(validation.snapshot_input_contract.notes.iter().any(|note| {
-        note.contains("previously reached approved before the rollback follow-up")
-    }));
-    assert!(validation.snapshot_input_contract.notes.iter().any(|note| {
-        note.contains("archive_reference")
-            && note.contains("source_record_state")
-            && note.contains("post_archive_verification_reference")
-            && note.contains("archived terminal evidence")
-    }));
-    assert!(
-        validation
-            .snapshot_template_contract
-            .notes
-            .iter()
-            .any(|note| note.contains("rollback_reference may remain present for approved deny"))
-    );
-    assert!(
-        validation
-            .snapshot_template_contract
-            .notes
-            .iter()
-            .any(|note| note.contains("prior_result_statuses"))
-    );
-    assert!(
-        validation
-            .snapshot_template_contract
-            .notes
-            .iter()
-            .any(|note| {
-                note.contains("archive_reference")
-                    && note.contains("source_record_state")
-                    && note.contains("post_archive_verification_reference")
-            })
-    );
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .notes
-            .iter()
-            .any(|note| note.contains("prior_result_statuses shows how to prove"))
-    );
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .notes
-            .iter()
-            .any(|note| note.contains("same-section prior terminal history"))
-    );
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .notes
-            .iter()
-            .any(|note| {
-                note.contains("archive_reference")
-                    && note.contains("source_record_state")
-                    && note.contains("post_archive_verification_reference")
-            })
-    );
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .top_level_fields
-            .iter()
-            .any(|field| {
-                field.name == "prior_result_statuses" && field.value == "[\"exception-accepted\"]"
-            })
-    );
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .field_value_entries
-            .iter()
-            .any(|field| {
-                field.name == "rollback_reference"
-                    && field.value == "runbook://world-compat/rollback-01"
-            })
-    );
-    assert!(
-        validation
-            .evidence_linked_requirements
-            .required_additional_checks
-            .iter()
-            .any(|check| check.contains("stage markers for future default-flip/removal review"))
-    );
-    assert!(
-        validation
-            .terminal_requirements
-            .conditional_required_fields
-            .iter()
-            .any(|requirement| {
-                requirement.when_result_statuses == vec!["approved"]
-                    && requirement.required_fields == vec!["rollback_reference"]
-                    && requirement
-                        .completion_rule
-                        .contains("approved world-compat deny-rehearsal posture")
-            })
-    );
-    assert!(
-        validation
-            .terminal_requirements
-            .required_additional_checks
-            .iter()
-            .any(|check| {
-                check.contains("load_legacy_mode = allow")
-                    && check.contains("exception-accepted")
-                    && check.contains("rollback_reference")
-            })
-    );
-    assert!(
-        validation
-            .terminal_requirements
-            .required_additional_checks
-            .iter()
-            .any(|check| {
-                check.contains("load_legacy_mode = deny")
-                    && check.contains("result_status = approved")
-                    && check.contains("rollback_reference")
-            })
-    );
-    assert!(
-        validation
-            .terminal_requirements
-            .required_additional_checks
-            .iter()
-            .any(|check| {
-                check.contains("previously archived")
-                    && check.contains("exception-accepted")
-                    && check.contains("prior_result_statuses")
-            })
-    );
-    assert!(
-        validation
-            .terminal_requirements
-            .required_additional_checks
-            .iter()
-            .any(|check| {
-                check.contains(
-                    "archive_reference/source_record_state/post_archive_verification_reference",
-                ) && check.contains("exception-accepted")
-            })
-    );
-    assert!(
-        validation
-            .terminal_requirements
-            .required_additional_checks
-            .iter()
-            .any(|check| {
-                check.contains(
-                    "archive_reference/source_record_state/post_archive_verification_reference",
-                ) && check.contains("approved terminal")
-            })
-    );
-    assert!(
-        validation
-            .terminal_requirements
-            .required_additional_checks
-            .iter()
-            .any(|check| {
-                check.contains("prior approved terminal world-compat decision state")
-                    && check.contains("prior_result_statuses")
-            })
-    );
-    assert!(
-        validation
-            .terminal_requirements
-            .completion_rule
-            .contains("prior_result_statuses history proof")
-    );
-    assert!(
-        validation
-            .archive_receipt_requirements
-            .conditional_required_fields
-            .iter()
-            .any(|requirement| {
-                requirement.when_result_statuses == vec!["approved"]
-                    && requirement.required_fields == vec!["rollback_reference"]
-                    && requirement
-                        .completion_rule
-                        .contains("archive-ready approved world-compat deny-rehearsal sections")
-            })
-    );
-    assert!(
-        retention_contract
-            .required_post_archive_checks
-            .iter()
-            .any(|check| {
-                check.contains(
-                    "close accepted transition windows with an explicit approved follow-up",
-                ) && check.contains("rolled-back follow-up history entry")
-            })
-    );
-    assert!(
-        retention_contract
-            .required_post_archive_checks
-            .iter()
-            .any(|check| {
-                check.contains("archive_reference")
-                    && check.contains("source_record_state")
-                    && check.contains("post_archive_verification_reference")
-                    && check.contains("follow-up still carries the archived terminal evidence")
-            })
-    );
-    assert!(
-        validation
-            .post_archive_verification_requirements
-            .required_additional_checks
-            .iter()
-            .any(|check| {
-                check.contains("archive_reference")
-                    && check.contains("source_record_state")
-                    && check.contains("post_archive_verification_reference")
-                    && check.contains("approved or rolled-back follow-up validation is incomplete")
-            })
-    );
-    assert!(
-        terminal_mutation_contract
-            .allowed_follow_up_actions
-            .iter()
-            .any(|item| {
-                item.contains("append an explicit approved follow-up")
-                    && item.contains("deny/deny posture")
-                    && item.contains("archive_reference")
-                    && item.contains("source_record_state")
-                    && item.contains("post_archive_verification_reference")
-                    && item.contains("prior_result_statuses")
-                    && item.contains("exception-accepted")
-                    && item.contains(
-                        "do not represent that posture change as metadata clarification only",
-                    )
-            })
-    );
-    assert!(
-        terminal_mutation_contract
-            .allowed_follow_up_actions
-            .iter()
-            .any(|item| {
-                item.contains("append an explicit rolled-back follow-up")
-                    && item.contains("approved deny-rehearsal")
-                    && item.contains("archive_reference")
-                    && item.contains("source_record_state")
-                    && item.contains("post_archive_verification_reference")
-                    && item.contains("prior_result_statuses")
-                    && item.contains("approved")
-                    && item.contains(
-                        "do not represent that posture change as metadata clarification only",
-                    )
-            })
-    );
-    assert!(
-        terminal_mutation_contract
-            .forbidden_mutations
-            .iter()
-            .any(|rule| {
-                rule.contains("accepted-window closure or post-flip rollback")
-                    && rule.contains("correction-only")
-                    && rule.contains("approved or rolled-back follow-up")
-            })
-    );
-    assert!(
-        terminal_mutation_contract
-            .forbidden_mutations
-            .iter()
-            .any(|rule| {
-                rule.contains("silently replacing it with approved")
-                    && rule.contains("exception-accepted transition window")
-            })
-    );
-    assert!(
-        terminal_mutation_contract
-            .forbidden_mutations
-            .iter()
-            .any(|rule| {
-                rule.contains("archive_reference")
-                    && rule.contains("source_record_state")
-                    && rule.contains("post_archive_verification_reference")
-                    && rule.contains("prior_result_statuses")
-                    && rule.contains("approved or rolled-back world-compat follow-up")
-            })
-    );
-    assert!(
-        terminal_mutation_contract
-            .forbidden_mutations
-            .iter()
-            .any(|rule| {
-                rule.contains("silently mutating an archived approved deny-rehearsal section")
-                    && rule.contains("rolled-back follow-up")
-            })
-    );
-    assert!(
-        terminal_mutation_contract
-            .superseding_change_rule
-            .contains("close accepted transition windows with an approved follow-up")
-    );
-    assert!(
-        terminal_mutation_contract
-            .superseding_change_rule
-            .contains("post-flip rollback with a rolled-back follow-up")
-    );
-    assert!(
-        validation
-            .post_archive_verification_requirements
-            .conditional_required_fields
-            .iter()
-            .any(|requirement| {
-                requirement.when_result_statuses == vec!["approved"]
-                    && requirement.required_fields == vec!["rollback_reference"]
-                    && requirement.completion_rule.contains(
-                        "post-archive verification of approved world-compat deny-rehearsal \
-                         sections",
-                    )
-            })
-    );
-    assert!(result_status_model.iter().any(|status| {
-        status.state == "approved"
-            && status
-                .semantics
-                .contains("deny rehearsal/default-flip candidate remains reversible")
-            && status.semantics.contains("rollback_reference")
-    }));
-    assert!(result_status_model.iter().any(|status| {
-        status.state == "exception-accepted" && status.semantics.contains("transition window")
-    }));
-    assert!(example.example_fields.iter().any(|field| {
-        field.name == "world_compat_status" && field.value == "world-compat-clear"
-    }));
-    assert!(
-        example
-            .example_fields
-            .iter()
-            .any(|field| { field.name == "load_legacy_mode" && field.value == "deny" })
-    );
-    assert!(example.example_fields.iter().any(|field| {
-        field.name == "load_or_generate_sidecarless_mode" && field.value == "deny"
-    }));
-    assert!(example.example_fields.iter().any(|field| {
-        field.name == "rollback_reference" && field.value == "runbook://world-compat/rollback-01"
-    }));
-    assert!(example.example_fields.iter().any(|field| {
-        field.name == "rollback_reference"
-            && field
-                .rationale
-                .contains("closing a previously accepted transition window")
-            && field
-                .rationale
-                .contains("prior terminal state was exception-accepted")
-    }));
-    assert!(example.example_fields.iter().any(|field| {
-        field.name == "archive_reference"
-            && field.value == "archive://release-review/2026-05-01/public-entry-handoff-terminal"
-            && field
-                .rationale
-                .contains("archived terminal evidence carried forward")
-    }));
-    assert!(example.example_fields.iter().any(|field| {
-        field.name == "source_record_state"
-            && field.value == "approved"
-            && field
-                .rationale
-                .contains("archive-receipt source_record_state preserved")
-            && field
-                .rationale
-                .contains("aligned with the terminal result_status recorded for this follow-up")
-            && field
-                .rationale
-                .contains("prior_result_statuses remains the same-section history proof")
-    }));
-    assert!(example.example_fields.iter().any(|field| {
-        field.name == "post_archive_verification_reference"
-            && field.value == "note://archive-review/release-2026-05-01"
-            && field
-                .rationale
-                .contains("post-archive verification evidence")
-    }));
-    let rolled_back_example = release_review_section_example_contract(
-        "world-compat",
-        "rolled-back",
-        &required_fields,
-        Vec::new(),
-    );
-    assert!(rolled_back_example.example_fields.iter().any(|field| {
-        field.name == "rollback_reference"
-            && field.rationale.contains("post-flip rollback follow-up")
-            && field
-                .rationale
-                .contains("prior terminal state was approved")
-    }));
-    assert!(rolled_back_example.example_fields.iter().any(|field| {
-        field.name == "archive_reference"
-            && field.value == "archive://release-review/2026-05-01/public-entry-handoff-terminal"
-    }));
-    assert!(rolled_back_example.example_fields.iter().any(|field| {
-        field.name == "source_record_state"
-            && field.value == "rolled-back"
-            && field
-                .rationale
-                .contains("archive-receipt source_record_state preserved")
-            && field
-                .rationale
-                .contains("aligned with the terminal result_status recorded for this follow-up")
-            && field
-                .rationale
-                .contains("prior_result_statuses remains the same-section history proof")
-    }));
-    assert!(rolled_back_example.example_fields.iter().any(|field| {
-        field.name == "post_archive_verification_reference"
-            && field.value == "note://archive-review/release-2026-05-01"
-    }));
-
-    let approved_snapshot_validation = validate_world_compat_follow_up_history_proof_fixture(
-        &validation,
-        &SectionSnapshotFixture::from_section_example(&example),
-    );
-    assert_eq!(approved_snapshot_validation.stage_status, "valid");
-    assert!(
-        approved_snapshot_validation
-            .missing_required_fields
-            .is_empty()
-    );
-    assert!(
-        approved_snapshot_validation
-            .failed_additional_checks
-            .is_empty()
-    );
-
-    let mut approved_missing_history = SectionSnapshotFixture::from_section_example(&example);
-    approved_missing_history.remove_top_level_field("prior_result_statuses");
-    let approved_missing_history_validation = validate_world_compat_follow_up_history_proof_fixture(
-        &validation,
-        &approved_missing_history,
-    );
-    assert_eq!(approved_missing_history_validation.stage_status, "invalid");
-    assert!(
-        approved_missing_history_validation
-            .missing_required_fields
-            .contains(&"prior_result_statuses")
-    );
-
-    let rolled_back_snapshot_validation = validate_world_compat_follow_up_history_proof_fixture(
-        &validation,
-        &SectionSnapshotFixture::from_section_example(&rolled_back_example),
-    );
-    assert_eq!(rolled_back_snapshot_validation.stage_status, "valid");
-    assert!(
-        rolled_back_snapshot_validation
-            .missing_required_fields
-            .is_empty()
-    );
-    assert!(
-        rolled_back_snapshot_validation
-            .failed_additional_checks
-            .is_empty()
-    );
-
-    let mut rolled_back_missing_archive =
-        SectionSnapshotFixture::from_section_example(&rolled_back_example);
-    rolled_back_missing_archive.remove_field_value("archive_reference");
-    rolled_back_missing_archive.remove_field_value("source_record_state");
-    rolled_back_missing_archive.remove_field_value("post_archive_verification_reference");
-    let rolled_back_missing_archive_validation =
-        validate_world_compat_follow_up_history_proof_fixture(
-            &validation,
-            &rolled_back_missing_archive,
-        );
-    assert_eq!(
-        rolled_back_missing_archive_validation.stage_status,
-        "invalid"
-    );
-    assert!(
-        rolled_back_missing_archive_validation
-            .missing_required_fields
-            .contains(&"archive_reference")
-    );
-    assert!(
-        rolled_back_missing_archive_validation
-            .missing_required_fields
-            .contains(&"source_record_state")
-    );
-    assert!(
-        rolled_back_missing_archive_validation
-            .missing_required_fields
-            .contains(&"post_archive_verification_reference")
-    );
-
-    let mut rolled_back_mismatched_source_state =
-        SectionSnapshotFixture::from_section_example(&rolled_back_example);
-    rolled_back_mismatched_source_state.set_field_value("source_record_state", "approved");
-    let rolled_back_mismatched_source_state_validation =
-        validate_world_compat_follow_up_history_proof_fixture(
-            &validation,
-            &rolled_back_mismatched_source_state,
-        );
-    assert_eq!(
-        rolled_back_mismatched_source_state_validation.stage_status,
-        "invalid"
-    );
-    assert!(
-        rolled_back_mismatched_source_state_validation
-            .failed_additional_checks
-            .contains(&"source_record_state must match result_status")
-    );
-}
-
-#[test]
-fn public_entry_lifecycle_transition_contract_disallows_orphan_exception_path() {
-    let contract = public_entry_lifecycle_transition_contract();
+fn public_realm_lifecycle_transition_contract_disallows_orphan_exception_path() {
+    let contract = public_realm_lifecycle_transition_contract();
 
     assert!(
         contract
@@ -4557,30 +3590,30 @@ fn public_entry_lifecycle_transition_contract_disallows_orphan_exception_path() 
 
 #[test]
 fn repo_bundled_snapshot_review_items_warn_when_local_baseline_is_still_transitional() {
-    let items = repo_bundled_official_entry_snapshot_review_items(
-        &RepoBundledOfficialEntrySnapshotReport {
+    let items = repo_bundled_public_realm_snapshot_review_items(
+        &RepoBundledPublicRealmSnapshotReport {
             status: "repo-bundled-entry-transitional",
-            evidence_scope: "repo/local bundled official_entry baseline only",
-            load_source: "voxygen.official_entry asset via common asset loader",
+            evidence_scope: "repo/local bundled public realm baseline only",
+            load_source: "bundled public realm asset via common asset loader",
             authoritative_for_release_cutover: false,
             required_external_match_fields: vec![
-                "bundled_official_entry_artifact_identity",
+                "bundled_public_realm_artifact_identity",
                 "bundled_target_kind",
             ],
-            baseline: Some(common::official_entry::BundledOfficialEntryPosture {
-                source_kind: common::official_entry::OfficialEntrySourceKind::Bundled,
-                display_name: "Official Realm".to_owned(),
+            baseline: Some(common::public_realm::BundledPublicRealmPosture {
+                source_kind: common::public_realm::PublicRealmSourceKind::Bundled,
+                display_name: "Caldrayne Realm".to_owned(),
                 server_address_configured: true,
                 server_address: "192.168.1.8:14004".to_owned(),
-                artifact_identity: "official-entry-content-sha256-v1:test".to_owned(),
+                artifact_identity: "caldrayne-public-realm-sha256-v1:test".to_owned(),
                 target_kind:
-                    common::official_entry::BundledOfficialTargetKind::PrivateOrUniqueLocalIp,
+                    common::public_realm::BundledPublicRealmTargetKind::PrivateOrUniqueLocalIp,
                 target_is_non_local_candidate: false,
-                transport_kind: common::official_entry::BundledOfficialTransportKind::DirectTcp,
+                transport_kind: common::public_realm::BundledPublicRealmTransportKind::DirectTcp,
                 use_srv: false,
                 use_quic: false,
                 validate_tls: true,
-                auth_mode: common::official_entry::BundledOfficialAuthMode::NoExternalAuth,
+                auth_mode: common::public_realm::BundledPublicRealmAuthMode::NoExternalAuth,
                 auth_server: None,
                 non_local_cutover_ready: false,
                 non_local_cutover_gap_reasons: vec![
@@ -4608,14 +3641,14 @@ fn repo_bundled_snapshot_review_items_warn_when_local_baseline_is_still_transiti
 
 #[test]
 fn repo_bundled_snapshot_review_items_warn_when_local_baseline_is_unavailable() {
-    let items = repo_bundled_official_entry_snapshot_review_items(
-        &RepoBundledOfficialEntrySnapshotReport {
+    let items = repo_bundled_public_realm_snapshot_review_items(
+        &RepoBundledPublicRealmSnapshotReport {
             status: "repo-bundled-entry-unavailable",
-            evidence_scope: "repo/local bundled official_entry baseline only",
-            load_source: "voxygen.official_entry asset via common asset loader",
+            evidence_scope: "repo/local bundled public realm baseline only",
+            load_source: "bundled public realm asset via common asset loader",
             authoritative_for_release_cutover: false,
             required_external_match_fields: vec![
-                "bundled_official_entry_artifact_identity",
+                "bundled_public_realm_artifact_identity",
                 "bundled_target_kind",
             ],
             baseline: None,
@@ -4636,25 +3669,25 @@ fn repo_bundled_snapshot_review_items_warn_when_local_baseline_is_unavailable() 
 }
 
 #[test]
-fn public_entry_cutover_material_checklist_marks_ready_baseline_as_capture_required() {
-    let checklist = public_entry_cutover_material_checklist(
+fn public_realm_cutover_material_checklist_marks_ready_baseline_as_capture_required() {
+    let checklist = public_realm_cutover_material_checklist(
         "production",
         common_net::msg::ServerAuthMode::ExternalProvider,
         Some("https://auth.example.test"),
         &test_repo_bundled_snapshot_report(Some(
-            common::official_entry::BundledOfficialEntryPosture {
-                source_kind: common::official_entry::OfficialEntrySourceKind::Bundled,
+            common::public_realm::BundledPublicRealmPosture {
+                source_kind: common::public_realm::PublicRealmSourceKind::Bundled,
                 display_name: "Caldrayne Online".to_owned(),
                 server_address_configured: true,
                 server_address: "prod.realm.example:14004".to_owned(),
-                artifact_identity: "official-entry-content-sha256-v1:readybundle".to_owned(),
-                target_kind: common::official_entry::BundledOfficialTargetKind::NamedHostCandidate,
+                artifact_identity: "caldrayne-public-realm-sha256-v1:readybundle".to_owned(),
+                target_kind: common::public_realm::BundledPublicRealmTargetKind::NamedHostCandidate,
                 target_is_non_local_candidate: true,
-                transport_kind: common::official_entry::BundledOfficialTransportKind::DirectQuic,
+                transport_kind: common::public_realm::BundledPublicRealmTransportKind::DirectQuic,
                 use_srv: false,
                 use_quic: true,
                 validate_tls: true,
-                auth_mode: common::official_entry::BundledOfficialAuthMode::ExternalProvider,
+                auth_mode: common::public_realm::BundledPublicRealmAuthMode::ExternalProvider,
                 auth_server: Some("https://auth.example.test".to_owned()),
                 non_local_cutover_ready: true,
                 non_local_cutover_gap_reasons: Vec::new(),
@@ -4680,12 +3713,12 @@ fn public_entry_cutover_material_checklist_marks_ready_baseline_as_capture_requi
 }
 
 #[test]
-fn public_entry_cutover_material_checklist_falls_back_to_external_material_when_snapshot_is_unavailable()
+fn public_realm_cutover_material_checklist_falls_back_to_external_material_when_snapshot_is_unavailable()
  {
     let mut unavailable_snapshot = test_repo_bundled_snapshot_report(None);
     unavailable_snapshot.load_error = Some("asset missing".to_owned());
 
-    let checklist = public_entry_cutover_material_checklist(
+    let checklist = public_realm_cutover_material_checklist(
         "production",
         common_net::msg::ServerAuthMode::ExternalProvider,
         Some("https://auth.example.test"),
@@ -4712,10 +3745,10 @@ fn public_entry_cutover_material_checklist_falls_back_to_external_material_when_
 fn compatibility_contract_report_detects_query_hint_drift() {
     let health = test_health_state(Path::new("test-root"));
     let report = health.compatibility_contract_report_with_query_hint(
-        veloren_query_server::proto::ServerInfo {
-            realm_id: veloren_query_server::proto::ServerRealmId::from_u128(0),
-            environment: veloren_query_server::proto::ServerEnvironment::Local,
-            compatibility: veloren_query_server::proto::ServerCompatibility {
+        veldr_query_server::proto::ServerInfo {
+            realm_id: veldr_query_server::proto::ServerRealmId::from_u128(0),
+            environment: veldr_query_server::proto::ServerEnvironment::Local,
+            compatibility: veldr_query_server::proto::ServerCompatibility {
                 generation: 99,
                 minimum_supported_generation: 98,
             },
@@ -4724,7 +3757,7 @@ fn compatibility_contract_report_detects_query_hint_drift() {
             git_timestamp: 0,
             players_count: 0,
             player_cap: 0,
-            battlemode: veloren_query_server::proto::ServerBattleMode::GlobalPvP,
+            battlemode: veldr_query_server::proto::ServerBattleMode::GlobalPvP,
         },
     );
 
@@ -4780,7 +3813,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
     assert!(report.requires_operator_review);
     assert!(report.blocking_signals.is_empty());
     assert_eq!(report.review_signals, vec![
-        "public-entry-handoff",
+        "public-realm-handoff",
         "management-auth"
     ]);
     assert!(report.follow_up_endpoints.iter().any(|follow_up| {
@@ -4790,7 +3823,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
             && follow_up.owner == "release-operator"
     }));
     assert!(report.follow_up_endpoints.iter().any(|follow_up| {
-        follow_up.signal == "public-entry-handoff"
+        follow_up.signal == "public-realm-handoff"
             && follow_up.endpoint == "/health/compatibility"
             && !follow_up.blocking
             && follow_up.owner == "release-operator"
@@ -4986,7 +4019,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
         })
     );
     assert!(report.review_decision_contracts.iter().any(|contract| {
-        contract.signal == "public-entry-handoff"
+        contract.signal == "public-realm-handoff"
             && contract.review_owner == "release-operator"
             && contract.external_record_authority == "external-release-tracker"
             && contract
@@ -5000,11 +4033,11 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
             && contract
                 .required_decision_fields
                 .iter()
-                .any(|field| *field == "bundled_official_entry_artifact_identity")
+                .any(|field| *field == "bundled_public_realm_artifact_identity")
             && contract
                 .required_decision_fields
                 .iter()
-                .any(|field| *field == "bundled_official_entry_use_quic")
+                .any(|field| *field == "bundled_public_realm_use_quic")
             && contract
                 .required_decision_fields
                 .iter()
@@ -5049,7 +4082,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
                 .required_decision_field_contracts
                 .iter()
                 .any(|field| {
-                    field.name == "bundled_official_entry_validate_tls"
+                    field.name == "bundled_public_realm_validate_tls"
                         && field.value_kind == "boolean"
                         && field.evidence_source == "bundled-client-artifact-review"
                 })
@@ -5076,7 +4109,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
                     && state.semantics.contains("rejected or deferred")
             })
             && contract
-                .public_entry_lifecycle_transition_contract
+                .public_realm_lifecycle_transition_contract
                 .as_ref()
                 .is_some_and(|lifecycle| {
                     lifecycle.initial_state == "draft"
@@ -5108,7 +4141,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
             && contract
                 .exception_record_fields
                 .iter()
-                .any(|field| *field == "bundled_official_entry_artifact_identity")
+                .any(|field| *field == "bundled_public_realm_artifact_identity")
             && contract
                 .exception_record_fields
                 .iter()
@@ -5142,7 +4175,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
                 .archive_handoff_contract
                 .required_archive_correlation_dimensions
                 .iter()
-                .any(|dimension| *dimension == "bundled_official_entry_artifact_identity")
+                .any(|dimension| *dimension == "bundled_public_realm_artifact_identity")
             && contract
                 .archive_handoff_contract
                 .required_archive_correlation_dimensions
@@ -5152,7 +4185,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
                 .archive_handoff_contract
                 .required_archive_correlation_dimensions
                 .iter()
-                .any(|dimension| *dimension == "rollback_bundled_official_entry_artifact_identity")
+                .any(|dimension| *dimension == "rollback_bundled_public_realm_artifact_identity")
             && contract
                 .retention_contract
                 .retention_policy
@@ -5200,7 +4233,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
                 .required_fields
                 .iter()
                 .any(|field| {
-                    field.name == "bundled_official_entry_auth_server"
+                    field.name == "bundled_public_realm_auth_server"
                         && field.placeholder == "<https://auth.realm.example-or-null>"
                 })
             && contract
@@ -5224,7 +4257,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
                 .example_fields
                 .iter()
                 .any(|field| {
-                    field.name == "bundled_official_entry_server_address"
+                    field.name == "bundled_public_realm_server_address"
                         && field.value == "prod.realm.example:14004"
                 })
             && contract
@@ -5264,7 +4297,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
                         .contains("bundled_public_client_artifact_reference")
                     && step
                         .record_effect
-                        .contains("bundled_official_entry_artifact_identity")
+                        .contains("bundled_public_realm_artifact_identity")
                     && step
                         .record_effect
                         .contains("rollback_public_client_artifact_reference")
@@ -5291,7 +4324,7 @@ fn preflight_report_can_require_management_auth_review_without_governance_findin
             })
     }));
     assert!(report.operator_review_items.iter().any(|item| {
-        item.kind == "public-entry-handoff-review"
+        item.kind == "public-realm-handoff-review"
             && item.detail.contains("client artifact reference")
             && item.detail.contains("artifact identity")
             && item.detail.contains("transport flags")
@@ -5532,7 +4565,7 @@ fn world_compat_report_exposes_structured_runtime_contract_status() {
     }
     .world_compat_report();
 
-    assert_eq!(report.status, "world-compat-review-required");
+    assert_eq!(report.status, "world-compat-blocked");
     assert!(report.requires_operator_review);
     assert_eq!(report.configured_mode.as_deref(), Some("record"));
     assert_eq!(report.load_legacy_mode.as_deref(), Some("deny"));
@@ -5545,40 +4578,6 @@ fn world_compat_report_exposes_structured_runtime_contract_status() {
     assert_eq!(report.compat_failure, Some("missing_input"));
     assert_eq!(report.strict_load_contract_gap, Some(true));
     assert_eq!(report.managed_recipe_sidecar_missing, Some(false));
-    assert_eq!(report.transition_window_open, Some(true));
-    assert_eq!(report.review_result_status_hint, Some("exception-accepted"));
-    assert_eq!(report.required_terminal_record_fields, vec![
-        "exception_reason",
-        "rollback_reference"
-    ]);
-    assert_eq!(report.required_archive_receipt_fields_when_terminal, vec![
-        "archive_reference",
-        "archived_at_utc",
-        "archived_by",
-        "source_record_state"
-    ]);
-    assert_eq!(
-        report.required_post_archive_writeback_fields_after_archive,
-        vec![
-            "post_archive_verified_by",
-            "post_archive_verified_at_utc",
-            "post_archive_verification_result",
-            "post_archive_verification_reference"
-        ]
-    );
-    assert_eq!(
-        report.required_archive_correlation_dimensions_when_terminal,
-        vec![
-            "release_reference",
-            "section_signal",
-            "terminal_result_status"
-        ]
-    );
-    assert_eq!(report.same_section_archive_receipt_required, Some(true));
-    assert_eq!(
-        report.same_section_post_archive_verification_required,
-        Some(true)
-    );
     assert_eq!(
         report.world_recipe_hash.as_deref(),
         Some(manifest.world_recipe_hash.as_str())
@@ -5648,39 +4647,6 @@ fn world_compat_report_stays_clear_for_strict_load_under_deny_posture() {
     assert_eq!(report.compat_failure, Some("none"));
     assert_eq!(report.strict_load_contract_gap, Some(false));
     assert_eq!(report.managed_recipe_sidecar_missing, Some(false));
-    assert_eq!(report.transition_window_open, Some(false));
-    assert_eq!(report.review_result_status_hint, Some("approved"));
-    assert_eq!(report.required_terminal_record_fields, vec![
-        "rollback_reference"
-    ]);
-    assert_eq!(report.required_archive_receipt_fields_when_terminal, vec![
-        "archive_reference",
-        "archived_at_utc",
-        "archived_by",
-        "source_record_state"
-    ]);
-    assert_eq!(
-        report.required_post_archive_writeback_fields_after_archive,
-        vec![
-            "post_archive_verified_by",
-            "post_archive_verified_at_utc",
-            "post_archive_verification_result",
-            "post_archive_verification_reference"
-        ]
-    );
-    assert_eq!(
-        report.required_archive_correlation_dimensions_when_terminal,
-        vec![
-            "release_reference",
-            "section_signal",
-            "terminal_result_status"
-        ]
-    );
-    assert_eq!(report.same_section_archive_receipt_required, Some(true));
-    assert_eq!(
-        report.same_section_post_archive_verification_required,
-        Some(true)
-    );
     assert!(report.detail.contains("without strict fallback"));
     assert_eq!(report.source_surface, "world-compat");
 }
@@ -5734,45 +4700,13 @@ fn world_compat_report_stays_clear_for_load_asset_under_deny_posture() {
     assert_eq!(report.compat_failure, Some("none"));
     assert_eq!(report.strict_load_contract_gap, Some(false));
     assert_eq!(report.managed_recipe_sidecar_missing, Some(false));
-    assert_eq!(report.transition_window_open, Some(false));
-    assert_eq!(report.review_result_status_hint, Some("approved"));
-    assert_eq!(report.required_terminal_record_fields, vec![
-        "rollback_reference"
-    ]);
-    assert_eq!(report.required_archive_receipt_fields_when_terminal, vec![
-        "archive_reference",
-        "archived_at_utc",
-        "archived_by",
-        "source_record_state"
-    ]);
-    assert_eq!(
-        report.required_post_archive_writeback_fields_after_archive,
-        vec![
-            "post_archive_verified_by",
-            "post_archive_verified_at_utc",
-            "post_archive_verification_result",
-            "post_archive_verification_reference"
-        ]
-    );
-    assert_eq!(
-        report.required_archive_correlation_dimensions_when_terminal,
-        vec![
-            "release_reference",
-            "section_signal",
-            "terminal_result_status"
-        ]
-    );
-    assert_eq!(report.same_section_archive_receipt_required, Some(true));
-    assert_eq!(
-        report.same_section_post_archive_verification_required,
-        Some(true)
-    );
     assert!(report.detail.contains("without strict fallback"));
+    assert_eq!(report.source_surface, "world-compat");
 }
 
 #[cfg(feature = "worldgen")]
 #[test]
-fn world_compat_report_marks_load_legacy_as_review_required_without_strict_gap() {
+fn world_compat_report_blocks_on_load_legacy_even_without_strict_gap() {
     let inventory = test_runtime_observability_inventory();
     let manifest = server::RecipeManifestV1::record_only(
         server::DEFAULT_WORLD_SEED,
@@ -5807,7 +4741,7 @@ fn world_compat_report_marks_load_legacy_as_review_required_without_strict_gap()
     }
     .world_compat_report();
 
-    assert_eq!(report.status, "world-compat-review-required");
+    assert_eq!(report.status, "world-compat-blocked");
     assert!(report.requires_operator_review);
     assert_eq!(report.configured_mode.as_deref(), Some("record"));
     assert_eq!(report.load_legacy_mode.as_deref(), Some("allow"));
@@ -5820,48 +4754,14 @@ fn world_compat_report_marks_load_legacy_as_review_required_without_strict_gap()
     assert_eq!(report.compat_failure, Some("none"));
     assert_eq!(report.strict_load_contract_gap, Some(false));
     assert_eq!(report.managed_recipe_sidecar_missing, Some(false));
-    assert_eq!(report.transition_window_open, Some(true));
-    assert_eq!(report.review_result_status_hint, Some("exception-accepted"));
-    assert_eq!(report.required_terminal_record_fields, vec![
-        "exception_reason",
-        "rollback_reference"
-    ]);
-    assert_eq!(report.required_archive_receipt_fields_when_terminal, vec![
-        "archive_reference",
-        "archived_at_utc",
-        "archived_by",
-        "source_record_state"
-    ]);
-    assert_eq!(
-        report.required_post_archive_writeback_fields_after_archive,
-        vec![
-            "post_archive_verified_by",
-            "post_archive_verified_at_utc",
-            "post_archive_verification_result",
-            "post_archive_verification_reference"
-        ]
-    );
-    assert_eq!(
-        report.required_archive_correlation_dimensions_when_terminal,
-        vec![
-            "release_reference",
-            "section_signal",
-            "terminal_result_status"
-        ]
-    );
-    assert_eq!(report.same_section_archive_receipt_required, Some(true));
-    assert_eq!(
-        report.same_section_post_archive_verification_required,
-        Some(true)
-    );
-    assert!(report.detail.contains("transitional compat import path"));
+    assert!(report.detail.contains("legacy"));
     assert!(report.detail.contains("load_legacy"));
     assert_eq!(report.source_surface, "world-compat");
 }
 
 #[cfg(feature = "worldgen")]
 #[test]
-fn world_compat_report_marks_sidecarless_load_or_generate_as_review_required() {
+fn world_compat_report_blocks_on_sidecarless_load_or_generate() {
     let inventory = test_runtime_observability_inventory();
     let manifest = server::RecipeManifestV1::record_only(
         server::DEFAULT_WORLD_SEED,
@@ -5896,8 +4796,10 @@ fn world_compat_report_marks_sidecarless_load_or_generate_as_review_required() {
     }
     .world_compat_report();
 
-    assert_eq!(report.status, "world-compat-review-required");
+    assert_eq!(report.status, "world-compat-blocked");
     assert!(report.requires_operator_review);
+    assert_eq!(report.configured_mode.as_deref(), Some("record"));
+    assert_eq!(report.load_legacy_mode.as_deref(), Some("allow"));
     assert_eq!(
         report.load_or_generate_sidecarless_mode.as_deref(),
         Some("allow")
@@ -5907,42 +4809,9 @@ fn world_compat_report_marks_sidecarless_load_or_generate_as_review_required() {
     assert_eq!(report.compat_failure, Some("none"));
     assert_eq!(report.strict_load_contract_gap, Some(false));
     assert_eq!(report.managed_recipe_sidecar_missing, Some(true));
-    assert_eq!(report.transition_window_open, Some(true));
-    assert_eq!(report.review_result_status_hint, Some("exception-accepted"));
-    assert_eq!(report.required_terminal_record_fields, vec![
-        "exception_reason",
-        "rollback_reference"
-    ]);
-    assert_eq!(report.required_archive_receipt_fields_when_terminal, vec![
-        "archive_reference",
-        "archived_at_utc",
-        "archived_by",
-        "source_record_state"
-    ]);
-    assert_eq!(
-        report.required_post_archive_writeback_fields_after_archive,
-        vec![
-            "post_archive_verified_by",
-            "post_archive_verified_at_utc",
-            "post_archive_verification_result",
-            "post_archive_verification_reference"
-        ]
-    );
-    assert_eq!(
-        report.required_archive_correlation_dimensions_when_terminal,
-        vec![
-            "release_reference",
-            "section_signal",
-            "terminal_result_status"
-        ]
-    );
-    assert_eq!(report.same_section_archive_receipt_required, Some(true));
-    assert_eq!(
-        report.same_section_post_archive_verification_required,
-        Some(true)
-    );
     assert!(report.detail.contains("adjacent recipe sidecar"));
     assert!(report.detail.contains("load_or_generate"));
+    assert_eq!(report.source_surface, "world-compat");
 }
 
 #[cfg(feature = "worldgen")]
@@ -6017,7 +4886,7 @@ fn preflight_report_blocks_when_required_runtime_checks_fail() {
         "backup-preflight",
         "recovery-drill"
     ]);
-    assert_eq!(report.review_signals, vec!["public-entry-handoff"]);
+    assert_eq!(report.review_signals, vec!["public-realm-handoff"]);
     assert!(
         report
             .operator_review_items
@@ -6048,7 +4917,7 @@ fn preflight_report_blocks_when_required_runtime_checks_fail() {
             && component.status == "compatibility-contract-aligned"
     }));
     assert!(report.components.iter().any(|component| {
-        component.signal == "public-entry-handoff"
+        component.signal == "public-realm-handoff"
             && !component.blocking
             && component.requires_operator_review
             && component.status == "external-review-required"
@@ -6075,7 +4944,7 @@ fn preflight_report_blocks_when_required_runtime_checks_fail() {
             && follow_up.blocking
     }));
     assert!(report.follow_up_endpoints.iter().any(|follow_up| {
-        follow_up.signal == "public-entry-handoff"
+        follow_up.signal == "public-realm-handoff"
             && follow_up.endpoint == "/health/compatibility"
             && !follow_up.blocking
     }));
@@ -6195,7 +5064,7 @@ fn runtime_observability_report_marks_sidecarless_load_or_generate_for_operator_
 
 #[cfg(feature = "worldgen")]
 #[test]
-fn preflight_report_routes_world_compat_surface_to_operator_review() {
+fn preflight_report_blocks_on_world_compat_surface_failure() {
     let root = unique_temp_dir();
     let state = server::ServerStatePaths::new(root.join("live"));
     let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
@@ -6238,126 +5107,37 @@ fn preflight_report_routes_world_compat_surface_to_operator_review() {
 
     let _ = fs::remove_dir_all(root);
 
-    assert_eq!(report.status, "operator_review_required");
-    assert!(!report.release_blocked);
-    assert!(report.requires_operator_review);
-    assert_eq!(report.review_signals, vec!["world-compat"]);
+    assert_eq!(report.status, "preflight_blocked");
+    assert!(report.release_blocked);
+    assert!(!report.requires_operator_review);
+    assert!(report.review_signals.is_empty());
+    assert_eq!(report.blocking_signals, vec!["world-compat"]);
     assert!(report.components.iter().any(|component| {
         component.signal == "world-compat"
             && component.endpoint == "/health/world-compat"
-            && component.status == "world-compat-review-required"
-            && !component.blocking
-            && component.requires_operator_review
+            && component.status == "world-compat-blocked"
+            && component.blocking
+            && !component.requires_operator_review
     }));
     assert!(report.follow_up_endpoints.iter().any(|follow_up| {
         follow_up.signal == "world-compat"
             && follow_up.endpoint == "/health/world-compat"
-            && !follow_up.blocking
-            && follow_up.owner == "release-operator"
+            && follow_up.blocking
+            && follow_up.owner == "service-operator"
     }));
     assert!(report.operator_review_items.iter().any(|item| {
-        item.kind == "world-compat-review"
-            && !item.blocking
+        item.kind == "world-compat-blocked"
+            && item.blocking
             && item.detail.contains("option_mismatch")
             && item.detail.contains("/health/world-compat")
-            && item
-                .detail
-                .contains("result_status_hint=exception-accepted")
-            && item
-                .detail
-                .contains("terminal_record_fields=[exception_reason, rollback_reference]")
-            && item.detail.contains(
-                "archive_receipt_fields_when_terminal=[archive_reference, archived_at_utc, \
-                 archived_by, source_record_state]",
-            )
-            && item.detail.contains(
-                "post_archive_writeback_fields_after_archive=[post_archive_verified_by, \
-                 post_archive_verified_at_utc, post_archive_verification_result, \
-                 post_archive_verification_reference]",
-            )
-            && item.detail.contains(
-                "archive_correlation_dimensions_when_terminal=[release_reference, section_signal, \
-                 terminal_result_status]",
-            )
-            && item
-                .detail
-                .contains("same_section_archive_receipt_required=true")
-            && item
-                .detail
-                .contains("same_section_post_archive_verification_required=true")
-            && item.detail.contains("follow_up_action=")
-            && item
-                .detail
-                .contains("append an explicit approved follow-up on the same release-review-record")
-            && item.detail.contains(
-                "do not treat that posture change as correction-only metadata clarification",
-            )
-            && item.detail.contains(
-                "archive_reference/source_record_state/post_archive_verification_reference",
-            )
-            && item.detail.contains(
-                "source_record_state must stay aligned with the current approved terminal \
-                 result_status",
-            )
-            && item.detail.contains("prior_result_statuses")
-            && item.detail.contains("exception-accepted")
+            && item.detail.contains("strict modern world contracts do not permit transitional")
     }));
-    assert_eq!(
-        report
-            .review_decision_contracts
-            .iter()
-            .map(|contract| contract.signal)
-            .collect::<Vec<_>>(),
-        vec!["world-compat"]
-    );
-    assert!(report.review_decision_contracts.iter().any(|contract| {
-        contract.signal == "world-compat"
-            && contract.current_result_status_hint == Some("exception-accepted")
-            && contract.current_terminal_record_fields
-                == vec!["exception_reason", "rollback_reference"]
-            && contract.required_archive_receipt_fields_when_terminal
-                == vec![
-                    "archive_reference",
-                    "archived_at_utc",
-                    "archived_by",
-                    "source_record_state",
-                ]
-            && contract.required_post_archive_writeback_fields_after_archive
-                == vec![
-                    "post_archive_verified_by",
-                    "post_archive_verified_at_utc",
-                    "post_archive_verification_result",
-                    "post_archive_verification_reference",
-                ]
-            && contract.required_archive_correlation_dimensions_when_terminal
-                == vec![
-                    "release_reference",
-                    "section_signal",
-                    "terminal_result_status",
-                ]
-            && contract.same_section_archive_receipt_required
-            && contract.same_section_post_archive_verification_required
-            && contract.section_instance_validation_contract.is_some()
-            && contract.validator_integration_readiness_summary.is_some()
-            && contract
-                .required_decision_fields
-                .iter()
-                .any(|field| *field == "world_compat_status")
-            && contract
-                .exception_record_fields
-                .iter()
-                .any(|field| *field == "rollback_reference")
-            && contract.supporting_endpoints.iter().any(|endpoint| {
-                endpoint.signal == "world-compat"
-                    && endpoint.endpoint == "/health/world-compat"
-                    && endpoint.owner == "release-operator"
-            })
-    }));
+    assert!(report.review_decision_contracts.is_empty());
 }
 
 #[test]
 #[cfg(feature = "worldgen")]
-fn preflight_report_routes_load_legacy_world_compat_to_operator_review() {
+fn preflight_report_blocks_on_load_legacy_world_compat() {
     let root = unique_temp_dir();
     let state = server::ServerStatePaths::new(root.join("live"));
     let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
@@ -6397,531 +5177,36 @@ fn preflight_report_routes_load_legacy_world_compat_to_operator_review() {
 
     let _ = fs::remove_dir_all(root);
 
-    assert_eq!(report.status, "operator_review_required");
-    assert!(!report.release_blocked);
-    assert!(report.requires_operator_review);
-    assert_eq!(report.review_signals, vec!["world-compat"]);
+    assert_eq!(report.status, "preflight_blocked");
+    assert!(report.release_blocked);
+    assert!(!report.requires_operator_review);
+    assert_eq!(report.blocking_signals, vec!["world-compat"]);
     assert!(report.components.iter().any(|component| {
         component.signal == "world-compat"
             && component.endpoint == "/health/world-compat"
-            && component.status == "world-compat-review-required"
-            && !component.blocking
-            && component.requires_operator_review
+            && component.status == "world-compat-blocked"
+            && component.blocking
+            && !component.requires_operator_review
     }));
     assert!(report.operator_review_items.iter().any(|item| {
-        item.kind == "world-compat-review"
-            && !item.blocking
+        item.kind == "world-compat-blocked"
+            && item.blocking
             && item.detail.contains("transitional compat import path")
             && item.detail.contains("/health/world-compat")
-            && item
-                .detail
-                .contains("result_status_hint=exception-accepted")
-            && item
-                .detail
-                .contains("terminal_record_fields=[exception_reason, rollback_reference]")
-            && item
-                .detail
-                .contains("same_section_archive_receipt_required=true")
-            && item
-                .detail
-                .contains("same_section_post_archive_verification_required=true")
-            && item.detail.contains("follow_up_action=")
-            && item
-                .detail
-                .contains("append an explicit approved follow-up on the same release-review-record")
-            && item.detail.contains(
-                "do not treat that posture change as correction-only metadata clarification",
-            )
-            && item.detail.contains(
-                "archive_reference/source_record_state/post_archive_verification_reference",
-            )
-            && item.detail.contains(
-                "source_record_state must stay aligned with the current approved terminal \
-                 result_status",
-            )
-            && item.detail.contains("prior_result_statuses")
-            && item.detail.contains("exception-accepted")
+            && item.detail.contains("strict modern world contracts do not permit transitional")
     }));
-    let contract = report
-        .review_decision_contracts
-        .iter()
-        .find(|contract| contract.signal == "world-compat")
-        .expect("world-compat review decision contract should be exported");
-    let validation = contract
-        .section_instance_validation_contract
-        .as_ref()
-        .expect("world-compat export should carry validator contract");
-
-    assert_eq!(
-        contract.current_result_status_hint,
-        Some("exception-accepted")
-    );
-    assert_eq!(contract.current_terminal_record_fields, vec![
-        "exception_reason",
-        "rollback_reference"
-    ]);
-    assert_eq!(
-        contract.required_archive_receipt_fields_when_terminal,
-        vec![
-            "archive_reference",
-            "archived_at_utc",
-            "archived_by",
-            "source_record_state"
-        ]
-    );
-    assert_eq!(
-        contract.required_post_archive_writeback_fields_after_archive,
-        vec![
-            "post_archive_verified_by",
-            "post_archive_verified_at_utc",
-            "post_archive_verification_result",
-            "post_archive_verification_reference"
-        ]
-    );
-    assert_eq!(
-        contract.required_archive_correlation_dimensions_when_terminal,
-        vec![
-            "release_reference",
-            "section_signal",
-            "terminal_result_status"
-        ]
-    );
-    assert!(contract.same_section_archive_receipt_required);
-    assert!(contract.same_section_post_archive_verification_required);
-    assert_eq!(
-        contract.required_archive_receipt_fields_when_terminal,
-        contract
-            .archive_handoff_contract
-            .required_archive_receipt_fields
-    );
-    assert_eq!(
-        contract.required_archive_correlation_dimensions_when_terminal,
-        contract
-            .archive_handoff_contract
-            .required_archive_correlation_dimensions
-    );
-    assert_eq!(
-        contract.required_post_archive_writeback_fields_after_archive,
-        contract
-            .retention_contract
-            .required_post_archive_writeback_fields
-    );
-    assert_eq!(
-        contract.same_section_archive_receipt_required,
-        contract
-            .archive_handoff_contract
-            .terminal_section_not_complete_without_archive_receipt
-    );
-    assert_eq!(
-        contract.same_section_post_archive_verification_required,
-        contract
-            .retention_contract
-            .post_archive_verification_required
-    );
-    assert!(contract.result_status_model.iter().any(|status| {
-        status.state == "approved"
-            && status
-                .semantics
-                .contains("transitional legacy-tail allow posture")
+    assert!(report.follow_up_endpoints.iter().any(|follow_up| {
+        follow_up.signal == "world-compat"
+            && follow_up.endpoint == "/health/world-compat"
+            && follow_up.blocking
+            && follow_up.owner == "service-operator"
     }));
-    assert!(contract.result_status_model.iter().any(|status| {
-        status.state == "exception-accepted" && status.semantics.contains("transition window")
-    }));
-    assert!(
-        contract
-            .required_decision_fields
-            .iter()
-            .any(|field| { *field == "world_compat_status" })
-    );
-    assert!(
-        contract
-            .required_decision_fields
-            .iter()
-            .any(|field| { *field == "load_legacy_mode" })
-    );
-    assert!(
-        contract
-            .required_decision_fields
-            .iter()
-            .any(|field| { *field == "load_or_generate_sidecarless_mode" })
-    );
-    assert!(
-        contract
-            .required_decision_fields
-            .iter()
-            .any(|field| { *field == "world_recipe_hash" })
-    );
-    assert!(
-        contract
-            .exception_record_fields
-            .iter()
-            .any(|field| { *field == "rollback_reference" })
-    );
-    assert!(
-        contract
-            .section_record_template
-            .required_fields
-            .iter()
-            .any(|field| {
-                field.name == "load_legacy_mode"
-                    && field.placeholder == "<load-legacy-mode-or-unrecorded>"
-            })
-    );
-    assert!(
-        contract
-            .section_record_template
-            .required_fields
-            .iter()
-            .any(|field| {
-                field.name == "load_or_generate_sidecarless_mode"
-                    && field.placeholder == "<load-or-generate-sidecarless-mode-or-unrecorded>"
-            })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| {
-                field.name == "world_compat_status" && field.value == "world-compat-clear"
-            })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| { field.name == "load_legacy_mode" && field.value == "deny" })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| {
-                field.name == "load_or_generate_sidecarless_mode" && field.value == "deny"
-            })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| { field.name == "compat_entry" && field.value == "load" })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| { field.name == "compat_decision" && field.value == "loaded_existing" })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| { field.name == "strict_load_contract_gap" && field.value == "false" })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| {
-                field.name == "managed_recipe_sidecar_missing" && field.value == "false"
-            })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| {
-                field.name == "rollback_reference"
-                    && field.value == "runbook://world-compat/rollback-01"
-                    && field
-                        .rationale
-                        .contains("closing a previously accepted transition window")
-                    && field
-                        .rationale
-                        .contains("prior terminal state was exception-accepted")
-            })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| {
-                field.name == "archive_reference"
-                    && field.value
-                        == "archive://release-review/2026-05-01/public-entry-handoff-terminal"
-                    && field
-                        .rationale
-                        .contains("archived terminal evidence carried forward")
-            })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| {
-                field.name == "source_record_state"
-                    && field.value == "approved"
-                    && field
-                        .rationale
-                        .contains("archive-receipt source_record_state preserved")
-            })
-    );
-    assert!(
-        contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| {
-                field.name == "post_archive_verification_reference"
-                    && field.value == "note://archive-review/release-2026-05-01"
-                    && field
-                        .rationale
-                        .contains("post-archive verification evidence")
-            })
-    );
-    assert!(contract.section_execution_workflow.iter().any(|step| {
-        step.sequence == 3
-            && step.record_effect.contains("exception-accepted")
-            && step.record_effect.contains("deny/clear posture")
-    }));
-    assert!(contract.section_execution_workflow.iter().any(|step| {
-        step.sequence == 5
-            && step.record_effect.contains("archive_reference")
-            && step.record_effect.contains("source_record_state")
-            && step
-                .record_effect
-                .contains("post_archive_verification_reference")
-    }));
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .field_value_entries
-            .iter()
-            .any(|field| { field.name == "result_status" && field.value == "approved" })
-    );
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .field_value_entries
-            .iter()
-            .any(|field| {
-                field.name == "world_compat_status" && field.value == "world-compat-clear"
-            })
-    );
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .field_value_entries
-            .iter()
-            .any(|field| { field.name == "load_legacy_mode" && field.value == "deny" })
-    );
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .field_value_entries
-            .iter()
-            .any(|field| {
-                field.name == "load_or_generate_sidecarless_mode" && field.value == "deny"
-            })
-    );
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .field_value_entries
-            .iter()
-            .any(|field| {
-                field.name == "rollback_reference"
-                    && field.value == "runbook://world-compat/rollback-01"
-            })
-    );
-    assert!(
-        validation
-            .minimum_snapshot_example
-            .field_value_entries
-            .iter()
-            .all(|field| !(field.name == "exception_reason"))
-    );
-    assert!(
-        validation
-            .terminal_requirements
-            .required_additional_checks
-            .iter()
-            .any(|check| {
-                check.contains("load_legacy_mode = allow") && check.contains("rollback_reference")
-            })
-    );
-    assert!(
-        validation
-            .terminal_requirements
-            .conditional_required_fields
-            .iter()
-            .any(|requirement| {
-                requirement.when_result_statuses == vec!["approved"]
-                    && requirement.required_fields == vec!["rollback_reference"]
-            })
-    );
-    assert!(
-        validation
-            .archive_receipt_requirements
-            .conditional_required_fields
-            .iter()
-            .any(|requirement| {
-                requirement.when_result_statuses == vec!["approved"]
-                    && requirement.required_fields == vec!["rollback_reference"]
-            })
-    );
-
-    let approved_runtime_contract =
-        world_compat_preflight_review_decision_contract(&WorldCompatReport {
-            status: "world-compat-clear",
-            environment: "local",
-            requires_operator_review: false,
-            detail: "deny posture rehearse then rollback".to_owned(),
-            transition_window_open: Some(false),
-            review_result_status_hint: Some("approved"),
-            required_terminal_record_fields: vec!["rollback_reference"],
-            required_archive_receipt_fields_when_terminal:
-                release_review_archive_receipt_field_names(),
-            required_post_archive_writeback_fields_after_archive:
-                release_review_post_archive_writeback_field_names(),
-            required_archive_correlation_dimensions_when_terminal:
-                release_review_archive_correlation_dimensions("world-compat"),
-            same_section_archive_receipt_required: Some(true),
-            same_section_post_archive_verification_required: Some(true),
-            configured_mode: Some("record".to_owned()),
-            load_legacy_mode: Some("deny".to_owned()),
-            load_or_generate_sidecarless_mode: Some("deny".to_owned()),
-            compat_entry: Some("load"),
-            compat_decision: Some("loaded_existing"),
-            compat_failure: Some("none"),
-            strict_load_contract_gap: Some(false),
-            managed_recipe_sidecar_missing: Some(false),
-            world_recipe_hash: Some("world-recipe-hash".to_owned()),
-            chunk_recipe_hash: Some("chunk-recipe-hash".to_owned()),
-            topology_id: Some("bounded_plane_v1".to_owned()),
-            preset_id: Some("balanced".to_owned()),
-            source_surface: "world-compat",
-        });
-    assert!(
-        approved_runtime_contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| { field.name == "result_status" && field.value == "rolled-back" })
-    );
-    assert!(
-        approved_runtime_contract
-            .minimum_section_example
-            .section_state
-            == "rolled-back"
-    );
-    assert!(
-        approved_runtime_contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| {
-                field.name == "source_record_state"
-                    && field.value == "rolled-back"
-                    && field
-                        .rationale
-                        .contains("archive-receipt source_record_state preserved")
-                    && field.rationale.contains(
-                        "aligned with the terminal result_status recorded for this follow-up",
-                    )
-                    && field
-                        .rationale
-                        .contains("prior_result_statuses remains the same-section history proof")
-            })
-    );
-    assert!(
-        approved_runtime_contract
-            .minimum_section_example
-            .example_fields
-            .iter()
-            .any(|field| {
-                field.name == "prior_result_statuses"
-                    && field.value == "[\"approved\"]"
-                    && field.rationale.contains("same-section history proof")
-            })
-    );
-    let approved_follow_up_snapshot = &validation.minimum_snapshot_example;
-    let approved_follow_up_section = &contract.minimum_section_example;
-    assert_eq!(
-        approved_follow_up_snapshot.snapshot_kind,
-        "external-release-review-section-snapshot-v1"
-    );
-    assert_eq!(approved_follow_up_section.section_state, "approved");
-    assert!(
-        approved_follow_up_snapshot
-            .field_value_entries
-            .iter()
-            .any(|field| field.name == "result_status" && field.value == "approved")
-    );
-    assert!(
-        approved_follow_up_snapshot
-            .top_level_fields
-            .iter()
-            .any(|field| field.name == "prior_result_statuses"
-                && field.value == "[\"exception-accepted\"]")
-    );
-    assert!(
-        approved_follow_up_snapshot
-            .field_value_entries
-            .iter()
-            .any(|field| field.name == "source_record_state" && field.value == "approved")
-    );
-    assert!(
-        approved_follow_up_snapshot
-            .field_value_entries
-            .iter()
-            .any(|field| field.name == "archive_reference")
-    );
-    assert!(
-        approved_follow_up_snapshot
-            .field_value_entries
-            .iter()
-            .any(|field| field.name == "post_archive_verification_reference")
-    );
-    assert!(
-        approved_follow_up_section
-            .example_fields
-            .iter()
-            .any(|field| field.name == "prior_result_statuses"
-                && field.value == "[\"exception-accepted\"]")
-    );
-    assert!(
-        approved_follow_up_section
-            .example_fields
-            .iter()
-            .any(|field| field.name == "source_record_state" && field.value == "approved")
-    );
-    assert!(
-        approved_follow_up_section
-            .example_fields
-            .iter()
-            .any(|field| field.name == "archive_reference")
-    );
-    assert!(
-        approved_follow_up_section
-            .example_fields
-            .iter()
-            .any(|field| field.name == "post_archive_verification_reference")
-    );
+    assert!(report.review_decision_contracts.is_empty());
 }
 
 #[test]
 #[cfg(feature = "worldgen")]
-fn preflight_report_routes_sidecarless_load_or_generate_world_compat_to_operator_review() {
+fn preflight_report_blocks_on_sidecarless_load_or_generate_world_compat() {
     let root = unique_temp_dir();
     let state = server::ServerStatePaths::new(root.join("live"));
     let recovery_staging_state = server::ServerStatePaths::new(root.join("recovery-staging"));
@@ -6961,35 +5246,15 @@ fn preflight_report_routes_sidecarless_load_or_generate_world_compat_to_operator
 
     let _ = fs::remove_dir_all(root);
 
-    assert_eq!(report.status, "operator_review_required");
-    assert!(!report.release_blocked);
-    assert!(report.requires_operator_review);
+    assert_eq!(report.status, "preflight_blocked");
+    assert!(report.release_blocked);
+    assert!(!report.requires_operator_review);
     assert!(report.operator_review_items.iter().any(|item| {
-        item.kind == "world-compat-review"
-            && !item.blocking
+        item.kind == "world-compat-blocked"
+            && item.blocking
             && item.detail.contains("adjacent recipe sidecar")
             && item.detail.contains("/health/world-compat")
-            && item
-                .detail
-                .contains("result_status_hint=exception-accepted")
-            && item
-                .detail
-                .contains("terminal_record_fields=[exception_reason, rollback_reference]")
-            && item
-                .detail
-                .contains("same_section_archive_receipt_required=true")
-            && item
-                .detail
-                .contains("same_section_post_archive_verification_required=true")
-            && item.detail.contains("follow_up_action=")
-            && item
-                .detail
-                .contains("append an explicit approved follow-up on the same release-review-record")
-            && item.detail.contains(
-                "archive_reference/source_record_state/post_archive_verification_reference",
-            )
-            && item.detail.contains("prior_result_statuses")
-            && item.detail.contains("exception-accepted")
+            && item.detail.contains("strict modern world contracts do not permit transitional")
     }));
 }
 
@@ -7135,10 +5400,10 @@ fn preflight_report_blocks_on_compatibility_contract_drift() {
         governance_findings: Vec::new(),
     };
     let compatibility_contract = health.compatibility_contract_report_with_query_hint(
-        veloren_query_server::proto::ServerInfo {
-            realm_id: veloren_query_server::proto::ServerRealmId::from_u128(0),
-            environment: veloren_query_server::proto::ServerEnvironment::Local,
-            compatibility: veloren_query_server::proto::ServerCompatibility {
+        veldr_query_server::proto::ServerInfo {
+            realm_id: veldr_query_server::proto::ServerRealmId::from_u128(0),
+            environment: veldr_query_server::proto::ServerEnvironment::Local,
+            compatibility: veldr_query_server::proto::ServerCompatibility {
                 generation: 0,
                 minimum_supported_generation: 0,
             },
@@ -7147,7 +5412,7 @@ fn preflight_report_blocks_on_compatibility_contract_drift() {
             git_timestamp: 0,
             players_count: 0,
             player_cap: 0,
-            battlemode: veloren_query_server::proto::ServerBattleMode::GlobalPvP,
+            battlemode: veldr_query_server::proto::ServerBattleMode::GlobalPvP,
         },
     );
     let report = health.preflight_report_with_compatibility_contract(compatibility_contract);
@@ -7226,7 +5491,7 @@ fn preflight_report_can_require_operator_review_without_blocking_runtime_checks(
             })
     );
     assert_eq!(report.review_signals, vec![
-        "public-entry-handoff",
+        "public-realm-handoff",
         "governance-audit"
     ]);
     assert!(report.review_decision_contracts.iter().any(|contract| {
@@ -7320,8 +5585,8 @@ fn preflight_report_can_require_operator_review_without_blocking_runtime_checks(
             && follow_up.owner == "release-operator"
     }));
     assert!(report.review_decision_contracts.iter().any(|contract| {
-        contract.signal == "public-entry-handoff"
-            && contract.exception_reference_kind == "public-entry-handoff-exception-record"
+        contract.signal == "public-realm-handoff"
+            && contract.exception_reference_kind == "public-realm-handoff-exception-record"
     }));
     assert!(
         report
@@ -7502,7 +5767,7 @@ fn preflight_report_can_be_clear_when_runtime_and_governance_are_clean() {
         component.signal == "governance-audit" && component.status == "governance_clear"
     }));
     assert!(report.components.iter().any(|component| {
-        component.signal == "public-entry-handoff"
+        component.signal == "public-realm-handoff"
             && component.status == "not-applicable-local"
             && !component.blocking
             && !component.requires_operator_review

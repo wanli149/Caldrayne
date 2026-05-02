@@ -12,7 +12,7 @@ SELECT  i.item_id,
         NULL,
         NULL
 FROM item i
-WHERE i.item_definition_id = 'veloren.core.pseudo_containers.recipe_book';
+WHERE i.item_definition_id = 'veldr.core.pseudo_containers.recipe_book';
 
 CREATE TEMP TABLE _temp_another_recipe_book_table
 (

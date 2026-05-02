@@ -88,7 +88,7 @@ pub struct ItemImgs {
 
 impl ItemImgs {
     pub fn new(ui: &mut Ui, not_found: Id) -> Self {
-        let manifest = ItemImagesSpec::load_expect_combined_static("voxygen.item_image_manifest");
+        let manifest = ItemImagesSpec::load_expect_combined_static("veldr.item_image_manifest");
         let map = manifest
             .read()
             .0
@@ -159,22 +159,22 @@ impl ItemImgs {
 // Copied from figure/load.rs
 // TODO: remove code dup?
 fn graceful_load_vox(specifier: &str) -> AssetHandle<DotVox> {
-    let full_specifier: String = ["voxygen.", specifier].concat();
+    let full_specifier: String = ["veldr.", specifier].concat();
     match DotVox::load(full_specifier.as_str()) {
         Ok(dot_vox) => dot_vox,
         Err(_) => {
             error!(?full_specifier, "Could not load vox file for item images",);
-            DotVox::load_expect("voxygen.voxel.not_found")
+            DotVox::load_expect("veldr.voxel.not_found")
         },
     }
 }
 fn graceful_load_img(specifier: &str) -> Arc<DynamicImage> {
-    let full_specifier: String = ["voxygen.", specifier].concat();
+    let full_specifier: String = ["veldr.", specifier].concat();
     let handle = match Image::load(&full_specifier) {
         Ok(img) => img,
         Err(_) => {
             error!(?full_specifier, "Could not load image file for item images");
-            Image::load_expect("voxygen.element.not_found")
+            Image::load_expect("veldr.element.not_found")
         },
     };
     handle.read().to_image()

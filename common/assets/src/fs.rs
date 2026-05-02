@@ -6,8 +6,7 @@ use assets_manager::{
     source::{DirEntry, FileContent, FileSystem as RawFs, Source},
 };
 
-/// Loads assets from the default path or `VELOREN_ASSETS_OVERRIDE` env if it is
-/// set.
+/// Loads assets from the default path or an asset override env if it is set.
 #[derive(Debug, Clone)]
 pub struct FileSystem {
     default: RawFs,
@@ -17,7 +16,7 @@ pub struct FileSystem {
 impl FileSystem {
     pub fn new() -> io::Result<Self> {
         let default = RawFs::new(&*super::ASSETS_PATH)?;
-        let override_dir = std::env::var_os("VELOREN_ASSETS_OVERRIDE").and_then(|path| {
+        let override_dir = std::env::var_os("CALDRAYNE_ASSETS_OVERRIDE").and_then(|path| {
             RawFs::new(path)
                 .map_err(|err| tracing::error!("Error setting override assets directory: {}", err))
                 .ok()
@@ -26,7 +25,7 @@ impl FileSystem {
         let canary = fs::read_to_string(super::ASSETS_PATH.join("common").join("canary.canary"))
             .map_err(|e| io::Error::other(format!("failed to load canary asset: {}", e)))?;
 
-        if !canary.starts_with("VELOREN_CANARY_MAGIC") {
+        if !canary.starts_with("CALDRAYNE_CANARY_MAGIC") {
             panic!(
                 "Canary asset `canary.canary` was present but did not contain the expected data. \
                  This strongly suggests Git LFS (Large File Storage) is not set up correctly. \

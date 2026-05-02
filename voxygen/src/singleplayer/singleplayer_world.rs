@@ -202,7 +202,10 @@ impl SingleplayerWorld {
                     .unwrap_or_else(|| DEFAULT_WORLD_MAP.to_string()),
             ),
             SingleplayerWorldSource::LegacyUnknown | SingleplayerWorldSource::LegacyMigrated => {
-                FileOpts::LoadLegacy(self.map_path.clone())
+                panic!(
+                    "retired legacy singleplayer worlds must not be started; migrate metadata to \
+                     a strict modern world contract first"
+                )
             },
         }
     }
@@ -400,7 +403,20 @@ fn load_worlds(path: &Path) -> Vec<SingleplayerWorld> {
             let entry = entry.ok()?;
             if entry.file_type().ok()?.is_dir() {
                 let path = entry.path();
-                load_map(&path)
+                let world = load_map(&path)?;
+                if matches!(
+                    world.world_source,
+                    SingleplayerWorldSource::LegacyUnknown
+                        | SingleplayerWorldSource::LegacyMigrated
+                ) {
+                    error!(
+                        ?path,
+                        "Skipping retired legacy singleplayer world; only strict modern veldr worlds are supported"
+                    );
+                    None
+                } else {
+                    Some(world)
+                }
             } else {
                 None
             }
@@ -413,18 +429,6 @@ pub struct SingleplayerWorlds {
     pub worlds: Vec<SingleplayerWorld>,
     pub current: Option<usize>,
     worlds_folder: PathBuf,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct SingleplayerLegacyInventory {
-    pub total_worlds: usize,
-    pub legacy_worlds: usize,
-    pub legacy_unknown_worlds: usize,
-    pub legacy_migrated_worlds: usize,
-    pub legacy_worlds_with_typed_origin: usize,
-    pub legacy_worlds_without_typed_origin: usize,
-    pub legacy_worlds_without_compat_audit: usize,
-    pub legacy_worlds_with_sidecarless_managed_residual: usize,
 }
 
 impl SingleplayerWorlds {
@@ -505,45 +509,6 @@ impl SingleplayerWorlds {
 
     pub fn current(&self) -> Option<&SingleplayerWorld> {
         self.current.and_then(|i| self.worlds.get(i))
-    }
-
-    pub fn legacy_inventory(&self) -> SingleplayerLegacyInventory {
-        let mut inventory = SingleplayerLegacyInventory {
-            total_worlds: self.worlds.len(),
-            ..SingleplayerLegacyInventory::default()
-        };
-
-        for world in &self.worlds {
-            if !matches!(
-                world.world_source,
-                SingleplayerWorldSource::LegacyUnknown | SingleplayerWorldSource::LegacyMigrated
-            ) {
-                continue;
-            }
-
-            inventory.legacy_worlds += 1;
-            if matches!(world.world_source, SingleplayerWorldSource::LegacyUnknown) {
-                inventory.legacy_unknown_worlds += 1;
-            } else {
-                inventory.legacy_migrated_worlds += 1;
-            }
-
-            if world.legacy_origin.is_some() {
-                inventory.legacy_worlds_with_typed_origin += 1;
-            } else {
-                inventory.legacy_worlds_without_typed_origin += 1;
-            }
-
-            if world.compat_audit.is_none() {
-                inventory.legacy_worlds_without_compat_audit += 1;
-            }
-
-            if world.managed_recipe_sidecar_missing {
-                inventory.legacy_worlds_with_sidecarless_managed_residual += 1;
-            }
-        }
-
-        inventory
     }
 
     pub fn new_world(&mut self) {
@@ -933,32 +898,6 @@ mod tests {
         }
     }
 
-    fn inventory_world(
-        world_dir: &Path,
-        world_source: SingleplayerWorldSource,
-        legacy_origin: Option<SingleplayerLegacyOrigin>,
-        compat_audit: Option<CompatAuditV1>,
-    ) -> SingleplayerWorld {
-        SingleplayerWorld {
-            world_id: Uuid::new_v4(),
-            realm_id: Uuid::new_v4(),
-            name: "Inventory World".to_string(),
-            gen_opts: None,
-            day_length: DAY_LENGTH_DEFAULT,
-            seed: DEFAULT_WORLD_SEED,
-            world_source,
-            source_ref: None,
-            legacy_origin,
-            compat_audit,
-            managed_recipe_sidecar_missing: false,
-            world_recipe_hash: None,
-            topology_id: None,
-            is_generated: true,
-            path: world_dir.to_path_buf(),
-            map_path: world_dir.join("map.bin"),
-        }
-    }
-
     #[test]
     fn loading_v1_world_upgrades_to_v5_and_persists_legacy_unknown() {
         let world_dir =
@@ -993,84 +932,6 @@ mod tests {
         assert!(meta.contains("compat_audit: None"));
 
         let _ = fs::remove_dir_all(world_dir);
-    }
-
-    #[test]
-    fn legacy_inventory_counts_residual_legacy_stock_truthfully() {
-        let root =
-            std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
-        let worlds = SingleplayerWorlds {
-            worlds: vec![
-                inventory_world(
-                    &root.join("legacy-unknown"),
-                    SingleplayerWorldSource::LegacyUnknown,
-                    None,
-                    None,
-                ),
-                inventory_world(
-                    &root.join("legacy-migrated-typed"),
-                    SingleplayerWorldSource::LegacyMigrated,
-                    Some(SingleplayerLegacyOrigin::LoadPath(
-                        root.join("typed-source.bin").to_string_lossy().into_owned(),
-                    )),
-                    Some(CompatAuditV1::loaded_existing(
-                        server::CompatEntryKindV1::LoadLegacy,
-                    )),
-                ),
-                inventory_world(
-                    &root.join("legacy-migrated-untyped"),
-                    SingleplayerWorldSource::LegacyMigrated,
-                    None,
-                    None,
-                ),
-                {
-                    let mut world = inventory_world(
-                        &root.join("legacy-migrated-sidecarless"),
-                        SingleplayerWorldSource::LegacyMigrated,
-                        Some(SingleplayerLegacyOrigin::LoadOrGenerate {
-                            name: "managed-sidecarless".to_owned(),
-                            overwrite: false,
-                        }),
-                        Some(CompatAuditV1::loaded_existing(
-                            server::CompatEntryKindV1::LoadLegacy,
-                        )),
-                    );
-                    world.managed_recipe_sidecar_missing = true;
-                    world
-                },
-                inventory_world(
-                    &root.join("generated"),
-                    SingleplayerWorldSource::Generated,
-                    None,
-                    Some(CompatAuditV1::loaded_existing(
-                        server::CompatEntryKindV1::Load,
-                    )),
-                ),
-                inventory_world(
-                    &root.join("default-asset"),
-                    SingleplayerWorldSource::DefaultAsset,
-                    None,
-                    None,
-                ),
-            ],
-            current: None,
-            worlds_folder: root.clone(),
-        };
-
-        let inventory = worlds.legacy_inventory();
-
-        assert_eq!(inventory, SingleplayerLegacyInventory {
-            total_worlds: 6,
-            legacy_worlds: 4,
-            legacy_unknown_worlds: 1,
-            legacy_migrated_worlds: 3,
-            legacy_worlds_with_typed_origin: 2,
-            legacy_worlds_without_typed_origin: 2,
-            legacy_worlds_without_compat_audit: 2,
-            legacy_worlds_with_sidecarless_managed_residual: 1,
-        });
-
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -2041,7 +1902,10 @@ mod tests {
     }
 
     #[test]
-    fn runtime_file_opts_uses_load_legacy_for_materialized_legacy_worlds() {
+    #[should_panic(
+        expected = "retired legacy singleplayer worlds must not be started; migrate metadata to a strict modern world contract first"
+    )]
+    fn runtime_file_opts_panics_for_materialized_legacy_worlds() {
         let world_dir =
             std::env::temp_dir().join(format!("caldrayne-singleplayer-world-{}", Uuid::new_v4()));
         let map_path = world_dir.join("map.bin");
@@ -2069,10 +1933,7 @@ mod tests {
                 map_path: map_path.clone(),
             };
 
-            match world.runtime_file_opts() {
-                FileOpts::LoadLegacy(path) => assert_eq!(path, map_path),
-                other => panic!("legacy world should use LoadLegacy(..), got {other:?}"),
-            }
+            let _ = world.runtime_file_opts();
         }
     }
 

@@ -1,5 +1,5 @@
 [package]
-name = "veloren-server-cli"
+name = "veldr-server-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,8 +11,8 @@ workspace = true
 build = true
 app = true
 longDescription = """
-Caldrayne Online is a multiplayer voxel action RPG for the Veldr project line.
-It is a Caldrayne-branded derivative built on top of the open-source Veloren codebase while preserving required upstream credit.
+Caldrayne Online is a multiplayer voxel action RPG for the Caldrayne project line.
+It is a Caldrayne-branded derivative of the open-source Veloren codebase while preserving required upstream credit.
 It is inspired by games such as Cube World, The Legend of Zelda: Breath of the Wild, Dwarf Fortress and Minecraft.
 
 This package includes the Caldrayne Online server CLI.
@@ -31,16 +31,16 @@ hot-agent = ["server/hot-agent", "agent"]
 hot-site = ["server/hot-site", "world"]
 
 [dependencies]
-server = { package = "veloren-server", path = "../server", default-features = false, features = [
+server = { package = "veldr-server", path = "../server", default-features = false, features = [
     "simd",
 ] }
-agent = { package = "veloren-server-agent", path = "../server/agent", optional = true }
-common = { package = "veloren-common", path = "../common" }
-common-base = { package = "veloren-common-base", path = "../common/base" }
-common-net = { package = "veloren-common-net", path = "../common/net" }
-veloren-query-server = { path = "../common/query_server" }
-common-frontend = { package = "veloren-common-frontend", path = "../common/frontend" }
-world = { package = "veloren-world", path = "../world", optional = true }
+agent = { package = "veldr-server-agent", path = "../server/agent", optional = true }
+common = { package = "veldr-common", path = "../common" }
+common-base = { package = "veldr-common-base", path = "../common/base" }
+common-net = { package = "veldr-common-net", path = "../common/net" }
+veldr-query-server = { path = "../common/query_server" }
+common-frontend = { package = "veldr-common-frontend", path = "../common/frontend" }
+world = { package = "veldr-world", path = "../world", optional = true }
 
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 num_cpus = "1.0"
@@ -67,3 +67,7 @@ chrono = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 mimalloc = { workspace = true }
+
+[[bin]]
+name = "caldrayne-server-cli"
+path = "src/main.rs"

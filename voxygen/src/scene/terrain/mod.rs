@@ -486,7 +486,7 @@ impl SpriteRenderContext {
             prof_span!("mesh all sprites");
             // Load all the sprite config data.
             let sprite_config =
-                Arc::<SpriteSpec>::load_expect("voxygen.voxel.sprite_manifest").cloned();
+                Arc::<SpriteSpec>::load_expect("veldr.voxel.sprite_manifest").cloned();
 
             let max_size = Vec2::from(u16::try_from(max_texture_size).unwrap_or(u16::MAX));
             let mut greedy = GreedyMesh::<FigureSpriteAtlasData, SpriteAtlasAllocator>::new(
@@ -573,7 +573,7 @@ impl SpriteRenderContext {
             // TODO: test appearance of this
             let missing_sprite_placeholder = SpriteData {
                 variations: vec![config_to_data(&SpriteModelConfig {
-                    model: "voxygen.voxel.not_found".into(),
+                    model: "veldr.voxel.not_found".into(),
                     offset: (-5.5, -5.5, 0.0),
                     lod_axes: (1.0, 1.0, 1.0),
                     custom_indices: HashMap::default(),

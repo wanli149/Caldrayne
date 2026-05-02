@@ -33,9 +33,9 @@ use tracing::error;
 image_ids_ice! {
     struct Imgs {
         <ImageGraphic>
-        button: "voxygen.element.ui.generic.buttons.button",
-        button_hover: "voxygen.element.ui.generic.buttons.button_hover",
-        button_press: "voxygen.element.ui.generic.buttons.button_press",
+        button: "veldr.element.ui.generic.buttons.button",
+        button_hover: "veldr.element.ui.generic.buttons.button_hover",
+        button_press: "veldr.element.ui.generic.buttons.button_press",
     }
 }
 

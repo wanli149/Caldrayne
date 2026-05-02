@@ -1,0 +1,50 @@
+[
+    (8.0, [
+        "veldr.element.animation.loaders.cauldron1",
+        "veldr.element.animation.loaders.cauldron2",
+        "veldr.element.animation.loaders.cauldron3",
+        "veldr.element.animation.loaders.cauldron4",
+        "veldr.element.animation.loaders.cauldron5",
+    ]),
+    (6.0, [
+        "veldr.element.animation.loaders.cheese1",
+        "veldr.element.animation.loaders.cheese2",
+        "veldr.element.animation.loaders.cheese3",
+        "veldr.element.animation.loaders.cheese4",
+        "veldr.element.animation.loaders.cheese5",
+    ]),
+    (8.0, [
+        "veldr.element.animation.loaders.mouse-cheese1",
+        "veldr.element.animation.loaders.mouse-cheese2",
+        "veldr.element.animation.loaders.mouse-cheese3",
+        "veldr.element.animation.loaders.mouse-cheese4",
+        "veldr.element.animation.loaders.mouse-cheese5",
+    ]),
+    (6.0, [
+        "veldr.element.animation.loaders.coins1",
+        "veldr.element.animation.loaders.coins2",
+        "veldr.element.animation.loaders.coins3",
+        "veldr.element.animation.loaders.coins4",
+        "veldr.element.animation.loaders.coins5",
+    ]),
+    (1.0, [
+        "veldr.element.animation.loaders.house1",
+        "veldr.element.animation.loaders.house2",
+        "veldr.element.animation.loaders.house3",
+        "veldr.element.animation.loaders.house4",
+        "veldr.element.animation.loaders.house5",
+    ]),
+    (1.0, [
+        "veldr.element.animation.loaders.ship1",
+        "veldr.element.animation.loaders.ship2",
+        "veldr.element.animation.loaders.ship3",
+        "veldr.element.animation.loaders.ship4",
+        "veldr.element.animation.loaders.ship5",
+    ]),
+    (2.0, [
+        "veldr.element.animation.loaders.boat1",
+        "veldr.element.animation.loaders.boat2",
+        "veldr.element.animation.loaders.boat3",
+        "veldr.element.animation.loaders.boat4",
+    ]),
+]

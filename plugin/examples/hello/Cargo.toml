@@ -11,12 +11,13 @@ edition = "2024"
 package = "component:hello"
 
 [package.metadata.component.target]
-path = "../../wit/veloren.wit"
+path = "../../wit/caldrayne.wit"
 world = "server-plugin"
 
 [package.metadata.component.dependencies]
 
 [dependencies]
+wit-bindgen = { version = "0.51.0", features = ["macros"] }
 wit-bindgen-rt = "0.30.0"
 
 [lib]

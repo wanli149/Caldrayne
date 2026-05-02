@@ -21,8 +21,7 @@ use tracing::{error, info, trace, warn};
 
 mod singleplayer_world;
 pub use singleplayer_world::{
-    SingleplayerLegacyInventory, SingleplayerLegacyOrigin, SingleplayerWorld,
-    SingleplayerWorldSource, SingleplayerWorlds,
+    SingleplayerLegacyOrigin, SingleplayerWorld, SingleplayerWorldSource, SingleplayerWorlds,
 };
 
 const TPS: u64 = 30;

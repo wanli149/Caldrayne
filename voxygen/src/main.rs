@@ -22,8 +22,8 @@ static GLOBAL: common_base::tracy_client::ProfiledAllocator<std::alloc::System> 
 
 use i18n::{self, LocalizationHandle};
 #[cfg(feature = "singleplayer")]
-use veloren_voxygen::singleplayer::SingleplayerState;
-use veloren_voxygen::{
+use veldr_voxygen::singleplayer::SingleplayerState;
+use veldr_voxygen::{
     GlobalState,
     audio::AudioFrontend,
     cli,
@@ -41,7 +41,7 @@ use common::clock::Clock;
 use std::{panic, path::PathBuf};
 use tracing::{info, warn};
 #[cfg(feature = "egui-ui")]
-use veloren_voxygen::ui::egui::EguiState;
+use veldr_voxygen::ui::egui::EguiState;
 use wgpu::{Backends, Instance};
 
 fn main() {
@@ -80,17 +80,17 @@ fn main() {
 
     let userdata_dir = common_base::userdata_dir();
 
-    // Determine where Voxygen's logs should go
+    // Determine where the Caldrayne client's logs should go
     // Choose a path to store the logs by the following order:
-    //  - The VOXYGEN_LOGS environment variable
-    //  - The <userdata>/voxygen/logs
-    let logs_dir = std::env::var_os("VOXYGEN_LOGS")
+    //  - The CALDRAYNE_LOGS environment variable
+    //  - The <userdata>/caldrayne/logs
+    let logs_dir = std::env::var_os("CALDRAYNE_LOGS")
         .map(PathBuf::from)
-        .unwrap_or_else(|| userdata_dir.join("voxygen").join("logs"));
+        .unwrap_or_else(|| userdata_dir.join("caldrayne").join("logs"));
 
     // Init logging and hold the guards.
     let now = Utc::now();
-    let log_filename = format!("{}_voxygen.log", now.format("%Y-%m-%d"));
+    let log_filename = format!("{}_caldrayne.log", now.format("%Y-%m-%d"));
     let _guards = common_frontend::init_stdout(Some((&logs_dir, &log_filename)));
 
     // Re-run userdata selection so any warnings will be logged
@@ -98,19 +98,19 @@ fn main() {
 
     info!("Using userdata dir at: {}", userdata_dir.display());
 
-    // Determine Voxygen's config directory either by env var or placed in veloren's
+    // Determine the Caldrayne client's config directory either by env var or placed in the
     // userdata folder
-    let config_dir = std::env::var_os("VOXYGEN_CONFIG")
+    let config_dir = std::env::var_os("CALDRAYNE_CONFIG")
         .map(PathBuf::from)
         .and_then(|path| {
             if path.exists() {
                 Some(path)
             } else {
-                warn!(?path, "VOXYGEN_CONFIG points to invalid path.");
+                warn!(?path, "CALDRAYNE_CONFIG points to invalid path.");
                 None
             }
         })
-        .unwrap_or_else(|| userdata_dir.join("voxygen"));
+        .unwrap_or_else(|| userdata_dir.join("caldrayne"));
     info!("Using config dir at: {}", config_dir.display());
 
     // Load the settings
@@ -119,30 +119,30 @@ fn main() {
 
     let entry_policy = EntryPolicy::load(&args);
     let entry_upgrade_contract = entry_policy.upgrade_boundary_contract();
-    let public_auth_handoff_contract = entry_policy.public_official_auth_handoff_contract();
+    let public_auth_handoff_contract = entry_policy.public_realm_auth_handoff_contract();
     info!(
         product_mode = ?entry_policy.product_mode(),
-        official_source_kind = ?entry_upgrade_contract.official_source_kind,
-        launcher_may_replace_official_source =
-            entry_upgrade_contract.launcher_may_replace_official_source,
+        public_realm_source_kind = ?entry_upgrade_contract.public_realm_source_kind,
+        launcher_may_replace_public_realm_source =
+            entry_upgrade_contract.launcher_may_replace_public_realm_source,
         launcher_must_not_override_runtime_policy =
             entry_upgrade_contract.launcher_must_not_override_runtime_policy,
         lightweight_discovery_remains_optional_observability_plane =
             entry_upgrade_contract
                 .lightweight_discovery_boundary
                 .remains_optional_observability_plane,
-        public_bundled_official_entry_artifact_identity =
+        public_bundled_public_realm_artifact_identity =
             public_auth_handoff_contract
-                .bundled_official_entry_artifact_identity
+                .bundled_public_realm_artifact_identity
                 .as_str(),
         public_bundled_target_kind = public_auth_handoff_contract.bundled_target_kind.as_str(),
         public_bundled_target_is_non_local_candidate =
             public_auth_handoff_contract.bundled_target_is_non_local_candidate,
         public_bundled_transport_kind =
             public_auth_handoff_contract.bundled_transport_kind.as_str(),
-        public_bundled_official_entry_use_srv = public_auth_handoff_contract.bundled_use_srv,
-        public_bundled_official_entry_use_quic = public_auth_handoff_contract.bundled_use_quic,
-        public_bundled_official_entry_validate_tls =
+        public_bundled_public_realm_use_srv = public_auth_handoff_contract.bundled_use_srv,
+        public_bundled_public_realm_use_quic = public_auth_handoff_contract.bundled_use_quic,
+        public_bundled_public_realm_validate_tls =
             public_auth_handoff_contract.bundled_validate_tls,
         public_bundled_auth_mode = public_auth_handoff_contract.bundled_auth_mode.as_str(),
         public_external_auth_rollout_ready =
@@ -172,7 +172,7 @@ fn main() {
             .thread_name_fn(|| {
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("tokio-voxygen-{}", id)
+                format!("tokio-caldrayne-{}", id)
             })
             .build()
             .unwrap(),
@@ -227,7 +227,7 @@ fn main() {
     i18n.set_english_fallback(settings.language.use_english_fallback);
 
     // Create window
-    use veloren_voxygen::{error::Error, render::RenderError};
+    use veldr_voxygen::{error::Error, render::RenderError};
     let (mut window, event_loop) = match Window::new(&settings, &tokio_runtime) {
         Ok(ok) => ok,
         // Custom panic message when a graphics backend could not be found
@@ -257,7 +257,7 @@ fn main() {
         ),
     };
 
-    let clipboard = veloren_voxygen::ui::ice::Clipboard::connect(window.window());
+    let clipboard = veldr_voxygen::ui::ice::Clipboard::connect(window.window());
 
     let lazy_init = SpriteRenderContext::new(window.renderer_mut());
 
@@ -266,9 +266,9 @@ fn main() {
 
     #[cfg(feature = "discord")]
     let discord = if settings.networking.enable_discord_integration {
-        veloren_voxygen::discord::Discord::start(&tokio_runtime)
+        veldr_voxygen::discord::Discord::start(&tokio_runtime)
     } else {
-        veloren_voxygen::discord::Discord::Inactive
+        veldr_voxygen::discord::Discord::Inactive
     };
 
     let global_state = GlobalState {

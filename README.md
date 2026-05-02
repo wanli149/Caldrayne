@@ -30,15 +30,15 @@ We retain the required upstream license and attribution material in this reposit
 
 ## Development Notes
 
-This repository currently prioritizes local development and brand integration. Some internal crate names, asset keys, compatibility variables, and build identifiers may still use historical `veloren` naming where changing them immediately would risk breaking tooling, assets, or protocol compatibility.
+This repository currently prioritizes local development and brand integration. Some internal crate names, runtime codenames, and build identifiers still use the internal `veldr` naming where keeping them preserves tooling stability and implementation continuity.
 
 ## Client Packaging Boundary
 
-- The current desktop client family is still the technical package and binary `veloren-voxygen`.
+- The current desktop client family is exposed through the public binary `caldrayne`.
 - `Public` and `Dev` are two runtime product modes of that same client family, not two separate install products.
-- Outputs such as `veloren-voxygen-dev` represent development build profiles, not a second player-facing desktop client.
-- Technical identifiers such as `veloren-voxygen`, `veloren-server-cli`, desktop integration ids, and compatibility-oriented keys are currently retained for build, tooling, packaging, and protocol stability. They are not the public brand surface.
-- `veloren-server-cli` is a separate dedicated server runtime and operational binary, not part of the desktop client install boundary.
+- Outputs such as `caldrayne-dev` represent development build profiles, not a second player-facing desktop client.
+- Internal package identifiers such as `veldr-voxygen`, `veldr-server-cli`, selected crate names, and compatibility-oriented keys are still retained where they stabilize the workspace. They are not the public brand surface.
+- `caldrayne-server-cli` is a separate dedicated server runtime and operational binary, not part of the desktop client install boundary.
 
 ## Reference Material
 

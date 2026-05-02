@@ -14,18 +14,23 @@ mod ron_recover;
 /// entities
 mod spatial_grid;
 
-pub const VELOREN_VERSION_STAGE: &str = "Pre-Alpha";
-const VELOREN_GIT_VERSION_BUILD: &str = env!("VELOREN_GIT_VERSION");
+pub const VELDR_VERSION_STAGE: &str = "Pre-Alpha";
+const CALDRAYNE_GIT_VERSION_BUILD: &str = env!("CALDRAYNE_GIT_VERSION");
 
 use std::str::FromStr;
+
+fn runtime_git_version() -> String {
+    std::env::var("CALDRAYNE_GIT_VERSION")
+        .unwrap_or_else(|_| CALDRAYNE_GIT_VERSION_BUILD.to_string())
+}
+
 lazy_static::lazy_static! {
-    static ref VELOREN_GIT_VERSION: String =
-        std::env::var("VELOREN_GIT_VERSION").unwrap_or_else(|_| VELOREN_GIT_VERSION_BUILD.to_string());
-    pub static ref GIT_TAG: &'static str = VELOREN_GIT_VERSION.split('/').next().expect("failed to retrieve git_tag!");
+    static ref CALDRAYNE_GIT_VERSION: String = runtime_git_version();
+    pub static ref GIT_TAG: &'static str = CALDRAYNE_GIT_VERSION.split('/').next().expect("failed to retrieve git_tag!");
     /// The first 32 bits of the git hash. We don't need more, the non-collision guarantee isn't
     /// all that important for our purposes.
-    pub static ref GIT_HASH: u32 = u32::from_str_radix(VELOREN_GIT_VERSION.split('/').nth(1).expect("failed to retrieve git_hash!"), 16).expect("invalid git_hash!");
-    pub static ref GIT_TIMESTAMP: i64 = i64::from_str(VELOREN_GIT_VERSION.split('/').nth(2).expect("failed to retrieve git_timestamp!")).expect("invalid git_timestamp!");
+    pub static ref GIT_HASH: u32 = u32::from_str_radix(CALDRAYNE_GIT_VERSION.split('/').nth(1).expect("failed to retrieve git_hash!"), 16).expect("invalid git_hash!");
+    pub static ref GIT_TIMESTAMP: i64 = i64::from_str(CALDRAYNE_GIT_VERSION.split('/').nth(2).expect("failed to retrieve git_timestamp!")).expect("invalid git_timestamp!");
     pub static ref DISPLAY_VERSION: String = if GIT_TAG.is_empty() {
         make_display_version(*GIT_HASH, *GIT_TIMESTAMP)
     } else {

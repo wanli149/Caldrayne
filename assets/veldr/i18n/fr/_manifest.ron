@@ -1,0 +1,17 @@
+/// Localization for French (France locale)
+(
+    metadata: (
+        language_name: "Français (French)",
+        language_identifier: "fr",
+    ),
+    fonts: {
+        "alkhemi": Font (
+            asset_key: "veldr.font.Alkhemikal",
+            scale_ratio: 1.0,
+        ),
+        "cyri": Font (
+            asset_key: "veldr.font.EnterCommand",
+            scale_ratio: 1.0,
+        ),
+    }
+)

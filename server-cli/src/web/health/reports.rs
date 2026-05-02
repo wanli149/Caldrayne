@@ -1,4 +1,4 @@
-use common::official_entry::BundledOfficialEntryPosture;
+use common::public_realm::BundledPublicRealmPosture;
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -106,7 +106,7 @@ pub(in crate::web) struct CutoverMaterialChecklistItem {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub(in crate::web) struct PublicEntryTransitionContract {
+pub(in crate::web) struct PublicRealmTransitionContract {
     pub(in crate::web) transition_scope: &'static str,
     pub(in crate::web) record_scope: &'static str,
     pub(in crate::web) atomic_bundle_fields: Vec<&'static str>,
@@ -117,7 +117,7 @@ pub(in crate::web) struct PublicEntryTransitionContract {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub(in crate::web) struct PublicEntryLifecycleTransition {
+pub(in crate::web) struct PublicRealmLifecycleTransition {
     pub(in crate::web) from_state: &'static str,
     pub(in crate::web) to_state: &'static str,
     pub(in crate::web) approval_decision: Option<&'static str>,
@@ -127,13 +127,13 @@ pub(in crate::web) struct PublicEntryLifecycleTransition {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub(in crate::web) struct PublicEntryLifecycleTransitionContract {
+pub(in crate::web) struct PublicRealmLifecycleTransitionContract {
     pub(in crate::web) lifecycle_scope: &'static str,
     pub(in crate::web) initial_state: &'static str,
     pub(in crate::web) evidence_ready_state: &'static str,
     pub(in crate::web) terminal_states_requiring_archive_receipt: Vec<&'static str>,
     pub(in crate::web) unsupported_paths: Vec<&'static str>,
-    pub(in crate::web) transitions: Vec<PublicEntryLifecycleTransition>,
+    pub(in crate::web) transitions: Vec<PublicRealmLifecycleTransition>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -158,7 +158,7 @@ pub(in crate::web) struct ExternalExecutionDependencyReport {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub(in crate::web) struct PublicEntryHandoffReport {
+pub(in crate::web) struct PublicRealmHandoffReport {
     pub(in crate::web) signal: &'static str,
     pub(in crate::web) status: &'static str,
     pub(in crate::web) applies_to_non_local_public_rollout: bool,
@@ -181,14 +181,14 @@ pub(in crate::web) struct PublicEntryHandoffReport {
     pub(in crate::web) machine_verification_available_in_this_process: bool,
     pub(in crate::web) machine_verification_scope: &'static str,
     pub(in crate::web) machine_verification_limitations: &'static str,
-    pub(in crate::web) repo_bundled_official_entry_snapshot: RepoBundledOfficialEntrySnapshotReport,
+    pub(in crate::web) repo_bundled_public_realm_snapshot: RepoBundledPublicRealmSnapshotReport,
     pub(in crate::web) required_external_review_fields: Vec<&'static str>,
     pub(in crate::web) required_external_review_field_contracts: Vec<ExternalRecordFieldContract>,
     pub(in crate::web) required_cutover_preconditions: Vec<&'static str>,
     pub(in crate::web) required_cutover_material_checklist: Vec<CutoverMaterialChecklistItem>,
-    pub(in crate::web) public_entry_transition_contract: Option<PublicEntryTransitionContract>,
-    pub(in crate::web) public_entry_lifecycle_transition_contract:
-        Option<PublicEntryLifecycleTransitionContract>,
+    pub(in crate::web) public_realm_transition_contract: Option<PublicRealmTransitionContract>,
+    pub(in crate::web) public_realm_lifecycle_transition_contract:
+        Option<PublicRealmLifecycleTransitionContract>,
     pub(in crate::web) section_instance_validation_contract:
         Option<ExternalSectionInstanceValidationContract>,
     pub(in crate::web) required_authority_pairing_checks: Vec<ExternalRecordAuthorityPairingCheck>,
@@ -197,13 +197,13 @@ pub(in crate::web) struct PublicEntryHandoffReport {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub(in crate::web) struct RepoBundledOfficialEntrySnapshotReport {
+pub(in crate::web) struct RepoBundledPublicRealmSnapshotReport {
     pub(in crate::web) status: &'static str,
     pub(in crate::web) evidence_scope: &'static str,
     pub(in crate::web) load_source: &'static str,
     pub(in crate::web) authoritative_for_release_cutover: bool,
     pub(in crate::web) required_external_match_fields: Vec<&'static str>,
-    pub(in crate::web) baseline: Option<BundledOfficialEntryPosture>,
+    pub(in crate::web) baseline: Option<BundledPublicRealmPosture>,
     pub(in crate::web) load_error: Option<String>,
     pub(in crate::web) semantics: &'static str,
 }
@@ -216,7 +216,7 @@ pub(in crate::web) struct CompatibilityContractReport {
     pub(in crate::web) query_hint: QueryCompatibilityHintReport,
     pub(in crate::web) query_protocol_rollout: QueryProtocolRolloutContract,
     pub(in crate::web) world_compat: WorldCompatReport,
-    pub(in crate::web) public_entry_handoff: PublicEntryHandoffReport,
+    pub(in crate::web) public_realm_handoff: PublicRealmHandoffReport,
     pub(in crate::web) environment_matches: bool,
     pub(in crate::web) compatibility_matches: bool,
     pub(in crate::web) auth_requirement_matches_runtime_config: bool,
@@ -347,14 +347,6 @@ pub(in crate::web) struct WorldCompatReport {
     pub(in crate::web) environment: &'static str,
     pub(in crate::web) requires_operator_review: bool,
     pub(in crate::web) detail: String,
-    pub(in crate::web) transition_window_open: Option<bool>,
-    pub(in crate::web) review_result_status_hint: Option<&'static str>,
-    pub(in crate::web) required_terminal_record_fields: Vec<&'static str>,
-    pub(in crate::web) required_archive_receipt_fields_when_terminal: Vec<&'static str>,
-    pub(in crate::web) required_post_archive_writeback_fields_after_archive: Vec<&'static str>,
-    pub(in crate::web) required_archive_correlation_dimensions_when_terminal: Vec<&'static str>,
-    pub(in crate::web) same_section_archive_receipt_required: Option<bool>,
-    pub(in crate::web) same_section_post_archive_verification_required: Option<bool>,
     pub(in crate::web) configured_mode: Option<String>,
     pub(in crate::web) load_legacy_mode: Option<String>,
     pub(in crate::web) load_or_generate_sidecarless_mode: Option<String>,
@@ -652,9 +644,9 @@ pub(in crate::web) struct PreflightReviewDecisionContract {
     pub(in crate::web) archive_handoff_contract: ExternalRecordArchiveHandoffContract,
     pub(in crate::web) retention_contract: ExternalRecordRetentionContract,
     pub(in crate::web) terminal_mutation_contract: ExternalRecordTerminalMutationContract,
-    pub(in crate::web) public_entry_transition_contract: Option<PublicEntryTransitionContract>,
-    pub(in crate::web) public_entry_lifecycle_transition_contract:
-        Option<PublicEntryLifecycleTransitionContract>,
+    pub(in crate::web) public_realm_transition_contract: Option<PublicRealmTransitionContract>,
+    pub(in crate::web) public_realm_lifecycle_transition_contract:
+        Option<PublicRealmLifecycleTransitionContract>,
     pub(in crate::web) section_instance_validation_contract:
         Option<ExternalSectionInstanceValidationContract>,
     pub(in crate::web) validator_integration_readiness_summary:
@@ -684,7 +676,7 @@ pub(in crate::web) struct PreflightReport {
     pub(in crate::web) real_cutover_execution_status: &'static str,
     pub(in crate::web) remaining_external_execution_dependencies:
         Vec<ExternalExecutionDependencyReport>,
-    pub(in crate::web) repo_bundled_official_entry_snapshot: RepoBundledOfficialEntrySnapshotReport,
+    pub(in crate::web) repo_bundled_public_realm_snapshot: RepoBundledPublicRealmSnapshotReport,
     pub(in crate::web) components: Vec<PreflightComponentReport>,
     pub(in crate::web) blocking_signals: Vec<&'static str>,
     pub(in crate::web) review_signals: Vec<&'static str>,

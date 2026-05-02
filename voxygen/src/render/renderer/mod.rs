@@ -530,7 +530,7 @@ impl Renderer {
         let noise_tex = Texture::new(
             &device,
             &queue,
-            &assets::Image::load_expect("voxygen.texture.noise").read().0,
+            &assets::Image::load_expect("veldr.texture.noise").read().0,
             Some(FilterMode::Linear),
             Some(AddressMode::Repeat),
         )?;

@@ -72,70 +72,70 @@ const UI_MAIN: Rgba<u8> = Rgba::new(156, 179, 179, 255); // Greenish Blue
 image_ids_ice! {
     struct Imgs {
         <ImageGraphic>
-        frame_bottom: "voxygen.element.ui.generic.frames.banner_bot",
+        frame_bottom: "veldr.element.ui.generic.frames.banner_bot",
 
-        slider_range: "voxygen.element.ui.generic.slider.track",
-        slider_indicator: "voxygen.element.ui.generic.slider.indicator",
+        slider_range: "veldr.element.ui.generic.slider.track",
+        slider_indicator: "veldr.element.ui.generic.slider.indicator",
 
-        char_selection: "voxygen.element.ui.generic.frames.selection",
-        char_selection_hover: "voxygen.element.ui.generic.frames.selection_hover",
-        char_selection_press: "voxygen.element.ui.generic.frames.selection_press",
+        char_selection: "veldr.element.ui.generic.frames.selection",
+        char_selection_hover: "veldr.element.ui.generic.frames.selection_hover",
+        char_selection_press: "veldr.element.ui.generic.frames.selection_press",
 
-        delete_button: "voxygen.element.ui.char_select.icons.bin",
-        delete_button_hover: "voxygen.element.ui.char_select.icons.bin_hover",
-        delete_button_press: "voxygen.element.ui.char_select.icons.bin_press",
+        delete_button: "veldr.element.ui.char_select.icons.bin",
+        delete_button_hover: "veldr.element.ui.char_select.icons.bin_hover",
+        delete_button_press: "veldr.element.ui.char_select.icons.bin_press",
 
-        edit_button: "voxygen.element.ui.char_select.icons.pen",
-        edit_button_hover: "voxygen.element.ui.char_select.icons.pen_hover",
-        edit_button_press: "voxygen.element.ui.char_select.icons.pen_press",
+        edit_button: "veldr.element.ui.char_select.icons.pen",
+        edit_button_hover: "veldr.element.ui.char_select.icons.pen_hover",
+        edit_button_press: "veldr.element.ui.char_select.icons.pen_press",
 
-        name_input: "voxygen.element.ui.generic.textbox",
+        name_input: "veldr.element.ui.generic.textbox",
 
         // Tool Icons
-        swords: "voxygen.element.weapons.swords",
-        sword: "voxygen.element.weapons.sword",
-        axe: "voxygen.element.weapons.axe",
-        hammer: "voxygen.element.weapons.hammer",
-        bow: "voxygen.element.weapons.bow",
-        staff: "voxygen.element.weapons.staff",
+        swords: "veldr.element.weapons.swords",
+        sword: "veldr.element.weapons.sword",
+        axe: "veldr.element.weapons.axe",
+        hammer: "veldr.element.weapons.hammer",
+        bow: "veldr.element.weapons.bow",
+        staff: "veldr.element.weapons.staff",
 
         // Hardcore icon
-        hardcore: "voxygen.element.ui.map.icons.dif_map_icon",
+        hardcore: "veldr.element.ui.map.icons.dif_map_icon",
 
         // Dice icons
-        dice: "voxygen.element.ui.char_select.icons.dice",
-        dice_hover: "voxygen.element.ui.char_select.icons.dice_hover",
-        dice_press: "voxygen.element.ui.char_select.icons.dice_press",
+        dice: "veldr.element.ui.char_select.icons.dice",
+        dice_hover: "veldr.element.ui.char_select.icons.dice_hover",
+        dice_press: "veldr.element.ui.char_select.icons.dice_press",
 
         // Species Icons
-        human_m: "voxygen.element.ui.char_select.portraits.human_m",
-        human_f: "voxygen.element.ui.char_select.portraits.human_f",
-        orc_m: "voxygen.element.ui.char_select.portraits.orc_m",
-        orc_f: "voxygen.element.ui.char_select.portraits.orc_f",
-        dwarf_m: "voxygen.element.ui.char_select.portraits.dwarf_m",
-        dwarf_f: "voxygen.element.ui.char_select.portraits.dwarf_f",
-        draugr_m: "voxygen.element.ui.char_select.portraits.ud_m",
-        draugr_f: "voxygen.element.ui.char_select.portraits.ud_f",
-        elf_m: "voxygen.element.ui.char_select.portraits.elf_m",
-        elf_f: "voxygen.element.ui.char_select.portraits.elf_f",
-        danari_m: "voxygen.element.ui.char_select.portraits.danari_m",
-        danari_f: "voxygen.element.ui.char_select.portraits.danari_f",
+        human_m: "veldr.element.ui.char_select.portraits.human_m",
+        human_f: "veldr.element.ui.char_select.portraits.human_f",
+        orc_m: "veldr.element.ui.char_select.portraits.orc_m",
+        orc_f: "veldr.element.ui.char_select.portraits.orc_f",
+        dwarf_m: "veldr.element.ui.char_select.portraits.dwarf_m",
+        dwarf_f: "veldr.element.ui.char_select.portraits.dwarf_f",
+        draugr_m: "veldr.element.ui.char_select.portraits.ud_m",
+        draugr_f: "veldr.element.ui.char_select.portraits.ud_f",
+        elf_m: "veldr.element.ui.char_select.portraits.elf_m",
+        elf_f: "veldr.element.ui.char_select.portraits.elf_f",
+        danari_m: "veldr.element.ui.char_select.portraits.danari_m",
+        danari_f: "veldr.element.ui.char_select.portraits.danari_f",
         // Icon Borders
-        icon_border: "voxygen.element.ui.generic.buttons.border",
-        icon_border_mo: "voxygen.element.ui.generic.buttons.border_mo",
-        icon_border_press: "voxygen.element.ui.generic.buttons.border_press",
-        icon_border_pressed: "voxygen.element.ui.generic.buttons.border_pressed",
+        icon_border: "veldr.element.ui.generic.buttons.border",
+        icon_border_mo: "veldr.element.ui.generic.buttons.border_mo",
+        icon_border_press: "veldr.element.ui.generic.buttons.border_press",
+        icon_border_pressed: "veldr.element.ui.generic.buttons.border_pressed",
 
-        button: "voxygen.element.ui.generic.buttons.button",
-        button_hover: "voxygen.element.ui.generic.buttons.button_hover",
-        button_press: "voxygen.element.ui.generic.buttons.button_press",
+        button: "veldr.element.ui.generic.buttons.button",
+        button_hover: "veldr.element.ui.generic.buttons.button_hover",
+        button_press: "veldr.element.ui.generic.buttons.button_press",
 
         // Tooltips
-        tt_edge: "voxygen.element.ui.generic.frames.tooltip.edge",
-        tt_corner: "voxygen.element.ui.generic.frames.tooltip.corner",
+        tt_edge: "veldr.element.ui.generic.frames.tooltip.edge",
+        tt_corner: "veldr.element.ui.generic.frames.tooltip.corner",
 
         // Startzone Selection
-        town_marker: "voxygen.element.ui.char_select.icons.town_marker",
+        town_marker: "veldr.element.ui.char_select.icons.town_marker",
     }
 }
 
@@ -375,10 +375,7 @@ impl Controls {
         world_sz: Vec2<u32>,
         has_rules: bool,
     ) -> Self {
-        let version = format!(
-            "Caldrayne Online (Veldr) {}",
-            *common::util::DISPLAY_VERSION
-        );
+        let version = format!("Caldrayne Online {}", *common::util::DISPLAY_VERSION);
         let server_mismatched_version = (*common::util::GIT_HASH != server_info.git_hash
             || *common::util::GIT_TIMESTAMP != server_info.git_timestamp)
             .then(|| {

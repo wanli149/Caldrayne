@@ -1,6 +1,6 @@
 [package]
-name = "veloren-common-assets"
-description = "Crate for game loading assets for veloren."
+name = "veldr-common-assets"
+description = "Crate for loading game assets for veldr."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

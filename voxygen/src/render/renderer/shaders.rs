@@ -97,7 +97,7 @@ impl Asset for Shaders {
         let shaders = shaders
             .iter()
             .map(|shader| {
-                let full_specifier = ["voxygen.shaders.", shader].concat();
+                let full_specifier = ["veldr.shaders.", shader].concat();
                 let asset = AssetExt::load(&full_specifier)?;
                 Ok((String::from(*shader), asset))
             })

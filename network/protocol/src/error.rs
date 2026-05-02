@@ -8,7 +8,7 @@ pub enum InitProtocolError<E: std::fmt::Debug + Send> {
     NotHandshake,
     /// expected Id, didn't get id
     NotId,
-    WrongMagicNumber([u8; 7]),
+    WrongMagicNumber([u8; 5]),
     WrongVersion([u32; 3]),
 }
 
@@ -18,7 +18,7 @@ pub enum ProtocolError<E: std::fmt::Debug + Send> {
     /// Custom Error on the underlying I/O,
     /// e.g. the TCP, UDP or MPSC connection is dropped by the OS
     Custom(E),
-    /// Violated indicates the veloren_network_protocol was violated
+    /// Violated indicates the veldr_network_protocol was violated
     /// the underlying I/O connection is still valid, but the remote side
     /// send WRONG (e.g. Invalid, or wrong order) data on the protocol layer.
     Violated,
@@ -50,13 +50,13 @@ impl<E: std::fmt::Debug + Send> core::fmt::Display for InitProtocolError<E> {
                 f,
                 "Magic Number doesn't match, remote side send '{:?}' instead of '{:?}'",
                 &r,
-                &crate::types::VELOREN_MAGIC_NUMBER
+                &crate::types::VELDR_MAGIC_NUMBER
             ),
             InitProtocolError::WrongVersion(r) => write!(
                 f,
                 "Network doesn't match, remote side send '{:?}' we are on '{:?}'",
                 &r,
-                &crate::types::VELOREN_NETWORK_VERSION
+                &crate::types::VELDR_NETWORK_VERSION
             ),
         }
     }

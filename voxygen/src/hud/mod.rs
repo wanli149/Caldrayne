@@ -1519,10 +1519,7 @@ impl Hud {
         self.pulse += dt.as_secs_f32();
         // FPS
         let fps = global_state.clock.stats().average_tps;
-        let version = format!(
-            "Caldrayne Online (Veldr) {}",
-            *common::util::DISPLAY_VERSION
-        );
+        let version = format!("Caldrayne Online {}", *common::util::DISPLAY_VERSION);
         let i18n = &global_state.i18n.read();
 
         if self.show.ingame {
@@ -5725,7 +5722,7 @@ fn air_velocity(fluid: Option<comp::Fluid>) -> String {
 ///
 /// # Examples
 /// ```
-/// use veloren_voxygen::hud::multiplier_to_percentage;
+/// use veldr_voxygen::hud::multiplier_to_percentage;
 ///
 /// let positive = multiplier_to_percentage(1.05);
 /// assert!((positive - 5.0).abs() < 0.0001);

@@ -15,7 +15,7 @@ use tracing_subscriber::{
     filter::{EnvFilter, LevelFilter},
 };
 use vek::*;
-use veloren_world::{
+use veldr_world::{
     CONFIG, ColumnSample, World,
     sim::{self, DEFAULT_WORLD_SEED, WorldOpts, get_horizon_map, sample_pos, sample_wpos},
     util::Sampler,

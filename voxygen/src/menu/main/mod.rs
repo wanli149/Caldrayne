@@ -443,7 +443,7 @@ impl PlayState for MainMenuState {
             },
             Some(InitMsg::IsAuthTrusted(auth_server)) => {
                 if global_state.entry_policy.is_auth_server_trusted(
-                    self.init.host_kind().unwrap_or(HostKind::PublicOfficial),
+                    self.init.host_kind().unwrap_or(HostKind::PublicRealm),
                     &auth_server,
                     &global_state.settings.networking.trusted_auth_servers,
                 ) {

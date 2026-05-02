@@ -427,7 +427,7 @@ impl AudioFrontend {
                 inner: Some(inner),
                 volumes: Volumes::default(),
                 music_spacing: 1.0,
-                mtm: AssetExt::load_expect("voxygen.audio.music_transition_manifest"),
+                mtm: AssetExt::load_expect("veldr.audio.music_transition_manifest"),
                 subtitles: VecDeque::new(),
                 subtitles_enabled: subtitles,
                 combat_music_enabled,
@@ -437,7 +437,7 @@ impl AudioFrontend {
                 inner: None,
                 volumes: Volumes::default(),
                 music_spacing: 1.0,
-                mtm: AssetExt::load_expect("voxygen.audio.music_transition_manifest"),
+                mtm: AssetExt::load_expect("veldr.audio.music_transition_manifest"),
                 subtitles: VecDeque::new(),
                 subtitles_enabled: subtitles,
                 combat_music_enabled,
@@ -453,7 +453,7 @@ impl AudioFrontend {
             inner: None,
             music_spacing: 1.0,
             volumes: Volumes::default(),
-            mtm: AssetExt::load_expect("voxygen.audio.music_transition_manifest"),
+            mtm: AssetExt::load_expect("veldr.audio.music_transition_manifest"),
             subtitles: VecDeque::new(),
             subtitles_enabled: false,
             combat_music_enabled: false,
@@ -580,7 +580,7 @@ impl AudioFrontend {
             let file = match item.files.len() {
                 0 => {
                     debug!("Sfx event {:?} is missing audio file.", event);
-                    "voxygen.audio.sfx.placeholder"
+                    "veldr.audio.sfx.placeholder"
                 },
                 1 => item
                     .files
@@ -811,11 +811,11 @@ impl AudioFrontend {
     }
 
     /// Switches the playing music to the title music, which is pinned to a
-    /// specific sound file (veloren_title_tune.ogg)
+    /// specific sound file (caldrayne_title_tune.ogg)
     pub fn play_title_music(&mut self) {
         if self.music_enabled() {
             self.play_music(
-                "voxygen.audio.soundtrack.veloren_title_tune",
+                "veldr.audio.soundtrack.caldrayne_title_tune",
                 MusicChannelTag::TitleMusic,
                 43.0,
             );

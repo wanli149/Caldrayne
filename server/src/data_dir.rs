@@ -109,8 +109,8 @@ impl ServerStatePaths {
     pub fn new(data_dir: impl Into<PathBuf>) -> Self {
         Self::with_overrides(
             data_dir,
-            std::env::var_os("VELOREN_RTSIM").map(PathBuf::from),
-            std::env::var_os("VELOREN_TERRAIN").map(PathBuf::from),
+            std::env::var_os("CALDRAYNE_RTSIM").map(PathBuf::from),
+            std::env::var_os("CALDRAYNE_TERRAIN").map(PathBuf::from),
         )
     }
 

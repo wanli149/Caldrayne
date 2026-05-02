@@ -1,5 +1,5 @@
 {
-  description = "Flake providing Caldrayne Online, a branded voxel RPG workspace built on the Veloren open-source foundation.";
+  description = "Flake providing Caldrayne Online, a branded voxel RPG workspace derived from the Veloren open-source foundation.";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -55,7 +55,7 @@
         lib.all (n: ! (lib.hasPrefix n _path)) pathsToIgnore;
     in
       builtins.path {
-        name = "veloren-source";
+        name = "veldr-source";
         path = toString ./.;
         # filter out unnecessary paths
         filter = ignorePaths;
@@ -89,10 +89,10 @@
             false
           fi
         '';
-        assets = pkgs.runCommand "veloren-assets" {} ''
+        assets = pkgs.runCommand "veldr-assets" {} ''
           mkdir $out
           ln -sf ${./assets} $out/assets
-          ${checkIfLfsIsSetup "$out/assets/voxygen/background/bg_main.jpg"}
+          ${checkIfLfsIsSetup "$out/assets/veldr/background/bg_main.jpg"}
         '';
         wrapWithAssets = old:
           pkgs.runCommand
@@ -109,45 +109,45 @@
           ''
             cp -rs --no-preserve=mode,ownership ${old} $out
             wrapProgram $out/bin/* \
-              --set VELOREN_ASSETS ${assets} \
-              --set VELOREN_GIT_VERSION "${git.version}" \
+              --set CALDRAYNE_ASSETS ${assets} \
+              --set CALDRAYNE_GIT_VERSION "${git.version}" \
           '';
-        veloren-common-env = {
+        veldr-common-env = {
           # We don't add in any information here because otherwise anything
           # that depends on common will be recompiled. We will set these in
           # our wrapper instead.
-          VELOREN_GIT_VERSION = "/0/0";
-          VELOREN_USERDATA_STRATEGY = "system";
+          CALDRAYNE_GIT_VERSION = "/0/0";
+          CALDRAYNE_USERDATA_STRATEGY = "system";
         };
-        voxygenOut = config.nci.outputs."veloren-voxygen";
-        serverCliOut = config.nci.outputs."veloren-server-cli";
+        voxygenOut = config.nci.outputs."veldr-voxygen";
+        serverCliOut = config.nci.outputs."veldr-server-cli";
       in {
         # These flake outputs remain one technical client family plus build-profile
         # variants. Public / Dev are runtime product modes, not separate install
         # products.
-        packages.veloren-voxygen = wrapWithAssets voxygenOut.packages.release;
-        packages.veloren-voxygen-dev = wrapWithAssets voxygenOut.packages.dev;
-        packages.veloren-server-cli = wrapWithAssets serverCliOut.packages.release;
-        packages.veloren-server-cli-dev = wrapWithAssets serverCliOut.packages.dev;
-        packages.default = config.packages."veloren-voxygen";
+        packages.caldrayne = wrapWithAssets voxygenOut.packages.release;
+        packages.caldrayne-dev = wrapWithAssets voxygenOut.packages.dev;
+        packages.caldrayne-server-cli = wrapWithAssets serverCliOut.packages.release;
+        packages.caldrayne-server-cli-dev = wrapWithAssets serverCliOut.packages.dev;
+        packages.default = config.packages."caldrayne";
 
-        devShells.default = config.nci.outputs."veloren".devShell.overrideAttrs (old: {
-          VELOREN_ASSETS = "";
+        devShells.default = config.nci.outputs."veldr".devShell.overrideAttrs (old: {
+          CALDRAYNE_ASSETS = "";
           shellHook = ''
-            ${checkIfLfsIsSetup "$PWD/assets/voxygen/background/bg_main.jpg"}
+            ${checkIfLfsIsSetup "$PWD/assets/veldr/background/bg_main.jpg"}
             if [ $? -ne 0 ]; then
               exit 1
             fi
-            export VELOREN_ASSETS="$PWD/assets"
-            export VELOREN_GIT_VERSION="${git.version}"
+            export CALDRAYNE_ASSETS="$PWD/assets"
+            export CALDRAYNE_GIT_VERSION="${git.version}"
           '';
         });
 
-        nci.projects."veloren" = {
+        nci.projects."veldr" = {
           export = false;
           path = filteredSource;
         };
-        nci.crates."veloren-server-cli" = rec {
+        nci.crates."veldr-server-cli" = rec {
           profiles = {
             release.features = ["default-publish"];
             release.runTests = false;
@@ -157,10 +157,10 @@
           depsDrvConfig.mkDerivation.nativeBuildInputs = [pkgs.mold];
           drvConfig = {
             mkDerivation = depsDrvConfig.mkDerivation;
-            env = veloren-common-env;
+            env = veldr-common-env;
           };
         };
-        nci.crates."veloren-voxygen" = rec {
+        nci.crates."veldr-voxygen" = rec {
           profiles = {
             release.features = ["default-publish"];
             release.runTests = false;
@@ -184,7 +184,7 @@
           ];
           depsDrvConfig = {
             env =
-              veloren-common-env
+              veldr-common-env
               // {
                 SHADERC_LIB_DIR = "${pkgs.shaderc.lib}/lib";
               };
@@ -211,17 +211,17 @@
               depsDrvConfig.env
               // {
                 dontUseCmakeConfigure = true;
-                VOXYGEN_NULL_SOUND_PATH = ./assets/voxygen/audio/null.ogg;
+                VELDR_NULL_SOUND_PATH = ./assets/veldr/audio/null.ogg;
               };
             mkDerivation =
               depsDrvConfig.mkDerivation
               // {
                 prePatch = ''
-                                sed -i 's:"../../../assets/voxygen/audio/null.ogg":env!("VOXYGEN_NULL_SOUND_PATH"):' \
+                                sed -i 's:"../../../assets/veldr/audio/null.ogg":env!("VELDR_NULL_SOUND_PATH"):' \
                   voxygen/src/audio/soundcache.rs
                 '';
               };
-            rust-crane.buildFlags = ["--bin=veloren-voxygen"];
+            rust-crane.buildFlags = ["--bin=caldrayne"];
           };
         };
       };

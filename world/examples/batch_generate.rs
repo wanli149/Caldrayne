@@ -35,7 +35,7 @@ use serde_json::to_writer_pretty;
 use tracing::{Level, Span, debug, error, info, info_span};
 use tracing_subscriber::EnvFilter;
 use vek::{Aabr, Rgb, Vec2, Vec3};
-use veloren_world::{
+use veldr_world::{
     CONFIG, IndexOwned, IndexRef, World, WorldGenerateStage,
     sim::{FileOpts, GenOpts, WorldOpts, WorldSimStage, get_horizon_map, sample_pos, sample_wpos},
     util::Sampler,
@@ -1227,14 +1227,14 @@ fn sample_chunk_center_column<'a>(
     world: &'a World,
     index_ref: IndexRef<'a>,
     chunk_pos: Vec2<i32>,
-) -> Option<veloren_world::ColumnSample<'a>> {
+) -> Option<veldr_world::ColumnSample<'a>> {
     world
         .sample_columns()
         .get((chunk_pos.cpos_to_wpos_center(), index_ref, None))
 }
 
 fn static_marine_adjacent_at_chunk(
-    sim: &veloren_world::sim::WorldSim,
+    sim: &veldr_world::sim::WorldSim,
     chunk_pos: Vec2<i32>,
 ) -> Option<bool> {
     let center_alt = sim.get(chunk_pos)?.alt;

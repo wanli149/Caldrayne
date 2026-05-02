@@ -4,9 +4,9 @@ use crate::{
 };
 use client::addr::ConnectionArgs;
 use common::{
-    official_entry::{
-        BundledOfficialAuthMode, BundledOfficialTargetKind, BundledOfficialTransportKind,
-        OfficialEntry, OfficialEntrySourceKind,
+    public_realm::{
+        BundledPublicRealmAuthMode, BundledPublicRealmTargetKind, BundledPublicRealmTransportKind,
+        PublicRealm, PublicRealmSourceKind,
     },
     uuid::Uuid,
 };
@@ -15,7 +15,7 @@ use hashbrown::HashSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostKind {
-    PublicOfficial,
+    PublicRealm,
     DevDirectConnect,
     #[cfg(feature = "singleplayer")]
     DevSingleplayer,
@@ -42,16 +42,16 @@ pub struct DevMultiplayerEntry {
     pub can_delete: bool,
 }
 
-trait OfficialEntryExt {
+trait PublicRealmExt {
     fn connection_args(&self) -> Result<ConnectionArgs, String>;
 }
 
-impl OfficialEntryExt for OfficialEntry {
+impl PublicRealmExt for PublicRealm {
     fn connection_args(&self) -> Result<ConnectionArgs, String> {
         let hostname = self.server_address.trim();
         if hostname.is_empty() {
             return Err(
-                "Public mode is enabled, but the bundled official entry configuration does not \
+                "Public mode is enabled, but the bundled Caldrayne Realm configuration does not \
                  contain a server address."
                     .to_string(),
             );
@@ -81,7 +81,7 @@ impl OfficialEntryExt for OfficialEntry {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OfficialClientMetadataSurface {
+pub enum PublicRealmClientMetadataSurface {
     RealmLabelAndAddress,
     RealmStatus,
     Announcement,
@@ -90,7 +90,7 @@ pub enum OfficialClientMetadataSurface {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OfficialClientAuthorityBoundary {
+pub enum PublicRealmClientAuthorityBoundary {
     AccountRouting,
     AuthTrustOverrides,
     FreeServerSelection,
@@ -98,9 +98,9 @@ pub enum OfficialClientAuthorityBoundary {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OfficialClientMetadataBoundaryContract {
-    pub may_render: Vec<OfficialClientMetadataSurface>,
-    pub must_not_become_authority_for: Vec<OfficialClientAuthorityBoundary>,
+pub struct PublicRealmClientMetadataBoundaryContract {
+    pub may_render: Vec<PublicRealmClientMetadataSurface>,
+    pub must_not_become_authority_for: Vec<PublicRealmClientAuthorityBoundary>,
     pub requires_explicit_integration: bool,
 }
 
@@ -131,35 +131,35 @@ pub struct LightweightDiscoveryBoundaryContract {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EntryUpgradeBoundaryContract {
-    pub official_source_kind: OfficialEntrySourceKind,
-    pub official_source_role: &'static str,
+    pub public_realm_source_kind: PublicRealmSourceKind,
+    pub public_realm_source_role: &'static str,
     pub launcher_role: &'static str,
-    pub launcher_may_replace_official_source: bool,
+    pub launcher_may_replace_public_realm_source: bool,
     pub launcher_must_not_override_runtime_policy: bool,
-    pub client_metadata_boundary: OfficialClientMetadataBoundaryContract,
+    pub client_metadata_boundary: PublicRealmClientMetadataBoundaryContract,
     pub lightweight_discovery_boundary: LightweightDiscoveryBoundaryContract,
     pub forbidden_runtime_overrides: Vec<&'static str>,
     pub must_remain_external: Vec<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PublicOfficialAuthTrustOutcome {
+pub enum PublicRealmAuthTrustOutcome {
     TrustedExactBundledProvider,
     RejectedMissingBundledProvider,
     RejectedProviderMismatch,
 }
 
-impl PublicOfficialAuthTrustOutcome {
+impl PublicRealmAuthTrustOutcome {
     pub fn is_trusted(self) -> bool { matches!(self, Self::TrustedExactBundledProvider) }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PublicOfficialAuthHandoffContract {
+pub struct PublicRealmAuthHandoffContract {
     pub bundled_server_address_configured: bool,
-    pub bundled_official_entry_artifact_identity: String,
-    pub bundled_target_kind: BundledOfficialTargetKind,
+    pub bundled_public_realm_artifact_identity: String,
+    pub bundled_target_kind: BundledPublicRealmTargetKind,
     pub bundled_target_is_non_local_candidate: bool,
-    pub bundled_transport_kind: BundledOfficialTransportKind,
+    pub bundled_transport_kind: BundledPublicRealmTransportKind,
     pub bundled_use_srv: bool,
     pub bundled_use_quic: bool,
     pub bundled_validate_tls: bool,
@@ -194,7 +194,7 @@ impl From<ProductModeArg> for ProductMode {
 #[derive(Clone, Debug)]
 pub struct EntryPolicy {
     product_mode: ProductMode,
-    official_entry: OfficialEntry,
+    public_realm: PublicRealm,
 }
 
 impl EntryPolicy {
@@ -209,7 +209,7 @@ impl EntryPolicy {
 
         Self {
             product_mode,
-            official_entry: OfficialEntry::load(),
+            public_realm: PublicRealm::load(),
         }
     }
 
@@ -220,9 +220,9 @@ impl EntryPolicy {
     pub fn is_dev(&self) -> bool { matches!(self.product_mode, ProductMode::Dev) }
 
     pub fn public_mode_blocker_message(&self) -> Option<String> {
-        if self.is_public() && !self.official_entry.is_configured() {
+        if self.is_public() && !self.public_realm.is_configured() {
             Some(
-                "Public mode is enabled, but the bundled official entry is not configured yet. \
+                "Public mode is enabled, but the bundled Caldrayne Realm is not configured yet. \
                  This build is currently intended for development mode only."
                     .to_string(),
             )
@@ -249,25 +249,26 @@ impl EntryPolicy {
 
     pub fn upgrade_boundary_contract(&self) -> EntryUpgradeBoundaryContract {
         EntryUpgradeBoundaryContract {
-            official_source_kind: self.official_entry.source_kind,
-            official_source_role: "single official entry source for public-mode realm targeting",
-            launcher_role: "may deliver or replace the official entry source, but must not bypass \
-                            the entry policy layer",
-            launcher_may_replace_official_source: true,
+            public_realm_source_kind: self.public_realm.source_kind,
+            public_realm_source_role:
+                "single bundled Caldrayne Realm source for public-mode realm targeting",
+            launcher_role: "may deliver or replace the bundled Caldrayne Realm source, but must \
+                            not bypass the entry policy layer",
+            launcher_may_replace_public_realm_source: true,
             launcher_must_not_override_runtime_policy: true,
-            client_metadata_boundary: OfficialClientMetadataBoundaryContract {
+            client_metadata_boundary: PublicRealmClientMetadataBoundaryContract {
                 may_render: vec![
-                    OfficialClientMetadataSurface::RealmLabelAndAddress,
-                    OfficialClientMetadataSurface::RealmStatus,
-                    OfficialClientMetadataSurface::Announcement,
-                    OfficialClientMetadataSurface::News,
-                    OfficialClientMetadataSurface::ProductHallMetadata,
+                    PublicRealmClientMetadataSurface::RealmLabelAndAddress,
+                    PublicRealmClientMetadataSurface::RealmStatus,
+                    PublicRealmClientMetadataSurface::Announcement,
+                    PublicRealmClientMetadataSurface::News,
+                    PublicRealmClientMetadataSurface::ProductHallMetadata,
                 ],
                 must_not_become_authority_for: vec![
-                    OfficialClientAuthorityBoundary::AccountRouting,
-                    OfficialClientAuthorityBoundary::AuthTrustOverrides,
-                    OfficialClientAuthorityBoundary::FreeServerSelection,
-                    OfficialClientAuthorityBoundary::ArbitraryRealmDirectory,
+                    PublicRealmClientAuthorityBoundary::AccountRouting,
+                    PublicRealmClientAuthorityBoundary::AuthTrustOverrides,
+                    PublicRealmClientAuthorityBoundary::FreeServerSelection,
+                    PublicRealmClientAuthorityBoundary::ArbitraryRealmDirectory,
                 ],
                 requires_explicit_integration: true,
             },
@@ -303,10 +304,10 @@ impl EntryPolicy {
         }
     }
 
-    pub fn public_official_auth_handoff_contract(&self) -> PublicOfficialAuthHandoffContract {
-        let posture = self.official_entry.posture();
+    pub fn public_realm_auth_handoff_contract(&self) -> PublicRealmAuthHandoffContract {
+        let posture = self.public_realm.posture();
         let bundled_server_address_configured = posture.server_address_configured;
-        let bundled_official_entry_artifact_identity = posture.artifact_identity.clone();
+        let bundled_public_realm_artifact_identity = posture.artifact_identity.clone();
         let bundled_target_kind = posture.target_kind;
         let bundled_target_is_non_local_candidate = posture.target_is_non_local_candidate;
         let bundled_transport_kind = posture.transport_kind;
@@ -314,8 +315,8 @@ impl EntryPolicy {
         let bundled_use_quic = posture.use_quic;
         let bundled_validate_tls = posture.validate_tls;
         let bundled_auth_mode = match posture.auth_mode {
-            BundledOfficialAuthMode::ExternalProvider => ServerAuthMode::ExternalProvider,
-            BundledOfficialAuthMode::NoExternalAuth => ServerAuthMode::NoExternalAuth,
+            BundledPublicRealmAuthMode::ExternalProvider => ServerAuthMode::ExternalProvider,
+            BundledPublicRealmAuthMode::NoExternalAuth => ServerAuthMode::NoExternalAuth,
         };
         let bundled_auth_provider_url = posture.auth_server.clone();
         let external_auth_rollout_ready =
@@ -324,9 +325,9 @@ impl EntryPolicy {
         let non_local_cutover_gap_reasons = posture.non_local_cutover_gap_reasons.clone();
         let rollout_readiness_scope = posture.rollout_readiness_scope;
 
-        PublicOfficialAuthHandoffContract {
+        PublicRealmAuthHandoffContract {
             bundled_server_address_configured,
-            bundled_official_entry_artifact_identity,
+            bundled_public_realm_artifact_identity,
             bundled_target_kind,
             bundled_target_is_non_local_candidate,
             bundled_transport_kind,
@@ -335,9 +336,9 @@ impl EntryPolicy {
             bundled_validate_tls,
             bundled_auth_mode,
             bundled_auth_provider_url,
-            public_target_authority: "official_entry.server_address -> EntryPolicy -> realm \
-                                      handshake",
-            public_auth_authority: "official_entry.auth_server exact-match pin for PublicOfficial \
+            public_target_authority: "bundled Caldrayne Realm server address -> EntryPolicy -> \
+                                      realm handshake",
+            public_auth_authority: "bundled Caldrayne Realm auth pin exact-match -> PublicRealm \
                                     auth trust",
             exact_provider_match_required: true,
             prompt_for_manual_trust: false,
@@ -351,7 +352,7 @@ impl EntryPolicy {
 
     pub fn multiplayer_host_kind(&self) -> HostKind {
         match self.product_mode {
-            ProductMode::Public => HostKind::PublicOfficial,
+            ProductMode::Public => HostKind::PublicRealm,
             ProductMode::Dev => HostKind::DevDirectConnect,
         }
     }
@@ -362,7 +363,7 @@ impl EntryPolicy {
         cli_server: Option<&str>,
     ) -> HostKind {
         match self.product_mode {
-            ProductMode::Public => HostKind::PublicOfficial,
+            ProductMode::Public => HostKind::PublicRealm,
             ProductMode::Dev => {
                 if cli_server.is_some() {
                     return HostKind::DevDirectConnect;
@@ -451,9 +452,9 @@ impl EntryPolicy {
         match self.product_mode {
             ProductMode::Public => {
                 if self.public_mode_blocker_message().is_some() {
-                    "Official Entry Unavailable".to_string()
+                    "Caldrayne Realm Unavailable".to_string()
                 } else {
-                    self.official_entry.login_label()
+                    self.public_realm.login_label()
                 }
             },
             ProductMode::Dev => {
@@ -491,7 +492,7 @@ impl EntryPolicy {
             networking.default_server = requested_server.to_string();
             networking.default_multiplayer_target_kind = match host_kind {
                 HostKind::DevLocalDedicated => DevMultiplayerTargetKind::LocalDedicated,
-                HostKind::DevDirectConnect | HostKind::PublicOfficial => {
+                HostKind::DevDirectConnect | HostKind::PublicRealm => {
                     DevMultiplayerTargetKind::DirectConnect
                 },
                 #[cfg(feature = "singleplayer")]
@@ -533,7 +534,7 @@ impl EntryPolicy {
         }
 
         let connection_args = match self.product_mode {
-            ProductMode::Public => self.official_entry.connection_args(),
+            ProductMode::Public => self.public_realm.connection_args(),
             ProductMode::Dev => {
                 match host_kind {
                     HostKind::DevDirectConnect => {},
@@ -554,8 +555,8 @@ impl EntryPolicy {
                             local_dedicated_instance_id: Some(entry.instance_id),
                         });
                     },
-                    HostKind::PublicOfficial => {
-                        return Err("Public official host kind cannot be used for \
+                    HostKind::PublicRealm => {
+                        return Err("Public realm host kind cannot be used for \
                                     development-mode multiplayer."
                             .to_string());
                     },
@@ -596,7 +597,7 @@ impl EntryPolicy {
         }?;
 
         let kind = match self.product_mode {
-            ProductMode::Public => HostKind::PublicOfficial,
+            ProductMode::Public => HostKind::PublicRealm,
             ProductMode::Dev => host_kind,
         };
 
@@ -604,7 +605,7 @@ impl EntryPolicy {
             kind,
             connection_args,
             target_address: match self.product_mode {
-                ProductMode::Public => Some(self.official_entry.server_address.trim().to_string()),
+                ProductMode::Public => Some(self.public_realm.server_address.trim().to_string()),
                 ProductMode::Dev => Some(requested_server.trim().to_string()),
             },
             local_dedicated_instance_id: None,
@@ -674,8 +675,8 @@ impl EntryPolicy {
         trusted_auth_servers: &HashSet<String>,
     ) -> bool {
         match host_kind {
-            HostKind::PublicOfficial => self
-                .public_official_auth_trust_outcome(auth_server)
+            HostKind::PublicRealm => self
+                .public_realm_auth_trust_outcome(auth_server)
                 .is_trusted(),
             HostKind::DevDirectConnect | HostKind::DevLocalDedicated => {
                 trusted_auth_servers.contains(auth_server)
@@ -699,16 +700,16 @@ impl EntryPolicy {
         )
     }
 
-    pub fn public_official_auth_trust_outcome(
+    pub fn public_realm_auth_trust_outcome(
         &self,
         auth_server: &str,
-    ) -> PublicOfficialAuthTrustOutcome {
-        match self.official_entry.auth_server.as_deref() {
+    ) -> PublicRealmAuthTrustOutcome {
+        match self.public_realm.auth_server.as_deref() {
             Some(expected) if expected == auth_server => {
-                PublicOfficialAuthTrustOutcome::TrustedExactBundledProvider
+                PublicRealmAuthTrustOutcome::TrustedExactBundledProvider
             },
-            Some(_) => PublicOfficialAuthTrustOutcome::RejectedProviderMismatch,
-            None => PublicOfficialAuthTrustOutcome::RejectedMissingBundledProvider,
+            Some(_) => PublicRealmAuthTrustOutcome::RejectedProviderMismatch,
+            None => PublicRealmAuthTrustOutcome::RejectedMissingBundledProvider,
         }
     }
 }
@@ -744,60 +745,60 @@ fn local_dedicated_inventory_detail(entry: &LocalDedicatedServer) -> String {
 mod tests {
     use super::*;
 
-    fn official_entry(server_address: &str, auth_server: Option<&str>) -> OfficialEntry {
-        official_entry_with_transport(server_address, auth_server, false, false, true)
+    fn public_realm(server_address: &str, auth_server: Option<&str>) -> PublicRealm {
+        public_realm_with_transport(server_address, auth_server, false, false, true)
     }
 
-    fn official_entry_with_transport(
+    fn public_realm_with_transport(
         server_address: &str,
         auth_server: Option<&str>,
         use_srv: bool,
         use_quic: bool,
         validate_tls: bool,
-    ) -> OfficialEntry {
-        OfficialEntry {
-            display_name: "Official Realm".to_string(),
+    ) -> PublicRealm {
+        PublicRealm {
+            display_name: "Caldrayne Realm".to_string(),
             server_address: server_address.to_string(),
             auth_server: auth_server.map(ToOwned::to_owned),
             use_srv,
             use_quic,
             validate_tls,
-            source_kind: OfficialEntrySourceKind::Bundled,
+            source_kind: PublicRealmSourceKind::Bundled,
         }
     }
 
-    fn entry_policy(product_mode: ProductMode, official_entry: OfficialEntry) -> EntryPolicy {
+    fn entry_policy(product_mode: ProductMode, public_realm: PublicRealm) -> EntryPolicy {
         EntryPolicy {
             product_mode,
-            official_entry,
+            public_realm,
         }
     }
 
     #[test]
-    fn public_mode_blocks_when_official_entry_missing() {
-        let policy = entry_policy(ProductMode::Public, official_entry("", None));
+    fn public_mode_blocks_when_public_realm_missing() {
+        let policy = entry_policy(ProductMode::Public, public_realm("", None));
 
         assert!(policy.public_mode_blocker_message().is_some());
     }
 
     #[test]
-    fn public_mode_uses_official_connection_args() {
+    fn public_mode_uses_public_realm_connection_args() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("auth.example.test")),
+            public_realm("192.168.1.8:14004", Some("auth.example.test")),
         );
         let settings = NetworkingSettings::default();
 
         let host = policy
             .resolve_multiplayer_host(
-                HostKind::PublicOfficial,
+                HostKind::PublicRealm,
                 "ignored.example.test",
                 None,
                 &settings,
             )
-            .expect("public mode should resolve to official entry");
+            .expect("public mode should resolve to public realm");
 
-        assert_eq!(host.kind, HostKind::PublicOfficial);
+        assert_eq!(host.kind, HostKind::PublicRealm);
 
         match host.connection_args {
             ConnectionArgs::Tcp { hostname, .. } => {
@@ -809,10 +810,10 @@ mod tests {
     }
 
     #[test]
-    fn public_mode_reclaims_drifted_ui_host_selection_back_to_official_entry() {
+    fn public_mode_reclaims_drifted_ui_host_selection_back_to_public_realm() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("auth.example.test")),
+            public_realm("192.168.1.8:14004", Some("auth.example.test")),
         );
         let settings = NetworkingSettings {
             use_srv: true,
@@ -828,9 +829,9 @@ mod tests {
                 None,
                 &settings,
             )
-            .expect("public mode should reclaim drifted host selection to official entry");
+            .expect("public mode should reclaim drifted host selection to public realm");
 
-        assert_eq!(host.kind, HostKind::PublicOfficial);
+        assert_eq!(host.kind, HostKind::PublicRealm);
         assert_eq!(host.target_address.as_deref(), Some("192.168.1.8:14004"));
 
         match host.connection_args {
@@ -845,18 +846,18 @@ mod tests {
     fn public_mode_ignores_cli_server_for_initial_value() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("auth.example.test")),
+            public_realm("192.168.1.8:14004", Some("auth.example.test")),
         );
         let settings = Settings::default();
 
         let server = policy.initial_server_field_value(&settings, Some("203.0.113.20:14004"));
 
-        assert_eq!(server, "Official Realm");
+        assert_eq!(server, "Caldrayne Realm");
     }
 
     #[test]
     fn dev_mode_uses_cli_server_for_initial_value() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let settings = Settings::default();
 
         let server = policy.initial_server_field_value(&settings, Some("203.0.113.20:14004"));
@@ -865,22 +866,22 @@ mod tests {
     }
 
     #[test]
-    fn public_mode_uses_unavailable_label_when_official_entry_missing() {
-        let policy = entry_policy(ProductMode::Public, official_entry("", None));
+    fn public_mode_uses_unavailable_label_when_public_realm_missing() {
+        let policy = entry_policy(ProductMode::Public, public_realm("", None));
         let settings = Settings::default();
 
         let server = policy.initial_server_field_value(&settings, None);
 
-        assert_eq!(server, "Official Entry Unavailable");
+        assert_eq!(server, "Caldrayne Realm Unavailable");
     }
 
     #[test]
     fn server_field_lock_rules_match_public_and_dev_semantics() {
         let public_policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", None),
+            public_realm("192.168.1.8:14004", None),
         );
-        let dev_policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let dev_policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
 
         assert!(public_policy.should_lock_server_field(None));
         assert!(!public_policy.can_unlock_server_field(Some("203.0.113.20:14004")));
@@ -892,50 +893,50 @@ mod tests {
     }
 
     #[test]
-    fn public_mode_disables_multiplayer_when_official_entry_missing() {
-        let policy = entry_policy(ProductMode::Public, official_entry("", None));
+    fn public_mode_disables_multiplayer_when_public_realm_missing() {
+        let policy = entry_policy(ProductMode::Public, public_realm("", None));
 
         assert!(!policy.can_attempt_multiplayer());
     }
 
     #[test]
-    fn module_f_boundary_keeps_public_entry_as_single_source() {
+    fn module_f_boundary_keeps_public_realm_as_single_source() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("auth.example.test")),
+            public_realm("192.168.1.8:14004", Some("auth.example.test")),
         );
 
         let contract = policy.upgrade_boundary_contract();
 
         assert_eq!(
-            contract.official_source_kind,
-            OfficialEntrySourceKind::Bundled
+            contract.public_realm_source_kind,
+            PublicRealmSourceKind::Bundled
         );
-        assert!(contract.launcher_may_replace_official_source);
+        assert!(contract.launcher_may_replace_public_realm_source);
         assert!(contract.launcher_must_not_override_runtime_policy);
         assert!(
             contract
                 .client_metadata_boundary
                 .may_render
-                .contains(&OfficialClientMetadataSurface::Announcement)
+                .contains(&PublicRealmClientMetadataSurface::Announcement)
         );
         assert!(
             contract
                 .client_metadata_boundary
                 .may_render
-                .contains(&OfficialClientMetadataSurface::ProductHallMetadata)
+                .contains(&PublicRealmClientMetadataSurface::ProductHallMetadata)
         );
         assert!(
             contract
                 .client_metadata_boundary
                 .must_not_become_authority_for
-                .contains(&OfficialClientAuthorityBoundary::AccountRouting)
+                .contains(&PublicRealmClientAuthorityBoundary::AccountRouting)
         );
         assert!(
             contract
                 .client_metadata_boundary
                 .must_not_become_authority_for
-                .contains(&OfficialClientAuthorityBoundary::FreeServerSelection)
+                .contains(&PublicRealmClientAuthorityBoundary::FreeServerSelection)
         );
         assert!(
             contract
@@ -989,25 +990,25 @@ mod tests {
     fn public_auth_handoff_contract_marks_missing_bundled_auth_pin_as_not_external_ready() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", None),
+            public_realm("192.168.1.8:14004", None),
         );
 
-        let contract = policy.public_official_auth_handoff_contract();
+        let contract = policy.public_realm_auth_handoff_contract();
 
         assert!(contract.bundled_server_address_configured);
         assert!(
             contract
-                .bundled_official_entry_artifact_identity
-                .starts_with("official-entry-content-sha256-v1:")
+                .bundled_public_realm_artifact_identity
+                .starts_with(common::public_realm::PUBLIC_REALM_ARTIFACT_IDENTITY_SCHEME)
         );
         assert_eq!(
             contract.bundled_target_kind,
-            BundledOfficialTargetKind::PrivateOrUniqueLocalIp
+            BundledPublicRealmTargetKind::PrivateOrUniqueLocalIp
         );
         assert!(!contract.bundled_target_is_non_local_candidate);
         assert_eq!(
             contract.bundled_transport_kind,
-            BundledOfficialTransportKind::DirectTcp
+            BundledPublicRealmTransportKind::DirectTcp
         );
         assert!(!contract.bundled_use_srv);
         assert!(!contract.bundled_use_quic);
@@ -1040,20 +1041,20 @@ mod tests {
     fn public_auth_handoff_contract_marks_bundled_external_auth_pin_as_rollout_ready() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("https://auth.official.test")),
+            public_realm("192.168.1.8:14004", Some("https://auth.official.test")),
         );
 
-        let contract = policy.public_official_auth_handoff_contract();
+        let contract = policy.public_realm_auth_handoff_contract();
 
         assert!(contract.bundled_server_address_configured);
         assert!(
             contract
-                .bundled_official_entry_artifact_identity
-                .starts_with("official-entry-content-sha256-v1:")
+                .bundled_public_realm_artifact_identity
+                .starts_with(common::public_realm::PUBLIC_REALM_ARTIFACT_IDENTITY_SCHEME)
         );
         assert_eq!(
             contract.bundled_target_kind,
-            BundledOfficialTargetKind::PrivateOrUniqueLocalIp
+            BundledPublicRealmTargetKind::PrivateOrUniqueLocalIp
         );
         assert!(!contract.bundled_target_is_non_local_candidate);
         assert_eq!(contract.bundled_auth_mode, ServerAuthMode::ExternalProvider);
@@ -1073,7 +1074,7 @@ mod tests {
     fn public_auth_handoff_contract_exports_bundled_transport_policy() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry_with_transport(
+            public_realm_with_transport(
                 "play.caldrayne.example",
                 Some("https://auth.official.test"),
                 true,
@@ -1082,11 +1083,11 @@ mod tests {
             ),
         );
 
-        let contract = policy.public_official_auth_handoff_contract();
+        let contract = policy.public_realm_auth_handoff_contract();
 
         assert_eq!(
             contract.bundled_transport_kind,
-            BundledOfficialTransportKind::SrvLookup
+            BundledPublicRealmTransportKind::SrvLookup
         );
         assert!(contract.bundled_use_srv);
         assert!(contract.bundled_use_quic);
@@ -1098,17 +1099,17 @@ mod tests {
     {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry(
+            public_realm(
                 "play.caldrayne.example:14004",
                 Some("https://auth.official.test"),
             ),
         );
 
-        let contract = policy.public_official_auth_handoff_contract();
+        let contract = policy.public_realm_auth_handoff_contract();
 
         assert_eq!(
             contract.bundled_target_kind,
-            BundledOfficialTargetKind::NamedHostCandidate
+            BundledPublicRealmTargetKind::NamedHostCandidate
         );
         assert!(contract.bundled_target_is_non_local_candidate);
         assert!(contract.external_auth_rollout_ready);
@@ -1120,14 +1121,14 @@ mod tests {
     fn public_auth_handoff_contract_marks_reserved_public_doc_ip_as_not_cutover_ready() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry("203.0.113.10:14004", Some("https://auth.official.test")),
+            public_realm("203.0.113.10:14004", Some("https://auth.official.test")),
         );
 
-        let contract = policy.public_official_auth_handoff_contract();
+        let contract = policy.public_realm_auth_handoff_contract();
 
         assert_eq!(
             contract.bundled_target_kind,
-            BundledOfficialTargetKind::ReservedNonPublicIp
+            BundledPublicRealmTargetKind::ReservedNonPublicIp
         );
         assert!(!contract.bundled_target_is_non_local_candidate);
         assert!(contract.external_auth_rollout_ready);
@@ -1141,16 +1142,16 @@ mod tests {
     fn public_auth_handoff_contract_artifact_identity_is_stable_for_same_entry_content() {
         let first = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("https://auth.official.test")),
+            public_realm("192.168.1.8:14004", Some("https://auth.official.test")),
         )
-        .public_official_auth_handoff_contract()
-        .bundled_official_entry_artifact_identity;
+        .public_realm_auth_handoff_contract()
+        .bundled_public_realm_artifact_identity;
         let second = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("https://auth.official.test")),
+            public_realm("192.168.1.8:14004", Some("https://auth.official.test")),
         )
-        .public_official_auth_handoff_contract()
-        .bundled_official_entry_artifact_identity;
+        .public_realm_auth_handoff_contract()
+        .bundled_public_realm_artifact_identity;
 
         assert_eq!(first, second);
     }
@@ -1159,16 +1160,16 @@ mod tests {
     fn public_auth_handoff_contract_artifact_identity_changes_when_server_address_changes() {
         let baseline = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("https://auth.official.test")),
+            public_realm("192.168.1.8:14004", Some("https://auth.official.test")),
         )
-        .public_official_auth_handoff_contract()
-        .bundled_official_entry_artifact_identity;
+        .public_realm_auth_handoff_contract()
+        .bundled_public_realm_artifact_identity;
         let changed = entry_policy(
             ProductMode::Public,
-            official_entry("203.0.113.10:14004", Some("https://auth.official.test")),
+            public_realm("203.0.113.10:14004", Some("https://auth.official.test")),
         )
-        .public_official_auth_handoff_contract()
-        .bundled_official_entry_artifact_identity;
+        .public_realm_auth_handoff_contract()
+        .bundled_public_realm_artifact_identity;
 
         assert_ne!(baseline, changed);
     }
@@ -1177,25 +1178,25 @@ mod tests {
     fn public_auth_handoff_contract_artifact_identity_changes_when_auth_server_changes() {
         let baseline = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("https://auth.official.test")),
+            public_realm("192.168.1.8:14004", Some("https://auth.official.test")),
         )
-        .public_official_auth_handoff_contract()
-        .bundled_official_entry_artifact_identity;
+        .public_realm_auth_handoff_contract()
+        .bundled_public_realm_artifact_identity;
         let changed = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("https://auth.backup.test")),
+            public_realm("192.168.1.8:14004", Some("https://auth.backup.test")),
         )
-        .public_official_auth_handoff_contract()
-        .bundled_official_entry_artifact_identity;
+        .public_realm_auth_handoff_contract()
+        .bundled_public_realm_artifact_identity;
 
         assert_ne!(baseline, changed);
     }
 
     #[test]
-    fn official_entry_source_kind_defaults_to_bundled_when_omitted() {
-        let entry: OfficialEntry = ron::from_str(
+    fn public_realm_source_kind_defaults_to_bundled_when_omitted() {
+        let entry: PublicRealm = ron::from_str(
             r#"(
-                display_name: "Official Realm",
+                display_name: "Caldrayne Realm",
                 server_address: "192.168.1.8:14004",
                 auth_server: None,
                 use_srv: false,
@@ -1203,14 +1204,14 @@ mod tests {
                 validate_tls: true,
             )"#,
         )
-        .expect("legacy official entry should deserialize");
+        .expect("legacy public realm should deserialize");
 
-        assert_eq!(entry.source_kind, OfficialEntrySourceKind::Bundled);
+        assert_eq!(entry.source_kind, PublicRealmSourceKind::Bundled);
     }
 
     #[test]
     fn dev_mode_uses_requested_server_and_persists_history() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let mut networking = NetworkingSettings::default();
 
         policy.apply_login_settings(
@@ -1235,7 +1236,7 @@ mod tests {
     fn public_mode_does_not_persist_server_history() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", None),
+            public_realm("192.168.1.8:14004", None),
         );
         let mut networking = NetworkingSettings {
             username: "old-user".to_string(),
@@ -1246,7 +1247,7 @@ mod tests {
 
         policy.apply_login_settings(
             &mut networking,
-            HostKind::PublicOfficial,
+            HostKind::PublicRealm,
             "tester",
             "203.0.113.5:14004",
             None,
@@ -1259,28 +1260,28 @@ mod tests {
     }
 
     #[test]
-    fn public_mode_only_trusts_official_auth_server() {
+    fn public_mode_only_trusts_public_realm_auth_server() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", Some("auth.official.test")),
+            public_realm("192.168.1.8:14004", Some("auth.official.test")),
         );
         let mut trusted_auth_servers = HashSet::new();
         trusted_auth_servers.insert("auth.official.test".to_string());
         trusted_auth_servers.insert("auth.other.test".to_string());
 
         assert!(policy.is_auth_server_trusted(
-            HostKind::PublicOfficial,
+            HostKind::PublicRealm,
             "auth.official.test",
             &trusted_auth_servers
         ));
         assert!(!policy.is_auth_server_trusted(
-            HostKind::PublicOfficial,
+            HostKind::PublicRealm,
             "auth.other.test",
             &trusted_auth_servers
         ));
         assert_eq!(
-            policy.public_official_auth_trust_outcome("auth.other.test"),
-            PublicOfficialAuthTrustOutcome::RejectedProviderMismatch
+            policy.public_realm_auth_trust_outcome("auth.other.test"),
+            PublicRealmAuthTrustOutcome::RejectedProviderMismatch
         );
     }
 
@@ -1288,25 +1289,25 @@ mod tests {
     fn public_mode_does_not_fall_back_to_saved_auth_cache_without_bundled_auth_pin() {
         let policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", None),
+            public_realm("192.168.1.8:14004", None),
         );
         let mut trusted_auth_servers = HashSet::new();
         trusted_auth_servers.insert("auth.official.test".to_string());
 
         assert!(!policy.is_auth_server_trusted(
-            HostKind::PublicOfficial,
+            HostKind::PublicRealm,
             "auth.official.test",
             &trusted_auth_servers
         ));
         assert_eq!(
-            policy.public_official_auth_trust_outcome("auth.official.test"),
-            PublicOfficialAuthTrustOutcome::RejectedMissingBundledProvider
+            policy.public_realm_auth_trust_outcome("auth.official.test"),
+            PublicRealmAuthTrustOutcome::RejectedMissingBundledProvider
         );
     }
 
     #[test]
     fn dev_mode_respects_saved_auth_trust_list() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let mut trusted_auth_servers = HashSet::new();
         trusted_auth_servers.insert("auth.dev.test".to_string());
 
@@ -1326,13 +1327,13 @@ mod tests {
     fn multiplayer_host_kind_matches_product_mode() {
         let public_policy = entry_policy(
             ProductMode::Public,
-            official_entry("192.168.1.8:14004", None),
+            public_realm("192.168.1.8:14004", None),
         );
-        let dev_policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let dev_policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
 
         assert_eq!(
             public_policy.multiplayer_host_kind(),
-            HostKind::PublicOfficial
+            HostKind::PublicRealm
         );
         assert_eq!(
             dev_policy.multiplayer_host_kind(),
@@ -1342,7 +1343,7 @@ mod tests {
 
     #[test]
     fn dev_local_dedicated_does_not_pollute_direct_history() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let instance_id = common::uuid::Uuid::new_v4();
         let mut networking = NetworkingSettings {
             local_dedicated_servers: vec![LocalDedicatedServer {
@@ -1376,7 +1377,7 @@ mod tests {
 
     #[test]
     fn initial_dev_multiplayer_host_kind_uses_configured_local_dedicated_target() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let mut settings = Settings::default();
         settings.networking.default_server = "127.0.0.1:14004".to_string();
         settings.networking.default_multiplayer_target_kind =
@@ -1395,7 +1396,7 @@ mod tests {
 
     #[test]
     fn initial_dev_local_dedicated_target_survives_address_drift_via_instance_id() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let mut settings = Settings::default();
         let instance_id = common::uuid::Uuid::new_v4();
         settings.networking.default_server = "127.0.0.1:9999".to_string();
@@ -1421,7 +1422,7 @@ mod tests {
 
     #[test]
     fn dev_mode_prefers_discovered_local_dedicated_when_no_direct_default_exists() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let mut settings = Settings::default();
         settings.networking.default_server = String::new();
         settings.networking.default_multiplayer_target_kind =
@@ -1445,7 +1446,7 @@ mod tests {
 
     #[test]
     fn dev_multiplayer_entries_keep_direct_and_local_dedicated_semantics_separate() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let mut settings = Settings::default();
         settings.networking.servers = vec!["10.0.0.2:14004".to_string()];
         settings.networking.local_dedicated_servers = vec![LocalDedicatedServer {
@@ -1473,7 +1474,7 @@ mod tests {
 
     #[test]
     fn manual_local_dedicated_entries_are_deletable_but_discovered_only_entries_are_not() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let mut settings = Settings::default();
         settings.networking.local_dedicated_servers = vec![
             LocalDedicatedServer {
@@ -1502,7 +1503,7 @@ mod tests {
 
     #[test]
     fn local_dedicated_entries_can_fall_back_to_observed_server_name() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let mut settings = Settings::default();
         settings.networking.local_dedicated_servers = vec![LocalDedicatedServer {
             server_address: "127.0.0.1:14004".to_string(),
@@ -1518,7 +1519,7 @@ mod tests {
 
     #[test]
     fn dev_mode_resolves_local_dedicated_host_kind_explicitly() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let settings = NetworkingSettings {
             local_dedicated_servers: vec![LocalDedicatedServer {
                 server_address: "127.0.0.1:14004".to_string(),
@@ -1545,7 +1546,7 @@ mod tests {
 
     #[test]
     fn local_dedicated_resolution_uses_entry_transport_instead_of_dev_direct_preferences() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
         let settings = NetworkingSettings {
             use_srv: true,
             local_dedicated_servers: vec![LocalDedicatedServer {
@@ -1573,10 +1574,10 @@ mod tests {
 
     #[test]
     fn auth_trust_prompt_semantics_follow_host_kind() {
-        let policy = entry_policy(ProductMode::Dev, official_entry("192.168.1.8:14004", None));
+        let policy = entry_policy(ProductMode::Dev, public_realm("192.168.1.8:14004", None));
 
         assert!(policy.should_prompt_for_auth_trust(HostKind::DevDirectConnect));
         assert!(policy.should_persist_auth_trust(HostKind::DevLocalDedicated));
-        assert!(!policy.should_prompt_for_auth_trust(HostKind::PublicOfficial));
+        assert!(!policy.should_prompt_for_auth_trust(HostKind::PublicRealm));
     }
 }

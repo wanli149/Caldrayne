@@ -1,11 +1,11 @@
 mod bindings;
 
 use bindings::{
-    exports::veloren::plugin::{
+    exports::caldrayne::plugin::{
         animation::{self, GuestBody},
         events::Guest,
     },
-    veloren::plugin::{
+    caldrayne::plugin::{
         actions,
         types::{self, Dependency, GameMode, Quaternion, Skeleton, Transform, Vec3},
     },

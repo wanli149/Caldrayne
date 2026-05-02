@@ -78,7 +78,7 @@ use {common_dynlib::LoadedLib, lazy_static::lazy_static, std::sync::Arc, std::sy
 #[cfg(feature = "use-dyn-lib")]
 lazy_static! {
     pub static ref LIB: Arc<Mutex<Option<LoadedLib>>> =
-        common_dynlib::init("veloren-world", "world", &[]);
+        common_dynlib::init("veldr-world", "world", &[]);
 }
 
 #[cfg(feature = "use-dyn-lib")]
@@ -744,7 +744,7 @@ mod tests {
         recipe::RecipeManifestV1,
         sim::{
             CompatMode, FileOpts, GenOpts, LoadLegacyMode, LoadOrGenerateSidecarlessMode,
-            WorldFile, WorldMap_0_7_0, WorldOpts,
+            WorldFile, WorldMapV0_7_0, WorldOpts,
         },
     };
     use bincode::{config::legacy, serde::encode_into_std_write};
@@ -778,7 +778,7 @@ mod tests {
     fn write_matching_world_file(map_path: &Path) {
         let opts = GenOpts::default();
         let map_cell_count = 1usize << (opts.x_lg + opts.y_lg);
-        let world_file = WorldFile::Veloren0_7_0(WorldMap_0_7_0 {
+        let world_file = WorldFile::FormatV0_7_0(WorldMapV0_7_0 {
             map_size_lg: Vec2::new(opts.x_lg, opts.y_lg),
             continent_scale_hack: opts.scale,
             alt: vec![0.0; map_cell_count].into_boxed_slice(),
@@ -851,7 +851,7 @@ mod tests {
         let result = World::generate(
             42,
             WorldOpts {
-                world_file: FileOpts::LoadAsset("world.map.veloren_0_16_0_0".to_owned()),
+                world_file: FileOpts::LoadAsset("world.map.veldr_0_16_0_0".to_owned()),
                 compat_mode: CompatMode::Enforce,
                 ..WorldOpts::default()
             },

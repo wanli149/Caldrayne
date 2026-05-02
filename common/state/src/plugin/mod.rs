@@ -41,7 +41,7 @@ fn cache_file_name(
     hash: &PluginHash,
     create_dir: bool,
 ) -> Result<PathBuf, std::io::Error> {
-    base_dir.push("server-plugins");
+    base_dir.push("caldrayne-server-plugins");
     if create_dir {
         std::fs::create_dir_all(base_dir.as_path())?;
     }

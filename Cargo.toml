@@ -60,9 +60,9 @@ incremental = true
 [profile.dev.package."*"]
 # TODO: seems like opt-level=2 should be sufficient here....
 opt-level = 3
-[profile.dev.package."veloren-network-protocol"]
+[profile.dev.package."veldr-network-protocol"]
 opt-level = 3
-[profile.dev.package."veloren-voxygen"]
+[profile.dev.package."veldr-voxygen"]
 debug = "line-tables-only"
 
 # this profile is used by developers if dev doesn't has enough debug information,
@@ -84,9 +84,9 @@ inherits = 'dev'
 overflow-checks = false
 debug-assertions = false
 
-[profile.no_overflow.package."veloren-world"]
+[profile.no_overflow.package."veldr-world"]
 opt-level = 3
-[profile.no_overflow.package."veloren-voxygen-anim"]
+[profile.no_overflow.package."veldr-voxygen-anim"]
 opt-level = 3
 
 # this profile is for profiling with using the no_overflow profile, since release can take signifcant times to build.
@@ -94,7 +94,7 @@ opt-level = 3
 inherits = 'no_overflow'
 debug = 1
 
-# this profile is used for veloren releases, compile time doesn't matter
+# this profile is used for Caldrayne-branded releases, compile time doesn't matter
 # we need stacktraces, light debug information, as much checks as possible
 # I would like to put it in a seperate `official_release` target, but that doesnt share caches with `cargo test` and `cargo bench`
 [profile.release]
@@ -105,23 +105,23 @@ lto = true
 debug = false
 panic = "abort"          # don't need unwinding so we can skip including the landing pads for that
 # line tables so we can have useful backtraces for in-house crates
-[profile.release.package."veloren-network"]
+[profile.release.package."veldr-network"]
 debug = "line-tables-only"
-[profile.release.package."veloren-network-protocol"]
+[profile.release.package."veldr-network-protocol"]
 debug = "line-tables-only"
-[profile.release.package."veloren-common"]
+[profile.release.package."veldr-common"]
 debug = "line-tables-only"
-[profile.release.package."veloren-common-systems"]
+[profile.release.package."veldr-common-systems"]
 debug = "line-tables-only"
-[profile.release.package."veloren-client"]
+[profile.release.package."veldr-client"]
 debug = "line-tables-only"
-[profile.release.package."veloren-server"]
+[profile.release.package."veldr-server"]
 debug = "line-tables-only"
-[profile.release.package."veloren-server-cli"]
+[profile.release.package."veldr-server-cli"]
 debug = "line-tables-only"
-[profile.release.package."veloren-voxygen"]
+[profile.release.package."veldr-voxygen"]
 debug = "line-tables-only"
-[profile.release.package."veloren-world"]
+[profile.release.package."veldr-world"]
 debug = "line-tables-only"
 
 [profile.release-thinlto]
@@ -144,8 +144,8 @@ debug = 1
 systems = ["x86_64-linux"]
 
 [workspace.metadata.nix.cachix]
-name = "veloren-nix"
-key = "veloren-nix.cachix.org-1:zokfKJqVsNV6kI/oJdLF6TYBdNPYGSb+diMVQPn/5Rc="
+name = "veldr-nix"
+key = "veldr-nix.cachix.org-1:zokfKJqVsNV6kI/oJdLF6TYBdNPYGSb+diMVQPn/5Rc="
 
 ### DEPENDENCIES ###
 
@@ -241,5 +241,5 @@ specs = { path = "vendor/specs" }
 
 
 [workspace.lints.clippy]
-# This lint is widely considered an annoyance by Veloren developers and doesn't pay its way.
+# This lint is widely considered an annoyance by upstream developers and doesn't pay its way.
 unnecessary_map_or = "allow"

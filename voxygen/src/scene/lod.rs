@@ -365,7 +365,7 @@ fn create_lod_terrain_mesh(detail: u32) -> Mesh<LodTerrainVertex> {
 ///   worldgen lod::Object.
 /// - `InstCol Glow` The object will use the instance color. Glow is ignored.
 fn make_lod_object(name: &str, renderer: &mut Renderer) -> Model<LodObjectVertex> {
-    let model = Obj::load_expect(&format!("voxygen.lod.{}", name));
+    let model = Obj::load_expect(&format!("veldr.lod.{}", name));
     let mesh = model
         .read()
         .0
