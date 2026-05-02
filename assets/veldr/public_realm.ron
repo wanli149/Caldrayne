@@ -7,8 +7,8 @@
 // this realm, but they must not replace this source as the public runtime
 // target authority.
 (
-    display_name: "Caldrayne Realm (LAN Test)",
-    server_address: "192.168.1.9:14004",
+    display_name: "Caldrayne Realm",
+    server_address: "play.caldrayne.example:14004",
     auth_server: None,
     use_srv: false,
     use_quic: false,
